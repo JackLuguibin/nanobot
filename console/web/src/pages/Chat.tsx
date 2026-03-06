@@ -127,6 +127,7 @@ export default function Chat() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<TextAreaRef>(null);
+  const streamingContentRef = useRef('');
 
   const activeSessionKey = paramSessionKey || currentSessionKey;
 
@@ -142,7 +143,7 @@ export default function Chat() {
   });
 
   useEffect(() => {
-    if (sessionData?.messages) {
+    if (sessionData?.messages && !isStreaming) {
       setMessages(
         (sessionData.messages as Message[]).map((msg, idx) => ({
           ...msg,
@@ -153,7 +154,7 @@ export default function Chat() {
     } else if (!activeSessionKey) {
       setShowSuggestions(true);
     }
-  }, [sessionData, activeSessionKey]);
+  }, [sessionData, activeSessionKey, isStreaming]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -161,7 +162,11 @@ export default function Chat() {
 
   const handleStreamChunk = useCallback(
     (chunk: StreamChunk) => {
-      if (chunk.type === 'chat_token' && chunk.content) {
+      if (chunk.type === 'session_key' && chunk.session_key) {
+        setCurrentSessionKey(chunk.session_key);
+        navigate(`/chat/${chunk.session_key}`, { replace: true });
+      } else if (chunk.type === 'chat_token' && chunk.content) {
+        streamingContentRef.current += chunk.content;
         setStreamingContent((prev) => prev + chunk.content);
       } else if (chunk.type === 'tool_call' && chunk.tool_call) {
         const tc = chunk.tool_call;
@@ -186,15 +191,17 @@ export default function Chat() {
         setToolCalls((prev) => prev.map((tc) => ({ ...tc, status: 'error', result: chunk.error })));
         addToast({ type: 'error', message: chunk.error });
       } else if (chunk.type === 'chat_done') {
+        const finalContent = streamingContentRef.current;
+        streamingContentRef.current = '';
         setIsStreaming(false);
         setStreamingContent('');
-        if (streamingContent || toolCalls.length > 0) {
+        if (finalContent || toolCalls.length > 0) {
           setMessages((prev) => [
             ...prev,
             {
               id: `msg-${Date.now()}`,
               role: 'assistant',
-              content: streamingContent || 'Task completed.',
+              content: finalContent || 'Task completed.',
             },
           ]);
         }
@@ -202,7 +209,7 @@ export default function Chat() {
         queryClient.invalidateQueries({ queryKey: ['sessions'] });
       }
     },
-    [streamingContent, toolCalls, addToast, queryClient]
+    [addToast, queryClient, navigate, setCurrentSessionKey]
   );
 
   const handleSend = () => {
@@ -219,6 +226,7 @@ export default function Chat() {
 
     setIsStreaming(true);
     setStreamingContent('');
+    streamingContentRef.current = '';
     setToolCalls([]);
 
     const abortStream = api.createChatStream(
@@ -237,11 +245,6 @@ export default function Chat() {
 
     (window as { abortChat?: () => void }).abortChat = abortStream;
 
-    const response: { session_key?: string } = { session_key: activeSessionKey || undefined };
-    if (response.session_key && !activeSessionKey) {
-      setCurrentSessionKey(response.session_key);
-      navigate(`/chat/${response.session_key}`, { replace: true });
-    }
   };
 
   const handleStop = () => {

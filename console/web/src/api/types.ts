@@ -119,6 +119,7 @@ export interface SkillConfig {
 export type WSMessageType =
   | 'chat_token'
   | 'chat_done'
+  | 'session_key'
   | 'tool_call'
   | 'tool_result'
   | 'tool_progress'
@@ -135,6 +136,7 @@ export interface WSMessage {
 export interface StreamChunk {
   type: WSMessageType;
   content?: string;
+  session_key?: string;
   tool_call?: ToolCall;
   tool_name?: string;
   tool_result?: string;

@@ -14,22 +14,28 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# 确保可以导入console模块
-_console_root = Path(__file__).parent.parent
-if str(_console_root) not in sys.path:
-    sys.path.insert(0, str(_console_root))
+# 调试/开发时强制使用本地 console 代码，避免加载 .venv 里安装的包
+_repo_root = Path(__file__).resolve().parent.parent
+_repo_root_str = str(_repo_root)
+# 把仓库根插到 sys.path 最前，保证 import console 时命中本地包
+while _repo_root_str in sys.path:
+    sys.path.remove(_repo_root_str)
+sys.path.insert(0, _repo_root_str)
+# 若 console 已被加载（例如由其它入口先加载），则卸载以便从本地重新加载
+for key in list(sys.modules.keys()):
+    if key == "console" or key.startswith("console."):
+        del sys.modules[key]
 
 import typer
 
 from console.server.extension import (
     build_frontend,
-    run_console_server,
     run_console_with_gateway,
     run_frontend_dev,
     run_full_stack,
 )
 
-__logo__ = """
+__logo__ = r"""
   _   _      _ _         _
  | \ | | ___| | | ___   | |
  |  \| |/ _ \ | |/ _ \  | |

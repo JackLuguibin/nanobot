@@ -183,7 +183,7 @@ export default function Dashboard() {
         <Card hoverable>
           <Statistic
             title="Uptime"
-            value={status?.uptime_seconds ? formatUptime(status.uptime_seconds) : '-'}
+            value={status?.running && status?.uptime_seconds ? formatUptime(status.uptime_seconds) : '-'}
             prefix={<ClockCircleOutlined className="text-blue-500" />}
           />
         </Card>

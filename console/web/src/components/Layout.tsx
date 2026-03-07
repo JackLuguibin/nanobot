@@ -200,7 +200,7 @@ export default function Layout({ children }: LayoutProps) {
           />
         </header>
 
-        <div className="flex-1 min-h-0 overflow-hidden pt-2">
+        <div className="flex-1 min-h-0 overflow-y-auto pt-2">
           {children}
         </div>
       </main>

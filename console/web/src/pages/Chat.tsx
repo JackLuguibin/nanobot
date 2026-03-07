@@ -352,7 +352,7 @@ export default function Chat() {
       {/* Chat Area */}
       <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
-        <div className="h-16 px-6 flex items-center justify-between border-b border-gray-200/50 dark:border-gray-700/50 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm">
+        <div className="h-12 px-6 flex items-center justify-between border-b border-gray-200/50 dark:border-gray-700/50 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/20">
               <Bot className="w-5 h-5 text-white" />
@@ -375,9 +375,9 @@ export default function Chat() {
         </div>
 
         {/* Messages / Hero */}
-        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-6 py-6 md:py-8">
+        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-6 py-2 md:py-3">
           {messages.length === 0 && showSuggestions ? (
-            <div className="h-full flex flex-col items-center justify-center text-center text-gray-600 dark:text-gray-300">
+            <div className="min-h-full flex flex-col items-center justify-start pt-2 md:pt-4 text-center text-gray-600 dark:text-gray-300">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 dark:from-primary-900/30 dark:to-blue-900/20 flex items-center justify-center mb-6 shadow-xl shadow-primary-500/10">
                 <Bot className="w-10 h-10 text-primary-600" />
               </div>

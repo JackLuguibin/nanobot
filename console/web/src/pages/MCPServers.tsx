@@ -29,13 +29,13 @@ const { Text } = Typography;
 
 export default function MCPServers() {
   const queryClient = useQueryClient();
-  const { addToast } = useAppStore();
+  const { addToast, currentBotId } = useAppStore();
   const [selectedServer, setSelectedServer] = useState<string | null>(null);
   const [testing, setTesting] = useState<string | null>(null);
 
   const { data: mcpServers, isLoading, error, refetch } = useQuery({
-    queryKey: ['mcp'],
-    queryFn: api.getMCPServers,
+    queryKey: ['mcp', currentBotId],
+    queryFn: () => api.getMCPServers(currentBotId),
   });
 
   const testMutation = useMutation({

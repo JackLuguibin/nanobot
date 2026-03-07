@@ -12,6 +12,18 @@ export interface ChatRequest {
   session_key?: string;
   message: string;
   stream?: boolean;
+  bot_id?: string;
+}
+
+export interface BotInfo {
+  id: string;
+  name: string;
+  config_path: string;
+  workspace_path: string;
+  created_at: string;
+  updated_at: string;
+  is_default: boolean;
+  running: boolean;
 }
 
 export interface ChatResponse {

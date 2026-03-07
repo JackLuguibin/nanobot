@@ -34,6 +34,7 @@ class ChatRequest(BaseModel):
     session_key: str | None = None
     message: str
     stream: bool = False
+    bot_id: str | None = None
 
 
 class ChatResponse(BaseModel):

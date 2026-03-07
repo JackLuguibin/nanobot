@@ -45,13 +45,13 @@ interface FormData {
 
 export default function Settings() {
   const queryClient = useQueryClient();
-  const { theme, setTheme, addToast } = useAppStore();
+  const { theme, setTheme, addToast, currentBotId } = useAppStore();
   const [activeTab, setActiveTab] = useState<SettingsTab>('general');
   const [form] = Form.useForm<FormData>();
 
   const { data: config, isLoading } = useQuery({
-    queryKey: ['config'],
-    queryFn: api.getConfig,
+    queryKey: ['config', currentBotId],
+    queryFn: () => api.getConfig(currentBotId),
   });
 
   useEffect(() => {
@@ -73,7 +73,7 @@ export default function Settings() {
 
   const updateConfigMutation = useMutation({
     mutationFn: ({ section, data }: { section: string; data: Record<string, unknown> }) =>
-      api.updateConfig(section, data),
+      api.updateConfig(section, data, currentBotId),
     onSuccess: () => {
       addToast({ type: 'success', message: 'Settings saved successfully' });
       queryClient.invalidateQueries({ queryKey: ['config'] });

@@ -24,13 +24,13 @@ import { useAppStore } from '../store';
 
 export default function Channels() {
   const queryClient = useQueryClient();
-  const { addToast } = useAppStore();
+  const { addToast, currentBotId } = useAppStore();
   const [selectedChannel, setSelectedChannel] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<string | null>(null);
 
   const { data: channels, isLoading, error, refetch } = useQuery({
-    queryKey: ['channels'],
-    queryFn: api.getChannels,
+    queryKey: ['channels', currentBotId],
+    queryFn: () => api.getChannels(currentBotId),
   });
 
   const refreshMutation = useMutation({

@@ -2,6 +2,8 @@
 
 This module provides a central state manager that bridges the FastAPI backend
 with the nanobot core components (AgentLoop, SessionManager, ChannelManager, etc.).
+
+Supports multiple bot instances, each with independent config and workspace.
 """
 
 from __future__ import annotations
@@ -32,13 +34,14 @@ def _count_session_messages_from_path(path: Path) -> int:
 
 class BotState:
     """
-    Central state manager for the console.
+    Central state manager for a single bot instance.
 
     Provides a unified interface to access nanobot's core components
     and their current state.
     """
 
-    def __init__(self):
+    def __init__(self, bot_id: str = "default"):
+        self.bot_id = bot_id
         self._agent_loop: AgentLoop | None = None
         self._session_manager: SessionManager | None = None
         self._channel_manager: ChannelManager | None = None
@@ -70,7 +73,7 @@ class BotState:
         self._workspace = workspace
         self._start_time = time.time()
         self._reset_daily_stats()
-        logger.info("BotState initialized successfully")
+        logger.info("BotState initialized for bot '{}'", self.bot_id)
 
     def _reset_daily_stats(self) -> None:
         """Reset daily message counter if it's a new day."""
@@ -130,7 +133,6 @@ class BotState:
     def add_tool_call_log(self, log: dict) -> None:
         """Add a tool call log entry."""
         self._tool_call_logs.append(log)
-        # Trim if exceeds max
         if len(self._tool_call_logs) > self._max_tool_logs:
             self._tool_call_logs = self._tool_call_logs[-self._max_tool_logs :]
 
@@ -142,7 +144,6 @@ class BotState:
         """Get comprehensive status information."""
         self._reset_daily_stats()
 
-        # Get channel statuses
         channels = []
         if self._channel_manager and hasattr(self._channel_manager, "_channels"):
             for name, channel in self._channel_manager._channels.items():
@@ -157,7 +158,6 @@ class BotState:
                     }
                 )
 
-        # Get MCP server statuses
         mcp_servers = []
         if self._agent_loop and hasattr(self._agent_loop, "_mcp_servers"):
             for name, config in self._agent_loop._mcp_servers.items():
@@ -173,7 +173,6 @@ class BotState:
                     }
                 )
 
-        # Get active sessions
         active_sessions = 0
         if self._session_manager and hasattr(self._session_manager, "_cache"):
             active_sessions = len(self._session_manager._cache)
@@ -193,11 +192,10 @@ class BotState:
         }
 
     async def get_sessions(self) -> list[dict[str, Any]]:
-        """Get all sessions: merge in-memory cache with sessions from storage (session directory)."""
+        """Get all sessions: merge in-memory cache with sessions from storage."""
         if not self._session_manager:
             return []
 
-        # Build key -> session_info; start from storage so all session files are included
         by_key: dict[str, dict[str, Any]] = {}
         if hasattr(self._session_manager, "list_sessions"):
             try:
@@ -205,7 +203,6 @@ class BotState:
                     key = s.get("key", "")
                     if not key:
                         continue
-                    # 补丁：nanobot 的 list_sessions 不返回 message_count，从文件行数推算
                     msg_count = s.get("message_count")
                     if msg_count is None and s.get("path"):
                         msg_count = _count_session_messages_from_path(Path(s["path"]))
@@ -220,7 +217,6 @@ class BotState:
             except Exception:
                 pass
 
-        # Overlay cache so in-memory sessions have accurate message_count and last_message
         if hasattr(self._session_manager, "_cache"):
             for key, session in self._session_manager._cache.items():
                 messages = getattr(session, "messages", [])
@@ -246,7 +242,6 @@ class BotState:
         if not self._session_manager:
             return None
 
-        # Try to get from in-memory cache first
         if hasattr(self._session_manager, "_cache"):
             session = self._session_manager._cache.get(key)
             if session:
@@ -258,7 +253,6 @@ class BotState:
                     "message_count": len(history),
                 }
 
-        # Try to load from storage using get_or_create
         if hasattr(self._session_manager, "get_or_create"):
             try:
                 session = self._session_manager.get_or_create(key)
@@ -279,7 +273,6 @@ class BotState:
         if not self._session_manager:
             raise RuntimeError("Session manager not initialized")
 
-        # Generate key if not provided
         if key is None:
             import uuid
 
@@ -297,12 +290,10 @@ class BotState:
         if not self._session_manager:
             return False
 
-        # Try to delete from in-memory cache
         if hasattr(self._session_manager, "_cache") and key in self._session_manager._cache:
             del self._session_manager._cache[key]
             return True
 
-        # Try to invalidate from storage
         if hasattr(self._session_manager, "invalidate"):
             try:
                 self._session_manager.invalidate(key)
@@ -319,12 +310,10 @@ class BotState:
     async def update_config(self, section: str, data: dict[str, Any]) -> dict[str, Any]:
         """Update configuration section."""
         async with self._lock:
-            # Update in-memory config
             if section not in self._config:
                 self._config[section] = {}
             self._config[section].update(data)
 
-            # Write to disk
             if self._config_path and self._config_path.exists():
                 import json
 
@@ -337,16 +326,16 @@ class BotState:
 
     async def get_config_schema(self) -> dict[str, Any]:
         """Get the configuration schema."""
-        from nanobot.config.schema import ConfigSchema
+        from nanobot.config.schema import Config
 
-        return ConfigSchema.model_json_schema()
+        return Config.model_json_schema()
 
     async def validate_config(self, data: dict[str, Any]) -> dict[str, Any]:
         """Validate configuration data."""
-        from nanobot.config.schema import ConfigSchema
+        from nanobot.config.schema import Config
 
         try:
-            ConfigSchema(**data)
+            Config(**data)
             return {"valid": True, "errors": []}
         except Exception as e:
             return {"valid": False, "errors": [str(e)]}
@@ -356,7 +345,6 @@ class BotState:
         if not self._agent_loop:
             return False
 
-        # Try to stop the agent loop
         if hasattr(self._agent_loop, "_running"):
             self._agent_loop._running = False
             return True
@@ -365,22 +353,63 @@ class BotState:
 
     async def restart_bot(self) -> bool:
         """Restart the bot (reinitialize components)."""
-        logger.warning("Restart requested")
-        # Full restart would require:
-        # 1. Stop current agent loop
-        # 2. Close MCP connections
-        # 3. Reinitialize all components
-        # For now, return False as full restart is complex
+        logger.warning("Restart requested for bot '{}'", self.bot_id)
         return False
 
 
-# Global state instance
-_state: BotState | None = None
+class BotStateManager:
+    """Manages multiple BotState instances, one per bot."""
+
+    def __init__(self):
+        self._states: dict[str, BotState] = {}
+        self._default_bot_id: str | None = None
+
+    @property
+    def default_bot_id(self) -> str | None:
+        return self._default_bot_id
+
+    @default_bot_id.setter
+    def default_bot_id(self, bot_id: str | None) -> None:
+        self._default_bot_id = bot_id
+
+    def get_state(self, bot_id: str | None = None) -> BotState:
+        """Get BotState for a specific bot. Falls back to default bot."""
+        bid = bot_id or self._default_bot_id
+        if bid and bid in self._states:
+            return self._states[bid]
+        if self._states:
+            return next(iter(self._states.values()))
+        state = BotState("_empty")
+        return state
+
+    def set_state(self, bot_id: str, state: BotState) -> None:
+        self._states[bot_id] = state
+
+    def remove_state(self, bot_id: str) -> BotState | None:
+        return self._states.pop(bot_id, None)
+
+    def has_state(self, bot_id: str) -> bool:
+        return bot_id in self._states
+
+    def all_bot_ids(self) -> list[str]:
+        return list(self._states.keys())
+
+    def all_states(self) -> dict[str, BotState]:
+        return dict(self._states)
 
 
-def get_state() -> BotState:
-    """Get the global state instance."""
-    global _state
-    if _state is None:
-        _state = BotState()
-    return _state
+# Global state manager
+_manager: BotStateManager | None = None
+
+
+def get_state_manager() -> BotStateManager:
+    """Get the global BotStateManager."""
+    global _manager
+    if _manager is None:
+        _manager = BotStateManager()
+    return _manager
+
+
+def get_state(bot_id: str | None = None) -> BotState:
+    """Convenience: get BotState for a bot (backward-compatible)."""
+    return get_state_manager().get_state(bot_id)

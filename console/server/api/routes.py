@@ -208,13 +208,14 @@ async def send_chat_message_stream(request: ChatRequest):
             # Track accumulated response for tool call handling
             accumulated_response = []
 
-            # Define progress callback to stream tokens
+            # Define progress callback to stream tokens (agent only calls this when there are tool calls)
             async def stream_progress(content: str) -> None:
                 yield f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n"
                 accumulated_response.append(content)
 
-            # Process the message through the agent
-            await agent_loop.process_direct(
+            # Process the message through the agent; capture full response for chat_done
+            # (when there are no tool calls, on_progress is never called, so we need to send content in chat_done)
+            response_text = await agent_loop.process_direct(
                 content=request.message,
                 session_key=session_key,
                 channel="console",
@@ -233,8 +234,8 @@ async def send_chat_message_stream(request: ChatRequest):
             except Exception as e:
                 logger.warning("Failed to broadcast status update: {}", e)
 
-            # Send done message
-            yield f"data: {json.dumps({'type': 'chat_done', 'done': True})}\n\n"
+            # Send done message with full content so frontend can show it when no tokens were streamed
+            yield f"data: {json.dumps({'type': 'chat_done', 'done': True, 'content': response_text or ''})}\n\n"
 
         except Exception as e:
             logger.error("Error in streaming chat: {}", e)

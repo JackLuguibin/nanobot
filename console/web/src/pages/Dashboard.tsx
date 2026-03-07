@@ -229,25 +229,28 @@ export default function Dashboard() {
             </span>
           }
           size="small"
+          bodyStyle={{ padding: 0 }}
         >
-          <List
-            dataSource={recentSessions || []}
-            locale={{ emptyText: 'No recent sessions' }}
-            renderItem={(session) => (
-              <List.Item>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{session.title || session.key}</p>
-                  <Text type="secondary" className="text-xs truncate block">
-                    {session.last_message || 'No messages'}
-                  </Text>
-                </div>
-                <div className="text-right text-sm text-gray-500 ml-4 flex-shrink-0">
-                  <p>{session.message_count} msgs</p>
-                  <p className="text-xs">{formatTimeAgo(session.updated_at)}</p>
-                </div>
-              </List.Item>
-            )}
-          />
+          <div className="max-h-[320px] overflow-y-auto">
+            <List
+              dataSource={recentSessions || []}
+              locale={{ emptyText: 'No recent sessions' }}
+              renderItem={(session) => (
+                <List.Item className="!px-4 !py-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{session.title || session.key}</p>
+                    <Text type="secondary" className="text-xs block line-clamp-2 break-words">
+                      {session.last_message || 'No messages'}
+                    </Text>
+                  </div>
+                  <div className="text-right text-sm text-gray-500 ml-4 flex-shrink-0">
+                    <p>{session.message_count} msgs</p>
+                    <p className="text-xs">{formatTimeAgo(session.updated_at)}</p>
+                  </div>
+                </List.Item>
+              )}
+            />
+          </div>
         </Card>
 
         {/* System Status */}

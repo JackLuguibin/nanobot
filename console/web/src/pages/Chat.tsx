@@ -301,7 +301,7 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-screen bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="flex h-full bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
       {/* Mobile Sessions Toggle Button */}
       <button
         onClick={() => setSessionsSidebarOpen(!sessionsSidebarOpen)}
@@ -331,7 +331,7 @@ export default function Chat() {
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-3 space-y-2">
+        <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
           {sessions?.map((session) => (
             <button
               key={session.key}
@@ -387,7 +387,7 @@ export default function Chat() {
         </div>
 
         {/* Messages / Hero */}
-        <div className="flex-1 overflow-y-auto px-4 md:px-6 py-6 md:py-8">
+        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-6 py-6 md:py-8">
           {messages.length === 0 && showSuggestions ? (
             <div className="h-full flex flex-col items-center justify-center text-center text-gray-600 dark:text-gray-300">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 dark:from-primary-900/30 dark:to-blue-900/20 flex items-center justify-center mb-6 shadow-xl shadow-primary-500/10">

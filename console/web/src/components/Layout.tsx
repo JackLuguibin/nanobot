@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Menu, Button, Badge, Segmented } from 'antd';
 import type { MenuProps } from 'antd';
 import { useAppStore } from '../store';
+import { useWebSocket } from '../hooks/useWebSocket';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -67,8 +68,13 @@ const navSections: NavSection[] = [
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
-  const { sidebarCollapsed, setSidebarCollapsed, status, theme, setTheme } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed, status, theme, setTheme, wsConnected } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Establish WebSocket connection for real-time status updates
+  useWebSocket();
+
+  console.log('[Layout] Rendered, wsConnected:', wsConnected);
 
   const selectedKey = '/' + (location.pathname.split('/')[1] || 'dashboard');
 
@@ -90,7 +96,7 @@ export default function Layout({ children }: LayoutProps) {
   }));
 
   return (
-    <div className="flex min-h-screen">
+    <div className="flex h-screen overflow-hidden">
       {/* Mobile Menu Button */}
       <button
         onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
@@ -135,7 +141,7 @@ export default function Layout({ children }: LayoutProps) {
         </div>
 
         {/* Navigation using antd Menu */}
-        <nav className="flex-1 overflow-y-auto py-2">
+        <nav className="flex-1 overflow-y-auto no-scrollbar py-2">
           <Menu
             mode="inline"
             selectedKeys={[selectedKey]}
@@ -190,9 +196,23 @@ export default function Layout({ children }: LayoutProps) {
       </aside>
 
       {/* Main Content */}
-      <main className="flex-1 min-w-0 overflow-auto">
+      <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Global Header */}
-        <header className="sticky top-0 z-20 h-14 flex items-center justify-end px-4 lg:px-6 border-b border-gray-200/50 dark:border-gray-700/50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
+        <header className="shrink-0 sticky top-0 z-20 h-14 flex items-center justify-between px-4 lg:px-6 border-b border-gray-200/50 dark:border-gray-700/50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => window.location.reload()}
+              className="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+            >
+              <Badge
+                status={wsConnected ? 'success' : 'error'}
+                className={wsConnected ? '' : 'opacity-50'}
+              />
+              <span className="text-xs text-gray-400">
+                {wsConnected ? '实时同步中' : '点击重连'}
+              </span>
+            </button>
+          </div>
           <Segmented
             value={theme}
             onChange={(val) => setTheme(val as 'light' | 'dark' | 'system')}
@@ -204,7 +224,9 @@ export default function Layout({ children }: LayoutProps) {
           />
         </header>
 
-        {children}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {children}
+        </div>
       </main>
     </div>
   );

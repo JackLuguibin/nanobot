@@ -15,7 +15,7 @@ import sys
 from pathlib import Path
 
 # 确保可以导入console模块
-_console_root = Path(__file__).parent.parent.parent
+_console_root = Path(__file__).parent.parent
 if str(_console_root) not in sys.path:
     sys.path.insert(0, str(_console_root))
 
@@ -31,10 +31,10 @@ from console.server.extension import (
 
 __logo__ = """
   _   _      _ _         _
- | \\ | | ___| | | ___   | |
- |  \\| |/ _ \\ | |/ _ \\  | |
- | |\\  |  __/ | | (_) | |_|
- |_| \\_|\\___|_|_|\\___/  (_)
+ | \ | | ___| | | ___   | |
+ |  \| |/ _ \ | |/ _ \  | |
+ | |\  |  __/ | | (_) | |_|
+ |_| \_|\___|_|_|\___/  (_)
 """
 
 app = typer.Typer(

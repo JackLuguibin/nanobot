@@ -182,52 +182,47 @@ class BotState:
         }
 
     async def get_sessions(self) -> list[dict[str, Any]]:
-        """Get all sessions."""
+        """Get all sessions: merge in-memory cache with sessions from storage (session directory)."""
         if not self._session_manager:
             return []
 
-        sessions = []
-
-        # Get sessions from the cache
-        if hasattr(self._session_manager, "_cache"):
-            for key, session in self._session_manager._cache.items():
-                history = session.get_history()
-                sessions.append(
-                    {
+        # Build key -> session_info; start from storage so all session files are included
+        by_key: dict[str, dict[str, Any]] = {}
+        if hasattr(self._session_manager, "list_sessions"):
+            try:
+                for s in self._session_manager.list_sessions():
+                    key = s.get("key", "")
+                    if not key:
+                        continue
+                    by_key[key] = {
                         "key": key,
                         "title": key.split(":")[0] if ":" in key else key,
-                        "message_count": len(history),
-                        "last_message": history[-1].get("content", "")[:100] if history else None,
-                        "created_at": session.created_at.isoformat()
-                        if hasattr(session, "created_at") and session.created_at
-                        else None,
-                        "updated_at": session.updated_at.isoformat()
-                        if hasattr(session, "updated_at") and session.updated_at
-                        else None,
+                        "message_count": 0,
+                        "last_message": None,
+                        "created_at": s.get("created_at"),
+                        "updated_at": s.get("updated_at"),
                     }
-                )
-
-        # If no sessions in cache, try to list from storage
-        if not sessions and hasattr(self._session_manager, "list_sessions"):
-            try:
-                stored_sessions = self._session_manager.list_sessions()
-                for s in stored_sessions:
-                    sessions.append(
-                        {
-                            "key": s.get("key", ""),
-                            "title": s.get("key", "").split(":")[0]
-                            if ":" in s.get("key", "")
-                            else s.get("key", ""),
-                            "message_count": s.get("message_count", 0),
-                            "last_message": None,
-                            "created_at": s.get("created_at"),
-                            "updated_at": s.get("updated_at"),
-                        }
-                    )
             except Exception:
                 pass
 
-        # Sort by updated_at descending
+        # Overlay cache so in-memory sessions have accurate message_count and last_message
+        if hasattr(self._session_manager, "_cache"):
+            for key, session in self._session_manager._cache.items():
+                messages = getattr(session, "messages", [])
+                by_key[key] = {
+                    "key": key,
+                    "title": key.split(":")[0] if ":" in key else key,
+                    "message_count": len(messages),
+                    "last_message": messages[-1].get("content", "")[:100] if messages else None,
+                    "created_at": session.created_at.isoformat()
+                    if hasattr(session, "created_at") and session.created_at
+                    else None,
+                    "updated_at": session.updated_at.isoformat()
+                    if hasattr(session, "updated_at") and session.updated_at
+                    else None,
+                }
+
+        sessions = list(by_key.values())
         sessions.sort(key=lambda s: s.get("updated_at") or "", reverse=True)
         return sessions
 

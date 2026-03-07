@@ -142,14 +142,27 @@ export default function Chat() {
     enabled: !!activeSessionKey,
   });
 
+  // 切换会话时立即清空消息，避免短暂显示上一会话的内容
+  const prevActiveSessionKeyRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (prevActiveSessionKeyRef.current !== undefined && prevActiveSessionKeyRef.current !== activeSessionKey) {
+      setMessages([]);
+      setShowSuggestions(!activeSessionKey);
+    }
+    prevActiveSessionKeyRef.current = activeSessionKey;
+  }, [activeSessionKey]);
+
   useEffect(() => {
     if (sessionData?.messages && !isStreaming) {
-      setMessages(
-        (sessionData.messages as Message[]).map((msg, idx) => ({
+      const serverMessages = sessionData.messages as Message[];
+      setMessages((prev) => {
+        // 若本地消息更多（例如刚在 chat_done 里加了助手消息），不要用旧的 sessionData 覆盖
+        if (prev.length > serverMessages.length) return prev;
+        return serverMessages.map((msg, idx) => ({
           ...msg,
           id: `msg-${idx}-${Date.now()}`,
-        }))
-      );
+        }));
+      });
       setShowSuggestions(false);
     } else if (!activeSessionKey) {
       setShowSuggestions(true);
@@ -200,20 +213,22 @@ export default function Chat() {
         setToolCalls((prev) => prev.map((tc) => ({ ...tc, status: 'error', result: chunk.error })));
         addToast({ type: 'error', message: chunk.error });
       } else if (chunk.type === 'chat_done') {
-        const finalContent = streamingContentRef.current;
+        // Prefer content from chat_done (backend sends full response when no tokens were streamed)
+        const finalContent =
+          (chunk.content !== undefined && chunk.content !== ''
+            ? chunk.content
+            : streamingContentRef.current) || 'Task completed.';
         streamingContentRef.current = '';
         setIsStreaming(false);
         setStreamingContent('');
-        if (finalContent || toolCalls.length > 0) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: `msg-${Date.now()}`,
-              role: 'assistant',
-              content: finalContent || 'Task completed.',
-            },
-          ]);
-        }
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-${Date.now()}`,
+            role: 'assistant',
+            content: finalContent,
+          },
+        ]);
         setToolCalls([]);
         queryClient.invalidateQueries({ queryKey: ['sessions'] });
       }

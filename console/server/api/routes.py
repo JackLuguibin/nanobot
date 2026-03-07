@@ -2,29 +2,25 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from console.server.api.models import (
+    ChannelStatus,
     ChatRequest,
     ChatResponse,
-    ChannelStatus,
-    ConfigSection,
     ConfigUpdateRequest,
     MCPStatus,
     SessionInfo,
     StatusResponse,
     ToolCallLog,
-    WSMessage,
-    WSMessageType,
 )
 from console.server.api.state import get_state
-from console.server.api.websocket import handle_websocket, get_connection_manager
+from console.server.api.websocket import get_connection_manager, handle_websocket
 
 # Create router
 router = APIRouter(prefix="/api")
@@ -67,14 +63,14 @@ async def get_tool_logs(
     """Get tool call logs."""
     state = get_state()
     logs = state.tool_call_logs
-    
+
     # Filter by tool name if specified
     if tool_name:
         logs = [log for log in logs if log.get("tool_name") == tool_name]
-    
+
     # Limit results
     logs = logs[-limit:]
-    
+
     return [ToolCallLog(**log) for log in logs]
 
 
@@ -147,22 +143,24 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
     """Send a chat message and get a response."""
     state = get_state()
     agent_loop = state.agent_loop
-    
+
     if agent_loop is None:
-        raise HTTPException(status_code=503, detail="Agent not running. Please configure an API key in your config.")
-    
+        raise HTTPException(
+            status_code=503, detail="Agent not running. Please configure an API key in your config."
+        )
+
     # Get or create session
     session_key = request.session_key
     if session_key is None:
         session = await state.create_session()
         session_key = session["key"]
-    
+
     # Process the message through the agent
     try:
         # Use agent.process_direct for direct message processing
         async def silent_progress(content: str) -> None:
             pass
-        
+
         response = await agent_loop.process_direct(
             content=request.message,
             session_key=session_key,
@@ -170,16 +168,16 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
             chat_id="web",
             on_progress=silent_progress,
         )
-        
+
         # Increment message counter
         state.increment_messages()
-        
+
         return ChatResponse(
             session_key=session_key,
             message=response or "",
             done=True,
         )
-        
+
     except Exception as e:
         logger.error("Error processing chat message: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
@@ -192,7 +190,9 @@ async def send_chat_message_stream(request: ChatRequest):
     agent_loop = state.agent_loop
 
     if agent_loop is None:
-        raise HTTPException(status_code=503, detail="Agent not running. Please configure an API key in your config.")
+        raise HTTPException(
+            status_code=503, detail="Agent not running. Please configure an API key in your config."
+        )
 
     # Get or create session
     session_key = request.session_key
@@ -214,7 +214,7 @@ async def send_chat_message_stream(request: ChatRequest):
                 accumulated_response.append(content)
 
             # Process the message through the agent
-            response = await agent_loop.process_direct(
+            await agent_loop.process_direct(
                 content=request.message,
                 session_key=session_key,
                 channel="console",
@@ -239,7 +239,7 @@ async def send_chat_message_stream(request: ChatRequest):
         except Exception as e:
             logger.error("Error in streaming chat: {}", e)
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
-    
+
     return StreamingResponse(
         generate(),
         media_type="text/event-stream",
@@ -352,8 +352,9 @@ async def restart_bot() -> dict[str, str]:
 async def health_check() -> dict[str, str]:
     """Health check endpoint."""
     from datetime import datetime
+
     from nanobot import __version__
-    
+
     return {
         "status": "healthy",
         "version": __version__,

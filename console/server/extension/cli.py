@@ -7,6 +7,7 @@ CLI命令只是轻量级入口点，实际逻辑在这里实现。
 from __future__ import annotations
 
 import asyncio
+import shlex
 import subprocess
 import sys
 import threading
@@ -15,15 +16,26 @@ import webbrowser
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import typer
+
 if TYPE_CHECKING:
     from rich.console import Console
 
 # 尝试导入rich console，如果不可用则使用简单的print
 try:
     from rich.console import Console
+
     _console = Console()
 except ImportError:
     _console = None
+
+
+def _run_npm(args: list[str], cwd: Path, **kwargs) -> subprocess.CompletedProcess:
+    """在 Windows 与 Unix 上正确执行 npm（Windows 上 npm 为 npm.cmd）。"""
+    if sys.platform == "win32":
+        cmd = "npm " + " ".join(shlex.quote(a) for a in args)
+        return subprocess.run(cmd, cwd=cwd, shell=True, **kwargs)
+    return subprocess.run(["npm"] + args, cwd=cwd, **kwargs)
 
 
 def _get_console_root() -> Path:
@@ -126,6 +138,7 @@ def run_console_server(
     from console.server.main import app as fastapi_app
 
     if open_browser:
+
         def open_browser_delayed():
             time.sleep(2)
             webbrowser.open(f"http://{host}:{port}")
@@ -152,8 +165,8 @@ def ensure_frontend_built() -> bool:
 
     _print("[yellow]Frontend not built. Building now...[/yellow]")
     try:
-        subprocess.run(["npm", "install"], cwd=console_web, check=True, capture_output=True)
-        subprocess.run(["npm", "run", "build"], cwd=console_web, check=True, capture_output=True)
+        _run_npm(["install"], console_web, check=True, capture_output=True)
+        _run_npm(["run", "build"], console_web, check=True, capture_output=True)
         _print("[green]✓[/green] Frontend built")
         return True
     except subprocess.CalledProcessError as e:
@@ -163,7 +176,7 @@ def ensure_frontend_built() -> bool:
 
 def check_and_run_onboard() -> None:
     """检查配置并运行onboard流程。"""
-    from nanobot.config.loader import get_config_path, load_config, save_config
+    from nanobot.config.loader import get_config_path, save_config
     from nanobot.config.schema import Config
     from nanobot.utils.helpers import get_workspace_path, sync_workspace_templates
 
@@ -254,6 +267,7 @@ def run_gateway(
         async def on_cron_job(job: CronJob) -> str | None:
             from nanobot.agent.tools.cron import CronTool
             from nanobot.agent.tools.message import MessageTool
+
             reminder_note = (
                 "[Scheduled Task] Timer finished.\n\n"
                 f"Task '{job.name}' has been triggered.\n"
@@ -278,12 +292,16 @@ def run_gateway(
                 return response
             if job.payload.deliver and job.payload.to and response:
                 from nanobot.bus.events import OutboundMessage
-                await bus.publish_outbound(OutboundMessage(
-                    channel=job.payload.channel or "cli",
-                    chat_id=job.payload.to,
-                    content=response
-                ))
+
+                await bus.publish_outbound(
+                    OutboundMessage(
+                        channel=job.payload.channel or "cli",
+                        chat_id=job.payload.to,
+                        content=response,
+                    )
+                )
             return response
+
         cron.on_job = on_cron_job
 
         channels = ChannelManager(config, bus)
@@ -303,8 +321,10 @@ def run_gateway(
 
         async def on_heartbeat_execute(tasks):
             channel, chat_id = _pick_heartbeat_target()
+
             async def _silent(*_args, **_kwargs):
                 pass
+
             return await agent.process_direct(
                 tasks,
                 session_key="heartbeat",
@@ -315,15 +335,19 @@ def run_gateway(
 
         async def on_heartbeat_notify(response):
             from nanobot.bus.events import OutboundMessage
+
             channel, chat_id = _pick_heartbeat_target()
             if channel == "cli":
                 return
-            await bus.publish_outbound(OutboundMessage(channel=channel, chat_id=chat_id, content=response))
+            await bus.publish_outbound(
+                OutboundMessage(channel=channel, chat_id=chat_id, content=response)
+            )
 
         hb_cfg = config.gateway.heartbeat
 
         # Start in limited mode if no provider (no API key)
         if provider is None:
+
             async def run_limited():
                 try:
                     await asyncio.gather(
@@ -378,7 +402,9 @@ def run_gateway(
 
     def run_console_server_thread():
         import uvicorn
+
         from console.server.main import app as fastapi_app
+
         uvicorn.run(fastapi_app, host="0.0.0.0", port=console_port, log_level="info")
 
     console_thread = threading.Thread(target=run_console_server_thread, daemon=True)
@@ -393,9 +419,11 @@ def run_gateway(
     _print("=" * 50)
 
     if open_browser:
+
         def open_browser_delayed():
             time.sleep(2)
             webbrowser.open(f"http://localhost:{console_port}")
+
         browser_thread = threading.Thread(target=open_browser_delayed, daemon=True)
         browser_thread.start()
 
@@ -442,9 +470,11 @@ def run_console_with_gateway(
 
     try:
         import uvicorn
+
         from console.server.main import app as fastapi_app
 
         if open_browser:
+
             def open_browser_delayed():
                 time.sleep(2)
                 webbrowser.open(f"http://{host}:{port}")
@@ -476,12 +506,12 @@ def run_frontend_dev(port: int = 18791) -> None:
 
     if not (console_web / "node_modules").exists():
         _print("[yellow]Installing dependencies...[/yellow]")
-        subprocess.run(["npm", "install"], cwd=console_web, check=True)
+        _run_npm(["install"], console_web, check=True)
 
     _print(f"{_get_logo()} Starting console in development mode...")
 
     try:
-        subprocess.run(["npm", "run", "dev", "--", "--port", str(port)], cwd=console_web)
+        _run_npm(["run", "dev", "--", "--port", str(port)], console_web)
     except KeyboardInterrupt:
         _print("\n[yellow]Console stopped[/yellow]")
 
@@ -493,8 +523,8 @@ def build_frontend() -> None:
     _print(f"{_get_logo()} Building console frontend...")
 
     try:
-        subprocess.run(["npm", "install"], cwd=console_web, check=True)
-        subprocess.run(["npm", "run", "build"], cwd=console_web, check=True)
+        _run_npm(["install"], console_web, check=True)
+        _run_npm(["run", "build"], console_web, check=True)
         _print("[green]✓[/green] Console built successfully")
     except subprocess.CalledProcessError as e:
         _print(f"[red]Build failed: {e}[/red]")
@@ -572,6 +602,7 @@ def run_full_stack(
         async def on_cron_job(job: CronJob) -> str | None:
             from nanobot.agent.tools.cron import CronTool
             from nanobot.agent.tools.message import MessageTool
+
             reminder_note = (
                 "[Scheduled Task] Timer finished.\n\n"
                 f"Task '{job.name}' has been triggered.\n"
@@ -596,12 +627,16 @@ def run_full_stack(
                 return response
             if job.payload.deliver and job.payload.to and response:
                 from nanobot.bus.events import OutboundMessage
-                await bus.publish_outbound(OutboundMessage(
-                    channel=job.payload.channel or "cli",
-                    chat_id=job.payload.to,
-                    content=response
-                ))
+
+                await bus.publish_outbound(
+                    OutboundMessage(
+                        channel=job.payload.channel or "cli",
+                        chat_id=job.payload.to,
+                        content=response,
+                    )
+                )
             return response
+
         cron.on_job = on_cron_job
 
         channels = ChannelManager(config, bus)
@@ -621,8 +656,10 @@ def run_full_stack(
 
         async def on_heartbeat_execute(tasks):
             channel, chat_id = _pick_heartbeat_target()
+
             async def _silent(*_args, **_kwargs):
                 pass
+
             return await agent.process_direct(
                 tasks,
                 session_key="heartbeat",
@@ -633,14 +670,18 @@ def run_full_stack(
 
         async def on_heartbeat_notify(response):
             from nanobot.bus.events import OutboundMessage
+
             channel, chat_id = _pick_heartbeat_target()
             if channel == "cli":
                 return
-            await bus.publish_outbound(OutboundMessage(channel=channel, chat_id=chat_id, content=response))
+            await bus.publish_outbound(
+                OutboundMessage(channel=channel, chat_id=chat_id, content=response)
+            )
 
         hb_cfg = config.gateway.heartbeat
 
         if provider is None:
+
             async def run_limited():
                 try:
                     await asyncio.gather(
@@ -693,7 +734,9 @@ def run_full_stack(
 
     def run_console_server_thread():
         import uvicorn
+
         from console.server.main import app as fastapi_app
+
         uvicorn.run(fastapi_app, host="0.0.0.0", port=console_port, log_level="info")
 
     console_thread = threading.Thread(target=run_console_server_thread, daemon=True)
@@ -704,12 +747,12 @@ def run_full_stack(
         console_web = _get_console_root() / "web"
         if not (console_web / "node_modules").exists():
             _print("[yellow]Installing frontend dependencies...[/yellow]")
-            subprocess.run(["npm", "install"], cwd=console_web, check=True)
+            _run_npm(["install"], console_web, check=True)
 
-        _print(f"[green]✓[/green] Starting frontend dev server on port 3000...")
+        _print("[green]✓[/green] Starting frontend dev server on port 3000...")
 
         def run_frontend():
-            subprocess.run(["npm", "run", "dev", "--", "--port", "3000"], cwd=console_web)
+            _run_npm(["run", "dev", "--", "--port", "3000"], console_web)
 
         frontend_thread = threading.Thread(target=run_frontend, daemon=True)
         frontend_thread.start()
@@ -719,7 +762,7 @@ def run_full_stack(
         _print("=" * 50)
         _print(f"  Gateway:  http://localhost:{gateway_port}")
         _print(f"  Console API: http://localhost:{console_port}")
-        _print(f"  Frontend:  http://localhost:3000")
+        _print("  Frontend:  http://localhost:3000")
         _print("=" * 50)
     else:
         _print("\n" + "=" * 50)
@@ -730,9 +773,11 @@ def run_full_stack(
         _print("=" * 50)
 
         if open_browser:
+
             def open_browser_delayed():
                 time.sleep(2)
                 webbrowser.open(f"http://localhost:{console_port}")
+
             browser_thread = threading.Thread(target=open_browser_delayed, daemon=True)
             browser_thread.start()
 

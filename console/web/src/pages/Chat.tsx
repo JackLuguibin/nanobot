@@ -314,23 +314,11 @@ export default function Chat() {
       <div
         className={`
           ${sessionsSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
-          fixed md:relative z-20 h-screen
+          fixed md:relative z-20 h-screen md:h-full
           w-80 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50
           flex flex-col transition-transform duration-300 ease-out
         `}
       >
-        <div className="p-4 border-b border-gray-200/50 dark:border-gray-700/50">
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            block
-            size="large"
-            onClick={handleNewChat}
-          >
-            New Chat
-          </Button>
-        </div>
-
         <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
           {sessions?.map((session) => (
             <button

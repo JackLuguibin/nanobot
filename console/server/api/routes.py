@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
 
@@ -205,23 +206,43 @@ async def send_chat_message_stream(request: ChatRequest):
             # Send initial session key
             yield f"data: {json.dumps({'type': 'session_key', 'session_key': session_key})}\n\n"
 
-            # Track accumulated response for tool call handling
-            accumulated_response = []
+            # Queue for streaming chunks: on_progress puts SSE lines here; generator consumes and yields
+            queue: asyncio.Queue[str | None] = asyncio.Queue()
+            response_holder: list[str] = []  # [0] = final response from process_direct
+            agent_failed: list[bool] = [False]  # True if run_agent raised
 
-            # Define progress callback to stream tokens (agent only calls this when there are tool calls)
-            async def stream_progress(content: str) -> None:
-                yield f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n"
-                accumulated_response.append(content)
+            async def stream_progress(content: str, *, tool_hint: bool = False) -> None:
+                """Callback must return Awaitable[None], not async generator. Agent may call with tool_hint=True."""
+                await queue.put(f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n")
 
-            # Process the message through the agent; capture full response for chat_done
-            # (when there are no tool calls, on_progress is never called, so we need to send content in chat_done)
-            response_text = await agent_loop.process_direct(
-                content=request.message,
-                session_key=session_key,
-                channel="console",
-                chat_id="web",
-                on_progress=stream_progress,
-            )
+            async def run_agent() -> None:
+                try:
+                    response_text = await agent_loop.process_direct(
+                        content=request.message,
+                        session_key=session_key,
+                        channel="console",
+                        chat_id="web",
+                        on_progress=stream_progress,
+                    )
+                    response_holder.append(response_text or "")
+                except Exception as e:
+                    agent_failed[0] = True
+                    await queue.put(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n")
+                finally:
+                    await queue.put(None)  # sentinel: agent finished
+
+            task = asyncio.create_task(run_agent())
+            while True:
+                chunk = await queue.get()
+                if chunk is None:
+                    break
+                yield chunk
+
+            await task  # consume task so exceptions are not lost
+
+            if agent_failed[0]:
+                # Error already sent in queue; do not send chat_done or increment messages
+                return
 
             # Increment message counter
             state.increment_messages()
@@ -234,8 +255,8 @@ async def send_chat_message_stream(request: ChatRequest):
             except Exception as e:
                 logger.warning("Failed to broadcast status update: {}", e)
 
-            # Send done message with full content so frontend can show it when no tokens were streamed
-            yield f"data: {json.dumps({'type': 'chat_done', 'done': True, 'content': response_text or ''})}\n\n"
+            response_text = response_holder[0] if response_holder else ""
+            yield f"data: {json.dumps({'type': 'chat_done', 'done': True, 'content': response_text})}\n\n"
 
         except Exception as e:
             logger.error("Error in streaming chat: {}", e)

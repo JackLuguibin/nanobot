@@ -414,29 +414,29 @@ export default function Chat() {
               {messages.map((msg) => (
                 <div
                   key={msg.id}
-                  className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  className={`flex gap-3 overflow-visible ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
                 >
                   <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                    className={`w-10 h-10 min-w-[2.5rem] min-h-[2.5rem] rounded-xl flex items-center justify-center flex-shrink-0 overflow-visible p-1.5 box-border ${
                       msg.role === 'user'
                         ? 'bg-gradient-to-br from-primary-500 to-primary-600 shadow-lg shadow-primary-500/25'
                         : 'bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-600'
                     }`}
                   >
                     {msg.role === 'user' ? (
-                      <User className="w-5 h-5 text-white" />
+                      <User className="w-5 h-5 min-w-5 min-h-5 text-white flex-shrink-0" strokeWidth={2} />
                     ) : (
                       <Bot className="w-5 h-5 text-gray-600 dark:text-gray-300" />
                     )}
                   </div>
                   <div
-                    className={`rounded-2xl px-5 py-4 max-w-[80%] ${
+                    className={`relative rounded-2xl px-5 py-4 max-w-[85%] min-w-0 group/bubble ${
                       msg.role === 'user'
-                        ? 'bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-lg shadow-primary-500/25'
-                        : 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm'
+                        ? 'min-w-[8rem] bg-gradient-to-r from-primary-500 to-primary-600 text-white shadow-md shadow-primary-500/20 rounded-br-md'
+                        : 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-bl-md'
                     }`}
                   >
-                    <Tooltip title="Copy message" placement="top">
+                    <Tooltip title="复制" placement="top">
                       <Button
                         type="text"
                         size="small"
@@ -449,11 +449,11 @@ export default function Chat() {
                             />
                           )
                         }
-                        className="float-right ml-2"
+                        className="absolute top-2 right-2 opacity-0 group-hover/bubble:opacity-100 hover:!opacity-100 transition-opacity !p-1 !h-7 !w-7"
                         onClick={() => copyMessage(msg.content, msg.id)}
                       />
                     </Tooltip>
-                    <div className="prose prose-sm dark:prose-invert max-w-none">
+                    <div className={`prose prose-sm dark:prose-invert max-w-none pr-8 ${msg.role === 'user' ? 'prose-invert' : ''}`}>
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
                   </div>

@@ -1,9 +1,11 @@
 import { ReactNode, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Menu, Button, Badge, Segmented } from 'antd';
+import { Menu, Button, Badge, Segmented, Select } from 'antd';
 import type { MenuProps } from 'antd';
+import { useQuery } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import { useWebSocket } from '../hooks/useWebSocket';
+import * as api from '../api/client';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -20,6 +22,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Users,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -61,19 +64,30 @@ const navSections: NavSection[] = [
   },
   {
     title: 'Settings',
-    items: [{ path: '/settings', label: 'Settings', icon: Settings }],
+    items: [
+      { path: '/bots', label: 'Bots', icon: Users },
+      { path: '/settings', label: 'Settings', icon: Settings },
+    ],
   },
 ];
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
-  const { sidebarCollapsed, setSidebarCollapsed, theme, setTheme, wsConnected } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed, theme, setTheme, wsConnected, currentBotId, setCurrentBotId } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Establish WebSocket connection for real-time status updates
   useWebSocket();
 
-  console.log('[Layout] Rendered, wsConnected:', wsConnected);
+  const { data: bots = [] } = useQuery({
+    queryKey: ['bots'],
+    queryFn: api.listBots,
+    refetchInterval: 15000,
+  });
+
+  const activeBotId = currentBotId || bots.find(b => b.is_default)?.id || bots[0]?.id || null;
+  if (bots.length > 0 && !currentBotId && activeBotId) {
+    setCurrentBotId(activeBotId);
+  }
 
   const selectedKey = '/' + (location.pathname.split('/')[1] || 'dashboard');
 
@@ -174,7 +188,7 @@ export default function Layout({ children }: LayoutProps) {
       <main className="flex-1 min-w-0 flex flex-col overflow-hidden">
         {/* Global Header */}
         <header className="shrink-0 sticky top-0 z-20 h-14 flex items-center justify-between px-4 lg:px-6 border-b border-gray-200/50 dark:border-gray-700/50 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => window.location.reload()}
               className="flex items-center gap-2 px-2 py-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
@@ -187,6 +201,25 @@ export default function Layout({ children }: LayoutProps) {
                 {wsConnected ? '实时同步中' : '点击重连'}
               </span>
             </button>
+            {bots.length > 0 && (
+              <Select
+                size="small"
+                value={activeBotId}
+                onChange={(val) => setCurrentBotId(val)}
+                className="min-w-[140px]"
+                options={bots.map(b => ({
+                  value: b.id,
+                  label: (
+                    <span className="flex items-center gap-1.5">
+                      <Bot className="w-3.5 h-3.5 flex-shrink-0" />
+                      <span>{b.name}</span>
+                      {b.is_default && <span className="text-[10px] text-blue-500">(默认)</span>}
+                    </span>
+                  ),
+                }))}
+                popupMatchSelectWidth={false}
+              />
+            )}
           </div>
           <Segmented
             value={theme}

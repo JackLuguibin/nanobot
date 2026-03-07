@@ -51,6 +51,7 @@ interface AppState {
   sidebarCollapsed: boolean;
   theme: Theme;
   currentSessionKey: string | null;
+  currentBotId: string | null;
 
   // Data State
   status: StatusResponse | null;
@@ -71,6 +72,7 @@ interface AppState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setTheme: (theme: Theme) => void;
   setCurrentSessionKey: (key: string | null) => void;
+  setCurrentBotId: (botId: string | null) => void;
 
   setStatus: (status: StatusResponse | null) => void;
   setSessions: (sessions: SessionInfo[]) => void;
@@ -93,6 +95,7 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarCollapsed: false,
   theme: getInitialTheme(),
   currentSessionKey: null,
+  currentBotId: localStorage.getItem('nanobot-current-bot-id') || null,
 
   // Initial Data State
   status: null,
@@ -117,6 +120,10 @@ export const useAppStore = create<AppState>((set) => ({
     set({ theme });
   },
   setCurrentSessionKey: (key) => set({ currentSessionKey: key }),
+  setCurrentBotId: (botId) => {
+    localStorage.setItem('nanobot-current-bot-id', botId || '');
+    set({ currentBotId: botId, currentSessionKey: null });
+  },
 
   setStatus: (status) => set({ status }),
   setSessions: (sessions) => set({ sessions }),

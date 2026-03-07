@@ -27,7 +27,7 @@ import type { ToolCallLog } from '../api/types';
 const { Text } = Typography;
 
 export default function Logs() {
-  const { addToast } = useAppStore();
+  const { addToast, currentBotId } = useAppStore();
   const [toolFilter, setToolFilter] = useState<string>('');
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -35,8 +35,8 @@ export default function Logs() {
   const [limit, setLimit] = useState(100);
 
   const { data: logs, isLoading, error, refetch } = useQuery({
-    queryKey: ['tool-logs', toolFilter, statusFilter, limit],
-    queryFn: () => api.getToolLogs(limit, toolFilter || undefined),
+    queryKey: ['tool-logs', toolFilter, statusFilter, limit, currentBotId],
+    queryFn: () => api.getToolLogs(limit, toolFilter || undefined, currentBotId),
     refetchInterval: 30000,
   });
 

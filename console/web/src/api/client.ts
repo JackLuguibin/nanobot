@@ -1,4 +1,5 @@
 import type {
+  BotInfo,
   ChatRequest,
   ChatResponse,
   ChannelStatus,
@@ -17,6 +18,16 @@ import type {
 
 const API_BASE = '/api';
 
+function botQuery(botId?: string | null): string {
+  return botId ? `?bot_id=${encodeURIComponent(botId)}` : '';
+}
+
+function appendBotQuery(url: string, botId?: string | null): string {
+  if (!botId) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}bot_id=${encodeURIComponent(botId)}`;
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
@@ -33,47 +44,88 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   return response.json();
 }
 
+// ====================
+// Bot Management API
+// ====================
+
+export async function listBots(): Promise<BotInfo[]> {
+  return fetchJson<BotInfo[]>(`${API_BASE}/bots`);
+}
+
+export async function getBot(botId: string): Promise<BotInfo> {
+  return fetchJson<BotInfo>(`${API_BASE}/bots/${encodeURIComponent(botId)}`);
+}
+
+export async function createBot(name: string, sourceConfig?: Record<string, unknown>): Promise<BotInfo> {
+  return fetchJson<BotInfo>(`${API_BASE}/bots`, {
+    method: 'POST',
+    body: JSON.stringify({ name, source_config: sourceConfig }),
+  });
+}
+
+export async function deleteBot(botId: string): Promise<{ status: string }> {
+  return fetchJson(`${API_BASE}/bots/${encodeURIComponent(botId)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function setDefaultBot(botId: string): Promise<{ status: string }> {
+  return fetchJson(`${API_BASE}/bots/default`, {
+    method: 'PUT',
+    body: JSON.stringify({ bot_id: botId }),
+  });
+}
+
+// ====================
 // Status API
-export async function getStatus(): Promise<StatusResponse> {
-  return fetchJson<StatusResponse>(`${API_BASE}/status`);
+// ====================
+
+export async function getStatus(botId?: string | null): Promise<StatusResponse> {
+  return fetchJson<StatusResponse>(`${API_BASE}/status${botQuery(botId)}`);
 }
 
-export async function getChannels(): Promise<ChannelStatus[]> {
-  return fetchJson<ChannelStatus[]>(`${API_BASE}/channels`);
+export async function getChannels(botId?: string | null): Promise<ChannelStatus[]> {
+  return fetchJson<ChannelStatus[]>(`${API_BASE}/channels${botQuery(botId)}`);
 }
 
-export async function getMCPServers(): Promise<MCPStatus[]> {
-  return fetchJson<MCPStatus[]>(`${API_BASE}/mcp`);
+export async function getMCPServers(botId?: string | null): Promise<MCPStatus[]> {
+  return fetchJson<MCPStatus[]>(`${API_BASE}/mcp${botQuery(botId)}`);
 }
 
+// ====================
 // Sessions API
-export async function listSessions(): Promise<SessionInfo[]> {
-  return fetchJson<SessionInfo[]>(`${API_BASE}/sessions`);
+// ====================
+
+export async function listSessions(botId?: string | null): Promise<SessionInfo[]> {
+  return fetchJson<SessionInfo[]>(`${API_BASE}/sessions${botQuery(botId)}`);
 }
 
-export async function getSession(key: string): Promise<{
+export async function getSession(key: string, botId?: string | null): Promise<{
   key: string;
   title?: string;
   messages: unknown[];
   message_count: number;
 }> {
-  return fetchJson(`${API_BASE}/sessions/${encodeURIComponent(key)}`);
+  return fetchJson(appendBotQuery(`${API_BASE}/sessions/${encodeURIComponent(key)}`, botId));
 }
 
-export async function createSession(key?: string): Promise<SessionInfo> {
-  return fetchJson<SessionInfo>(`${API_BASE}/sessions`, {
+export async function createSession(key?: string, botId?: string | null): Promise<SessionInfo> {
+  return fetchJson<SessionInfo>(`${API_BASE}/sessions${botQuery(botId)}`, {
     method: 'POST',
     body: JSON.stringify({ key }),
   });
 }
 
-export async function deleteSession(key: string): Promise<{ status: string }> {
-  return fetchJson(`${API_BASE}/sessions/${encodeURIComponent(key)}`, {
+export async function deleteSession(key: string, botId?: string | null): Promise<{ status: string }> {
+  return fetchJson(appendBotQuery(`${API_BASE}/sessions/${encodeURIComponent(key)}`, botId), {
     method: 'DELETE',
   });
 }
 
+// ====================
 // Chat API
+// ====================
+
 export async function sendChatMessage(request: ChatRequest): Promise<ChatResponse> {
   return fetchJson<ChatResponse>(`${API_BASE}/chat`, {
     method: 'POST',
@@ -81,54 +133,70 @@ export async function sendChatMessage(request: ChatRequest): Promise<ChatRespons
   });
 }
 
+// ====================
 // Tools API
+// ====================
+
 export async function getToolLogs(
   limit = 50,
-  toolName?: string
+  toolName?: string,
+  botId?: string | null
 ): Promise<ToolCallLog[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (toolName) params.append('tool_name', toolName);
+  if (botId) params.append('bot_id', botId);
   return fetchJson<ToolCallLog[]>(`${API_BASE}/tools/log?${params}`);
 }
 
+// ====================
 // Config API
-export async function getConfig(): Promise<ConfigSection> {
-  return fetchJson<ConfigSection>(`${API_BASE}/config`);
+// ====================
+
+export async function getConfig(botId?: string | null): Promise<ConfigSection> {
+  return fetchJson<ConfigSection>(`${API_BASE}/config${botQuery(botId)}`);
 }
 
 export async function updateConfig(
   section: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  botId?: string | null
 ): Promise<ConfigSection> {
-  return fetchJson<ConfigSection>(`${API_BASE}/config`, {
+  return fetchJson<ConfigSection>(`${API_BASE}/config${botQuery(botId)}`, {
     method: 'PUT',
     body: JSON.stringify({ section, data }),
   });
 }
 
-export async function getConfigSchema(): Promise<unknown> {
-  return fetchJson(`${API_BASE}/config/schema`);
+export async function getConfigSchema(botId?: string | null): Promise<unknown> {
+  return fetchJson(`${API_BASE}/config/schema${botQuery(botId)}`);
 }
 
 export async function validateConfig(
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  botId?: string | null
 ): Promise<{ valid: boolean; errors: string[] }> {
-  return fetchJson(`${API_BASE}/config/validate`, {
+  return fetchJson(`${API_BASE}/config/validate${botQuery(botId)}`, {
     method: 'POST',
     body: JSON.stringify(data),
   });
 }
 
+// ====================
 // Control API
-export async function stopCurrentTask(): Promise<{ status: string }> {
-  return fetchJson(`${API_BASE}/control/stop`, { method: 'POST' });
+// ====================
+
+export async function stopCurrentTask(botId?: string | null): Promise<{ status: string }> {
+  return fetchJson(`${API_BASE}/control/stop${botQuery(botId)}`, { method: 'POST' });
 }
 
-export async function restartBot(): Promise<{ status: string }> {
-  return fetchJson(`${API_BASE}/control/restart`, { method: 'POST' });
+export async function restartBot(botId?: string | null): Promise<{ status: string }> {
+  return fetchJson(`${API_BASE}/control/restart${botQuery(botId)}`, { method: 'POST' });
 }
 
+// ====================
 // Health Check
+// ====================
+
 export async function healthCheck(): Promise<{ status: string; version: string }> {
   return fetchJson(`${API_BASE}/health`);
 }
@@ -199,9 +267,10 @@ export function createChatStream(
 // ====================
 
 export async function deleteSessionsBatch(
-  keys: string[]
+  keys: string[],
+  botId?: string | null
 ): Promise<BatchDeleteResponse> {
-  return fetchJson<BatchDeleteResponse>(`${API_BASE}/sessions/batch`, {
+  return fetchJson<BatchDeleteResponse>(`${API_BASE}/sessions/batch${botQuery(botId)}`, {
     method: 'DELETE',
     body: JSON.stringify({ keys }),
   });
@@ -211,8 +280,9 @@ export async function deleteSessionsBatch(
 // Activity Feed
 // ====================
 
-export async function getRecentActivity(limit = 20): Promise<ActivityItem[]> {
+export async function getRecentActivity(limit = 20, botId?: string | null): Promise<ActivityItem[]> {
   const params = new URLSearchParams({ limit: String(limit) });
+  if (botId) params.append('bot_id', botId);
   return fetchJson<ActivityItem[]>(`${API_BASE}/activity?${params}`);
 }
 
@@ -221,15 +291,16 @@ export async function getRecentActivity(limit = 20): Promise<ActivityItem[]> {
 // ====================
 
 export async function refreshChannel(
-  name: string
+  name: string,
+  botId?: string | null
 ): Promise<ChannelRefreshResult> {
-  return fetchJson<ChannelRefreshResult>(`${API_BASE}/channels/${name}/refresh`, {
+  return fetchJson<ChannelRefreshResult>(appendBotQuery(`${API_BASE}/channels/${name}/refresh`, botId), {
     method: 'POST',
   });
 }
 
-export async function refreshAllChannels(): Promise<ChannelRefreshResult[]> {
-  return fetchJson<ChannelRefreshResult[]>(`${API_BASE}/channels/refresh`, {
+export async function refreshAllChannels(botId?: string | null): Promise<ChannelRefreshResult[]> {
+  return fetchJson<ChannelRefreshResult[]>(`${API_BASE}/channels/refresh${botQuery(botId)}`, {
     method: 'POST',
   });
 }
@@ -238,14 +309,14 @@ export async function refreshAllChannels(): Promise<ChannelRefreshResult[]> {
 // MCP Operations
 // ====================
 
-export async function testMCPConnection(name: string): Promise<MCPTestResult> {
-  return fetchJson<MCPTestResult>(`${API_BASE}/mcp/${name}/test`, {
+export async function testMCPConnection(name: string, botId?: string | null): Promise<MCPTestResult> {
+  return fetchJson<MCPTestResult>(appendBotQuery(`${API_BASE}/mcp/${name}/test`, botId), {
     method: 'POST',
   });
 }
 
-export async function refreshMCPServer(name: string): Promise<MCPTestResult> {
-  return fetchJson<MCPTestResult>(`${API_BASE}/mcp/${name}/refresh`, {
+export async function refreshMCPServer(name: string, botId?: string | null): Promise<MCPTestResult> {
+  return fetchJson<MCPTestResult>(appendBotQuery(`${API_BASE}/mcp/${name}/refresh`, botId), {
     method: 'POST',
   });
 }
@@ -254,8 +325,8 @@ export async function refreshMCPServer(name: string): Promise<MCPTestResult> {
 // Session Detail
 // ====================
 
-export async function getSessionDetail(key: string): Promise<SessionDetail> {
+export async function getSessionDetail(key: string, botId?: string | null): Promise<SessionDetail> {
   return fetchJson<SessionDetail>(
-    `${API_BASE}/sessions/${encodeURIComponent(key)}?detail=true`
+    appendBotQuery(`${API_BASE}/sessions/${encodeURIComponent(key)}?detail=true`, botId)
   );
 }

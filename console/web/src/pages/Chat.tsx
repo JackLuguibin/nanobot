@@ -114,7 +114,7 @@ export default function Chat() {
   const { sessionKey: paramSessionKey } = useParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { currentSessionKey, setCurrentSessionKey, addToast } = useAppStore();
+  const { currentSessionKey, setCurrentSessionKey, currentBotId, addToast } = useAppStore();
 
   const [input, setInput] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -132,13 +132,13 @@ export default function Chat() {
   const activeSessionKey = paramSessionKey || currentSessionKey;
 
   const { data: sessions } = useQuery({
-    queryKey: ['sessions'],
-    queryFn: api.listSessions,
+    queryKey: ['sessions', currentBotId],
+    queryFn: () => api.listSessions(currentBotId),
   });
 
   const { data: sessionData } = useQuery({
-    queryKey: ['session', activeSessionKey],
-    queryFn: () => api.getSession(activeSessionKey!),
+    queryKey: ['session', activeSessionKey, currentBotId],
+    queryFn: () => api.getSession(activeSessionKey!, currentBotId),
     enabled: !!activeSessionKey,
   });
 
@@ -258,6 +258,7 @@ export default function Chat() {
         session_key: activeSessionKey || undefined,
         message: userMessage,
         stream: true,
+        bot_id: currentBotId || undefined,
       },
       handleStreamChunk,
       (error) => {

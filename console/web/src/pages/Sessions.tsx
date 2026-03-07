@@ -27,18 +27,18 @@ const { Text } = Typography;
 
 export default function Sessions() {
   const queryClient = useQueryClient();
-  const { addToast } = useAppStore();
+  const { addToast, currentBotId } = useAppStore();
   const [searchQuery, setSearchQuery] = useState('');
   const [sortBy, setSortBy] = useState<'updated' | 'created' | 'messages'>('updated');
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
   const { data: sessions, isLoading, error } = useQuery({
-    queryKey: ['sessions'],
-    queryFn: api.listSessions,
+    queryKey: ['sessions', currentBotId],
+    queryFn: () => api.listSessions(currentBotId),
   });
 
   const deleteMutation = useMutation({
-    mutationFn: api.deleteSession,
+    mutationFn: (key: string) => api.deleteSession(key, currentBotId),
     onSuccess: () => {
       addToast({ type: 'success', message: 'Session deleted successfully' });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });
@@ -50,7 +50,7 @@ export default function Sessions() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (key?: string) => api.createSession(key),
+    mutationFn: (key?: string) => api.createSession(key, currentBotId),
     onSuccess: () => {
       addToast({ type: 'success', message: 'New session created' });
       queryClient.invalidateQueries({ queryKey: ['sessions'] });

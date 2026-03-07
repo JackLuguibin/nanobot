@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException, Query, WebSocket
 from fastapi.responses import StreamingResponse
 from loguru import logger
+from pydantic import BaseModel
 
 from console.server.api.models import (
     ChannelStatus,
@@ -20,11 +22,171 @@ from console.server.api.models import (
     StatusResponse,
     ToolCallLog,
 )
-from console.server.api.state import get_state
+from console.server.api.state import get_state, get_state_manager
 from console.server.api.websocket import get_connection_manager, handle_websocket
 
-# Create router
 router = APIRouter(prefix="/api")
+
+
+def _resolve_state(bot_id: str | None = None):
+    """Resolve BotState for a given bot_id (or default)."""
+    return get_state(bot_id)
+
+
+# ====================
+# Bot Management Endpoints
+# ====================
+
+
+class BotCreateRequest(BaseModel):
+    name: str
+    source_config: dict[str, Any] | None = None
+
+
+class BotInfoResponse(BaseModel):
+    id: str
+    name: str
+    config_path: str
+    workspace_path: str
+    created_at: str
+    updated_at: str
+    is_default: bool = False
+    running: bool = False
+
+
+class SetDefaultRequest(BaseModel):
+    bot_id: str
+
+
+@router.get("/bots")
+async def list_bots() -> list[BotInfoResponse]:
+    """List all registered bots."""
+    from console.server.bot_registry import get_registry
+
+    registry = get_registry()
+    manager = get_state_manager()
+    default_id = registry.default_bot_id
+    result = []
+
+    for bot in registry.list_bots():
+        running = False
+        if manager.has_state(bot.id):
+            running = manager.get_state(bot.id).is_running
+        result.append(BotInfoResponse(
+            id=bot.id,
+            name=bot.name,
+            config_path=bot.config_path,
+            workspace_path=bot.workspace_path,
+            created_at=bot.created_at,
+            updated_at=bot.updated_at,
+            is_default=(bot.id == default_id),
+            running=running,
+        ))
+
+    return result
+
+
+@router.get("/bots/{bot_id}")
+async def get_bot(bot_id: str) -> BotInfoResponse:
+    """Get a specific bot."""
+    from console.server.bot_registry import get_registry
+
+    registry = get_registry()
+    manager = get_state_manager()
+    bot = registry.get_bot(bot_id)
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    running = False
+    if manager.has_state(bot.id):
+        running = manager.get_state(bot.id).is_running
+
+    return BotInfoResponse(
+        id=bot.id,
+        name=bot.name,
+        config_path=bot.config_path,
+        workspace_path=bot.workspace_path,
+        created_at=bot.created_at,
+        updated_at=bot.updated_at,
+        is_default=(bot.id == registry.default_bot_id),
+        running=running,
+    )
+
+
+@router.post("/bots")
+async def create_bot(request: BotCreateRequest) -> BotInfoResponse:
+    """Create a new bot with independent config and workspace."""
+    from nanobot.config.loader import load_config
+
+    from console.server.bot_registry import get_registry
+    from console.server.main import _initialize_bot
+
+    registry = get_registry()
+    manager = get_state_manager()
+
+    bot = registry.create_bot(request.name, request.source_config)
+
+    try:
+        config = load_config(Path(bot.config_path))
+        state = _initialize_bot(bot.id, config, Path(bot.config_path))
+        manager.set_state(bot.id, state)
+    except Exception as e:
+        logger.warning("Created bot '{}' but failed to initialize: {}", bot.id, e)
+
+    running = manager.has_state(bot.id) and manager.get_state(bot.id).is_running
+
+    return BotInfoResponse(
+        id=bot.id,
+        name=bot.name,
+        config_path=bot.config_path,
+        workspace_path=bot.workspace_path,
+        created_at=bot.created_at,
+        updated_at=bot.updated_at,
+        is_default=(bot.id == registry.default_bot_id),
+        running=running,
+    )
+
+
+@router.delete("/bots/{bot_id}")
+async def delete_bot(bot_id: str) -> dict[str, str]:
+    """Delete a bot and its workspace."""
+    from console.server.bot_registry import get_registry
+
+    registry = get_registry()
+    manager = get_state_manager()
+
+    bot = registry.get_bot(bot_id)
+    if bot is None:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    remaining = registry.list_bots()
+    if len(remaining) <= 1:
+        raise HTTPException(status_code=400, detail="Cannot delete the last bot")
+
+    old_state = manager.remove_state(bot_id)
+    if old_state and old_state.agent_loop:
+        try:
+            await old_state.stop_current_task()
+        except Exception:
+            pass
+
+    registry.delete_bot(bot_id)
+
+    return {"status": "deleted", "bot_id": bot_id}
+
+
+@router.put("/bots/default")
+async def set_default_bot(request: SetDefaultRequest) -> dict[str, str]:
+    """Set the default bot."""
+    from console.server.bot_registry import get_registry
+
+    registry = get_registry()
+    if not registry.set_default(request.bot_id):
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    get_state_manager().default_bot_id = request.bot_id
+
+    return {"status": "ok", "default_bot_id": request.bot_id}
 
 
 # ====================
@@ -33,25 +195,25 @@ router = APIRouter(prefix="/api")
 
 
 @router.get("/status", response_model=StatusResponse)
-async def get_status() -> StatusResponse:
+async def get_status(bot_id: str | None = Query(None)) -> StatusResponse:
     """Get the overall bot status."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     status = await state.get_status()
     return StatusResponse(**status)
 
 
 @router.get("/channels", response_model=list[ChannelStatus])
-async def get_channels() -> list[ChannelStatus]:
+async def get_channels(bot_id: str | None = Query(None)) -> list[ChannelStatus]:
     """Get all channel statuses."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     status = await state.get_status()
     return [ChannelStatus(**ch) for ch in status.get("channels", [])]
 
 
 @router.get("/mcp", response_model=list[MCPStatus])
-async def get_mcp_servers() -> list[MCPStatus]:
+async def get_mcp_servers(bot_id: str | None = Query(None)) -> list[MCPStatus]:
     """Get MCP server statuses."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     status = await state.get_status()
     return [MCPStatus(**mcp) for mcp in status.get("mcp_servers", [])]
 
@@ -60,16 +222,15 @@ async def get_mcp_servers() -> list[MCPStatus]:
 async def get_tool_logs(
     limit: int = 50,
     tool_name: str | None = None,
+    bot_id: str | None = Query(None),
 ) -> list[ToolCallLog]:
     """Get tool call logs."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     logs = state.tool_call_logs
 
-    # Filter by tool name if specified
     if tool_name:
         logs = [log for log in logs if log.get("tool_name") == tool_name]
 
-    # Limit results
     logs = logs[-limit:]
 
     return [ToolCallLog(**log) for log in logs]
@@ -81,17 +242,17 @@ async def get_tool_logs(
 
 
 @router.get("/sessions")
-async def list_sessions() -> list[SessionInfo]:
+async def list_sessions(bot_id: str | None = Query(None)) -> list[SessionInfo]:
     """List all sessions."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     sessions = await state.get_sessions()
     return [SessionInfo(**s) for s in sessions]
 
 
 @router.get("/sessions/{key}")
-async def get_session(key: str) -> dict[str, Any]:
+async def get_session(key: str, bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Get a specific session with full history."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     session = await state.get_session(key)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -99,12 +260,11 @@ async def get_session(key: str) -> dict[str, Any]:
 
 
 @router.post("/sessions")
-async def create_session(key: str | None = None) -> SessionInfo:
+async def create_session(key: str | None = None, bot_id: str | None = Query(None)) -> SessionInfo:
     """Create a new session."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     session = await state.create_session(key)
 
-    # Broadcast status update to all WebSocket clients
     try:
         manager = get_connection_manager()
         status = await state.get_status()
@@ -116,14 +276,13 @@ async def create_session(key: str | None = None) -> SessionInfo:
 
 
 @router.delete("/sessions/{key}")
-async def delete_session(key: str) -> dict[str, str]:
+async def delete_session(key: str, bot_id: str | None = Query(None)) -> dict[str, str]:
     """Delete a session."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     deleted = await state.delete_session(key)
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Broadcast status update to all WebSocket clients
     try:
         manager = get_connection_manager()
         status = await state.get_status()
@@ -142,7 +301,7 @@ async def delete_session(key: str) -> dict[str, str]:
 @router.post("/chat", response_model=ChatResponse)
 async def send_chat_message(request: ChatRequest) -> ChatResponse:
     """Send a chat message and get a response."""
-    state = get_state()
+    state = _resolve_state(request.bot_id)
     agent_loop = state.agent_loop
 
     if agent_loop is None:
@@ -150,15 +309,12 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
             status_code=503, detail="Agent not running. Please configure an API key in your config."
         )
 
-    # Get or create session
     session_key = request.session_key
     if session_key is None:
         session = await state.create_session()
         session_key = session["key"]
 
-    # Process the message through the agent
     try:
-        # Use agent.process_direct for direct message processing
         async def silent_progress(content: str) -> None:
             pass
 
@@ -170,7 +326,6 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
             on_progress=silent_progress,
         )
 
-        # Increment message counter
         state.increment_messages()
 
         return ChatResponse(
@@ -187,7 +342,7 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
 @router.post("/chat/stream")
 async def send_chat_message_stream(request: ChatRequest):
     """Send a chat message with streaming response (SSE)."""
-    state = get_state()
+    state = _resolve_state(request.bot_id)
     agent_loop = state.agent_loop
 
     if agent_loop is None:
@@ -195,7 +350,6 @@ async def send_chat_message_stream(request: ChatRequest):
             status_code=503, detail="Agent not running. Please configure an API key in your config."
         )
 
-    # Get or create session
     session_key = request.session_key
     if session_key is None:
         session = await state.create_session()
@@ -203,16 +357,13 @@ async def send_chat_message_stream(request: ChatRequest):
 
     async def generate():
         try:
-            # Send initial session key
             yield f"data: {json.dumps({'type': 'session_key', 'session_key': session_key})}\n\n"
 
-            # Queue for streaming chunks: on_progress puts SSE lines here; generator consumes and yields
             queue: asyncio.Queue[str | None] = asyncio.Queue()
-            response_holder: list[str] = []  # [0] = final response from process_direct
-            agent_failed: list[bool] = [False]  # True if run_agent raised
+            response_holder: list[str] = []
+            agent_failed: list[bool] = [False]
 
             async def stream_progress(content: str, *, tool_hint: bool = False) -> None:
-                """Callback must return Awaitable[None], not async generator. Agent may call with tool_hint=True."""
                 await queue.put(f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n")
 
             async def run_agent() -> None:
@@ -229,7 +380,7 @@ async def send_chat_message_stream(request: ChatRequest):
                     agent_failed[0] = True
                     await queue.put(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n")
                 finally:
-                    await queue.put(None)  # sentinel: agent finished
+                    await queue.put(None)
 
             task = asyncio.create_task(run_agent())
             while True:
@@ -238,16 +389,13 @@ async def send_chat_message_stream(request: ChatRequest):
                     break
                 yield chunk
 
-            await task  # consume task so exceptions are not lost
+            await task
 
             if agent_failed[0]:
-                # Error already sent in queue; do not send chat_done or increment messages
                 return
 
-            # Increment message counter
             state.increment_messages()
 
-            # Broadcast status update to all WebSocket clients
             try:
                 manager = get_connection_manager()
                 status = await state.get_status()
@@ -285,19 +433,18 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 
 @router.get("/config")
-async def get_config() -> dict[str, Any]:
+async def get_config(bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Get the full configuration."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     return await state.get_config()
 
 
 @router.put("/config")
-async def update_config(request: ConfigUpdateRequest) -> dict[str, Any]:
+async def update_config(request: ConfigUpdateRequest, bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Update configuration."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     result = await state.update_config(request.section.value, request.data)
 
-    # Broadcast status update to all WebSocket clients (config change may affect status)
     try:
         manager = get_connection_manager()
         status = await state.get_status()
@@ -309,16 +456,16 @@ async def update_config(request: ConfigUpdateRequest) -> dict[str, Any]:
 
 
 @router.get("/config/schema")
-async def get_config_schema() -> dict[str, Any]:
+async def get_config_schema(bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Get the configuration schema."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     return await state.get_config_schema()
 
 
 @router.post("/config/validate")
-async def validate_config(data: dict[str, Any]) -> dict[str, Any]:
+async def validate_config(data: dict[str, Any], bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Validate configuration data."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     return await state.validate_config(data)
 
 
@@ -328,14 +475,13 @@ async def validate_config(data: dict[str, Any]) -> dict[str, Any]:
 
 
 @router.post("/control/stop")
-async def stop_current_task() -> dict[str, str]:
+async def stop_current_task(bot_id: str | None = Query(None)) -> dict[str, str]:
     """Stop the currently running task."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     success = await state.stop_current_task()
     if not success:
         raise HTTPException(status_code=400, detail="No task running or unable to stop")
 
-    # Broadcast status update to all WebSocket clients
     try:
         manager = get_connection_manager()
         status = await state.get_status()
@@ -347,14 +493,13 @@ async def stop_current_task() -> dict[str, str]:
 
 
 @router.post("/control/restart")
-async def restart_bot() -> dict[str, str]:
+async def restart_bot(bot_id: str | None = Query(None)) -> dict[str, str]:
     """Restart the bot."""
-    state = get_state()
+    state = _resolve_state(bot_id)
     success = await state.restart_bot()
     if not success:
         raise HTTPException(status_code=400, detail="Unable to restart")
 
-    # Broadcast status update to all WebSocket clients
     try:
         manager = get_connection_manager()
         status = await state.get_status()

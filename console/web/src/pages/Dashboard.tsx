@@ -55,18 +55,18 @@ function formatTimeAgo(dateStr?: string): string {
 
 export default function Dashboard() {
   const queryClient = useQueryClient();
-  const { setStatus, setChannels, setMCPServers, status, addToast } = useAppStore();
+  const { setStatus, setChannels, setMCPServers, status, addToast, currentBotId } = useAppStore();
 
   const { data, isLoading, error, refetch } = useQuery({
-    queryKey: ['status'],
-    queryFn: api.getStatus,
+    queryKey: ['status', currentBotId],
+    queryFn: () => api.getStatus(currentBotId),
     refetchInterval: 30000,
   });
 
   const { data: recentSessions } = useQuery({
-    queryKey: ['sessions', 'recent'],
+    queryKey: ['sessions', 'recent', currentBotId],
     queryFn: async () => {
-      const sessions = await api.listSessions();
+      const sessions = await api.listSessions(currentBotId);
       return sessions.slice(0, 5);
     },
     refetchInterval: 60000,
@@ -81,7 +81,7 @@ export default function Dashboard() {
   }, [data, setStatus, setChannels, setMCPServers]);
 
   const stopMutation = useMutation({
-    mutationFn: api.stopCurrentTask,
+    mutationFn: () => api.stopCurrentTask(currentBotId),
     onSuccess: () => {
       addToast({ type: 'success', message: 'Task stopped successfully' });
       queryClient.invalidateQueries({ queryKey: ['status'] });
@@ -92,7 +92,7 @@ export default function Dashboard() {
   });
 
   const restartMutation = useMutation({
-    mutationFn: api.restartBot,
+    mutationFn: () => api.restartBot(currentBotId),
     onSuccess: () => {
       addToast({ type: 'success', message: 'Bot restart initiated' });
       queryClient.invalidateQueries({ queryKey: ['status'] });

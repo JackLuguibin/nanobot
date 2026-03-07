@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from console.server.api import routes
-from console.server.api.state import get_state
+from console.server.api.state import BotState, get_state_manager
 from nanobot import __version__
 
 
@@ -32,7 +32,6 @@ def setup_logging() -> None:
         retention="7 days",
         level="ERROR",
     )
-    # Console output
     logger.add(
         lambda msg: print(msg, end=""),
         format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan> - <level>{message}</level>",
@@ -44,59 +43,72 @@ def setup_cors(app: FastAPI) -> None:
     """Configure CORS middleware."""
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],  # TODO: Make this configurable
+        allow_origins=["*"],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
 
 
-async def initialize_bot_state(app: FastAPI) -> None:
-    """Initialize the bot state with core components.
+def _make_provider(config) -> Any:
+    """Create the appropriate LLM provider from config."""
+    from nanobot.providers.custom_provider import CustomProvider
+    from nanobot.providers.litellm_provider import LiteLLMProvider
+    from nanobot.providers.openai_codex_provider import OpenAICodexProvider
 
-    This initializes all the core nanobot components needed for the console
-    to function properly, including AgentLoop, SessionManager, and ChannelManager.
-    """
+    model = config.agents.defaults.model
+    provider_name = config.get_provider_name(model)
+    p = config.get_provider(model)
+
+    if provider_name == "openai_codex" or model.startswith("openai-codex/"):
+        return OpenAICodexProvider(default_model=model)
+
+    if provider_name == "custom":
+        return CustomProvider(
+            api_key=p.api_key if p else "no-key",
+            api_base=config.get_api_base(model) or "http://localhost:8000/v1",
+            default_model=model,
+        )
+
+    from nanobot.providers.registry import find_by_name
+
+    spec = find_by_name(provider_name)
+    if not model.startswith("bedrock/") and not (p and p.api_key) and not (spec and spec.is_oauth):
+        raise ValueError("No API key configured")
+
+    return LiteLLMProvider(
+        api_key=p.api_key if p else None,
+        api_base=config.get_api_base(model),
+        default_model=model,
+        extra_headers=p.extra_headers if p else None,
+        provider_name=provider_name,
+    )
+
+
+def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
+    """Create a BotState from a loaded Config object."""
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.channels.manager import ChannelManager
-    from nanobot.config.loader import get_config_path, get_data_dir, load_config
+    from nanobot.config.loader import get_data_dir
     from nanobot.cron.service import CronService
     from nanobot.session.manager import SessionManager
     from nanobot.utils.helpers import sync_workspace_templates
 
-    # Try to load config
-    config_path = get_config_path()
-    if not config_path.exists():
-        logger.warning("Config not found at {}, running in limited mode", config_path)
-        return
-
-    try:
-        config = load_config()
-    except Exception as e:
-        logger.warning("Failed to load config: {}", e)
-        return
-
-    # Sync workspace templates
     sync_workspace_templates(config.workspace_path)
 
-    # Create core components
     bus = MessageBus()
     session_manager = SessionManager(config.workspace_path)
 
-    # Create cron service
-    cron_store_path = get_data_dir() / "cron" / "jobs.json"
+    cron_store_path = get_data_dir() / "cron" / f"jobs_{bot_id}.json"
     cron = CronService(cron_store_path)
 
-    # Try to create provider
     provider = None
     try:
         provider = _make_provider(config)
     except Exception as e:
-        logger.warning("Failed to create provider (no API key?): {}", e)
-        logger.warning("Running in limited mode without AI agent")
+        logger.warning("Bot '{}': failed to create provider: {}", bot_id, e)
 
-    # Create agent loop
     agent_loop: AgentLoop | None = None
     if provider is not None:
         try:
@@ -120,22 +132,18 @@ async def initialize_bot_state(app: FastAPI) -> None:
                 channels_config=config.channels,
             )
         except Exception as e:
-            logger.warning("Failed to create agent loop: {}", e)
-            logger.warning("Running in limited mode without AI agent")
+            logger.warning("Bot '{}': failed to create agent loop: {}", bot_id, e)
 
-    # Create channel manager
+    channel_manager = None
     try:
         channel_manager = ChannelManager(config, bus)
     except Exception as e:
-        logger.warning("Failed to create channel manager: {}", e)
-        channel_manager = None
-
-    # Get or create state and initialize it
-    bot_state = get_state()
+        logger.warning("Bot '{}': failed to create channel manager: {}", bot_id, e)
 
     config_dict = config.model_dump(by_alias=True) if hasattr(config, "model_dump") else {}
 
-    bot_state.initialize(
+    state = BotState(bot_id=bot_id)
+    state.initialize(
         agent_loop=agent_loop,
         session_manager=session_manager,
         channel_manager=channel_manager,
@@ -143,60 +151,63 @@ async def initialize_bot_state(app: FastAPI) -> None:
         config_path=config_path,
         workspace=config.workspace_path,
     )
+    return state
 
-    logger.info("Console server initialized with core components")
 
+async def initialize_bot_state(app: FastAPI) -> None:
+    """Initialize bot states from registry (multi-bot) or legacy config (single-bot)."""
+    from console.server.bot_registry import get_registry
+    from nanobot.config.loader import get_config_path, load_config
 
-def _make_provider(config) -> Any:
-    """Create the appropriate LLM provider from config."""
-    from nanobot.providers.custom_provider import CustomProvider
-    from nanobot.providers.litellm_provider import LiteLLMProvider
-    from nanobot.providers.openai_codex_provider import OpenAICodexProvider
+    registry = get_registry()
+    manager = get_state_manager()
 
-    model = config.agents.defaults.model
-    provider_name = config.get_provider_name(model)
-    p = config.get_provider(model)
+    if registry.needs_migration():
+        logger.info("Migrating legacy config to bot registry...")
+        registry.migrate_legacy()
 
-    # OpenAI Codex (OAuth)
-    if provider_name == "openai_codex" or model.startswith("openai-codex/"):
-        return OpenAICodexProvider(default_model=model)
+    bots = registry.list_bots()
 
-    # Custom: direct OpenAI-compatible endpoint, bypasses LiteLLM
-    if provider_name == "custom":
-        return CustomProvider(
-            api_key=p.api_key if p else "no-key",
-            api_base=config.get_api_base(model) or "http://localhost:8000/v1",
-            default_model=model,
-        )
+    if not bots:
+        config_path = get_config_path()
+        if not config_path.exists():
+            logger.warning("No bots and no config found, running in limited mode")
+            return
 
-    from nanobot.providers.registry import find_by_name
+        try:
+            config = load_config()
+        except Exception as e:
+            logger.warning("Failed to load config: {}", e)
+            return
 
-    spec = find_by_name(provider_name)
-    if not model.startswith("bedrock/") and not (p and p.api_key) and not (spec and spec.is_oauth):
-        raise ValueError("No API key configured")
+        info = registry.create_bot("Default Bot", config.model_dump(by_alias=True))
+        bots = [info]
 
-    return LiteLLMProvider(
-        api_key=p.api_key if p else None,
-        api_base=config.get_api_base(model),
-        default_model=model,
-        extra_headers=p.extra_headers if p else None,
-        provider_name=provider_name,
-    )
+    default_id = registry.default_bot_id
+
+    for bot_info in bots:
+        try:
+            config = load_config(Path(bot_info.config_path))
+            state = _initialize_bot(bot_info.id, config, Path(bot_info.config_path))
+            manager.set_state(bot_info.id, state)
+            logger.info("Initialized bot '{}' ({})", bot_info.name, bot_info.id)
+        except Exception as e:
+            logger.error("Failed to initialize bot '{}': {}", bot_info.id, e)
+
+    manager.default_bot_id = default_id or (bots[0].id if bots else None)
+    logger.info("Console server initialized with {} bot(s)", len(manager.all_bot_ids()))
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    # Startup
     setup_logging()
     logger.info(f"Starting nanobot console v{__version__}")
 
-    # Initialize state
     await initialize_bot_state(app)
 
     yield
 
-    # Shutdown
     logger.info("Shutting down nanobot console")
 
 
@@ -211,34 +222,27 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # Setup CORS
     setup_cors(app)
 
-    # Include API routes
     app.include_router(routes.router)
 
-    # Serve frontend static files
     web_dist = Path(__file__).parent.parent / "web" / "dist"
 
     if web_dist.exists():
-        # Mount static files directory
         app.mount("/assets", StaticFiles(directory=str(web_dist / "assets")), name="assets")
 
         @app.get("/{full_path:path}")
         async def serve_spa(full_path: str):
             """Serve the SPA index.html for all non-API routes."""
-            # Check if it's an API route
             if full_path.startswith("api/"):
                 from fastapi.responses import JSONResponse
 
                 return JSONResponse({"detail": "Not Found"}, status_code=404)
-            # Serve index.html for SPA routing
             return FileResponse(str(web_dist / "index.html"))
 
     return app
 
 
-# Create the app instance
 app = create_app()
 
 
@@ -248,6 +252,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "console.server.main:app",
         host="0.0.0.0",
-        port=18791,  # Different from gateway port 18790
+        port=18791,
         reload=True,
     )

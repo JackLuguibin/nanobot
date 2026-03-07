@@ -11,6 +11,7 @@ import Channels from './pages/Channels';
 import MCPServers from './pages/MCPServers';
 import Settings from './pages/Settings';
 import Logs from './pages/Logs';
+import Bots from './pages/Bots';
 
 function resolveIsDark(theme: 'light' | 'dark' | 'system'): boolean {
   if (theme === 'dark') return true;
@@ -30,6 +31,7 @@ function AppRoutes() {
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/mcp" element={<MCPServers />} />
+          <Route path="/bots" element={<Bots />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/logs" element={<Logs />} />
         </Routes>

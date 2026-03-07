@@ -191,10 +191,11 @@ export default function Layout({ children }: LayoutProps) {
           <Segmented
             value={theme}
             onChange={(val) => setTheme(val as 'light' | 'dark' | 'system')}
+            className="[&_.ant-segmented-item]:flex [&_.ant-segmented-item]:items-center [&_.ant-segmented-item]:justify-center [&_.ant-segmented-item-label]:flex [&_.ant-segmented-item-label]:h-full [&_.ant-segmented-item-label]:items-center [&_.ant-segmented-item-label]:justify-center"
             options={[
-              { value: 'light', icon: <Sun className="w-4 h-4" /> },
-              { value: 'dark', icon: <Moon className="w-4 h-4" /> },
-              { value: 'system', icon: <Monitor className="w-4 h-4" /> },
+              { value: 'light', icon: <Sun className="w-4 h-4 shrink-0" /> },
+              { value: 'dark', icon: <Moon className="w-4 h-4 shrink-0" /> },
+              { value: 'system', icon: <Monitor className="w-4 h-4 shrink-0" /> },
             ]}
           />
         </header>

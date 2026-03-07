@@ -224,7 +224,7 @@ export default function Layout({ children }: LayoutProps) {
           />
         </header>
 
-        <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="flex-1 min-h-0 overflow-hidden pt-14">
           {children}
         </div>
       </main>

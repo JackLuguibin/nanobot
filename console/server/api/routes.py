@@ -106,6 +106,15 @@ async def create_session(key: str | None = None) -> SessionInfo:
     """Create a new session."""
     state = get_state()
     session = await state.create_session(key)
+
+    # Broadcast status update to all WebSocket clients
+    try:
+        manager = get_connection_manager()
+        status = await state.get_status()
+        await manager.broadcast_status_update(status)
+    except Exception as e:
+        logger.warning("Failed to broadcast status update: {}", e)
+
     return SessionInfo(**session)
 
 
@@ -116,6 +125,15 @@ async def delete_session(key: str) -> dict[str, str]:
     deleted = await state.delete_session(key)
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
+
+    # Broadcast status update to all WebSocket clients
+    try:
+        manager = get_connection_manager()
+        status = await state.get_status()
+        await manager.broadcast_status_update(status)
+    except Exception as e:
+        logger.warning("Failed to broadcast status update: {}", e)
+
     return {"status": "deleted", "key": key}
 
 
@@ -172,29 +190,29 @@ async def send_chat_message_stream(request: ChatRequest):
     """Send a chat message with streaming response (SSE)."""
     state = get_state()
     agent_loop = state.agent_loop
-    
+
     if agent_loop is None:
         raise HTTPException(status_code=503, detail="Agent not running. Please configure an API key in your config.")
-    
+
     # Get or create session
     session_key = request.session_key
     if session_key is None:
         session = await state.create_session()
         session_key = session["key"]
-    
+
     async def generate():
         try:
             # Send initial session key
             yield f"data: {json.dumps({'type': 'session_key', 'session_key': session_key})}\n\n"
-            
+
             # Track accumulated response for tool call handling
             accumulated_response = []
-            
+
             # Define progress callback to stream tokens
             async def stream_progress(content: str) -> None:
                 yield f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n"
                 accumulated_response.append(content)
-            
+
             # Process the message through the agent
             response = await agent_loop.process_direct(
                 content=request.message,
@@ -203,13 +221,21 @@ async def send_chat_message_stream(request: ChatRequest):
                 chat_id="web",
                 on_progress=stream_progress,
             )
-            
+
             # Increment message counter
             state.increment_messages()
-            
+
+            # Broadcast status update to all WebSocket clients
+            try:
+                manager = get_connection_manager()
+                status = await state.get_status()
+                await manager.broadcast_status_update(status)
+            except Exception as e:
+                logger.warning("Failed to broadcast status update: {}", e)
+
             # Send done message
             yield f"data: {json.dumps({'type': 'chat_done', 'done': True})}\n\n"
-            
+
         except Exception as e:
             logger.error("Error in streaming chat: {}", e)
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
@@ -247,7 +273,17 @@ async def get_config() -> dict[str, Any]:
 async def update_config(request: ConfigUpdateRequest) -> dict[str, Any]:
     """Update configuration."""
     state = get_state()
-    return await state.update_config(request.section.value, request.data)
+    result = await state.update_config(request.section.value, request.data)
+
+    # Broadcast status update to all WebSocket clients (config change may affect status)
+    try:
+        manager = get_connection_manager()
+        status = await state.get_status()
+        await manager.broadcast_status_update(status)
+    except Exception as e:
+        logger.warning("Failed to broadcast status update: {}", e)
+
+    return result
 
 
 @router.get("/config/schema")
@@ -276,6 +312,15 @@ async def stop_current_task() -> dict[str, str]:
     success = await state.stop_current_task()
     if not success:
         raise HTTPException(status_code=400, detail="No task running or unable to stop")
+
+    # Broadcast status update to all WebSocket clients
+    try:
+        manager = get_connection_manager()
+        status = await state.get_status()
+        await manager.broadcast_status_update(status)
+    except Exception as e:
+        logger.warning("Failed to broadcast status update: {}", e)
+
     return {"status": "stopped"}
 
 
@@ -286,6 +331,15 @@ async def restart_bot() -> dict[str, str]:
     success = await state.restart_bot()
     if not success:
         raise HTTPException(status_code=400, detail="Unable to restart")
+
+    # Broadcast status update to all WebSocket clients
+    try:
+        manager = get_connection_manager()
+        status = await state.get_status()
+        await manager.broadcast_status_update(status)
+    except Exception as e:
+        logger.warning("Failed to broadcast status update: {}", e)
+
     return {"status": "restarting"}
 
 

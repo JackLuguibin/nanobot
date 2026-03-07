@@ -156,6 +156,14 @@ export default function Chat() {
     }
   }, [sessionData, activeSessionKey, isStreaming]);
 
+  // 当当前会话数据加载/更新时，刷新会话列表以便侧边栏消息条数同步
+  const sessionMessageCount = sessionData?.message_count;
+  useEffect(() => {
+    if (activeSessionKey && sessionMessageCount !== undefined) {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+    }
+  }, [activeSessionKey, sessionMessageCount, queryClient]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
@@ -165,6 +173,7 @@ export default function Chat() {
       if (chunk.type === 'session_key' && chunk.session_key) {
         setCurrentSessionKey(chunk.session_key);
         navigate(`/chat/${chunk.session_key}`, { replace: true });
+        queryClient.invalidateQueries({ queryKey: ['sessions'] });
       } else if (chunk.type === 'chat_token' && chunk.content) {
         streamingContentRef.current += chunk.content;
         setStreamingContent((prev) => prev + chunk.content);

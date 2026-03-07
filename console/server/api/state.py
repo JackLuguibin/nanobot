@@ -19,6 +19,17 @@ if TYPE_CHECKING:
     from nanobot.session.manager import SessionManager
 
 
+def _count_session_messages_from_path(path: Path) -> int:
+    """从 session JSONL 文件行数推算消息数（首行为 metadata，其余为消息）。Extension 补丁，不修改 nanobot。"""
+    if not path.exists():
+        return 0
+    try:
+        with open(path, encoding="utf-8") as f:
+            return max(0, sum(1 for _ in f) - 1)
+    except Exception:
+        return 0
+
+
 class BotState:
     """
     Central state manager for the console.
@@ -194,10 +205,14 @@ class BotState:
                     key = s.get("key", "")
                     if not key:
                         continue
+                    # 补丁：nanobot 的 list_sessions 不返回 message_count，从文件行数推算
+                    msg_count = s.get("message_count")
+                    if msg_count is None and s.get("path"):
+                        msg_count = _count_session_messages_from_path(Path(s["path"]))
                     by_key[key] = {
                         "key": key,
                         "title": key.split(":")[0] if ":" in key else key,
-                        "message_count": 0,
+                        "message_count": msg_count if msg_count is not None else 0,
                         "last_message": None,
                         "created_at": s.get("created_at"),
                         "updated_at": s.get("updated_at"),

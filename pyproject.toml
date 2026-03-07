@@ -69,6 +69,7 @@ console = [
 
 [project.scripts]
 nanobot = "nanobot.cli.commands:app"
+console = "console.server.cli:app"
 
 [build-system]
 requires = ["hatchling"]

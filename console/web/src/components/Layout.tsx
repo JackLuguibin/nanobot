@@ -17,7 +17,6 @@ import {
   Bot,
   Menu as MenuIcon,
   X,
-  Cpu,
   Sun,
   Moon,
   Monitor,
@@ -68,7 +67,7 @@ const navSections: NavSection[] = [
 
 export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
-  const { sidebarCollapsed, setSidebarCollapsed, status, theme, setTheme, wsConnected } = useAppStore();
+  const { sidebarCollapsed, setSidebarCollapsed, theme, setTheme, wsConnected } = useAppStore();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // Establish WebSocket connection for real-time status updates
@@ -169,30 +168,6 @@ export default function Layout({ children }: LayoutProps) {
           </Button>
         </div>
 
-        {/* Status Indicator */}
-        {status && (
-          <div className="p-4 border-t border-gray-200/50 dark:border-gray-700/50 bg-white/30 dark:bg-gray-800/30 backdrop-blur-sm">
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30">
-              <Badge
-                status={status.running ? 'processing' : 'default'}
-                color={status.running ? '#22c55e' : undefined}
-              />
-              {!sidebarCollapsed && (
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-medium text-gray-700 dark:text-gray-300">
-                    {status.running ? 'Running' : 'Stopped'}
-                  </p>
-                  {status.model && (
-                    <p className="text-[10px] text-gray-400 truncate">{status.model}</p>
-                  )}
-                </div>
-              )}
-              {!sidebarCollapsed && status.running && (
-                <Cpu className="w-4 h-4 text-green-500" />
-              )}
-            </div>
-          </div>
-        )}
       </aside>
 
       {/* Main Content */}

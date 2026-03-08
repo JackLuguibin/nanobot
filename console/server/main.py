@@ -64,6 +64,17 @@ def _make_provider(config) -> Any:
     if provider_name == "openai_codex" or model.startswith("openai-codex/"):
         return OpenAICodexProvider(default_model=model)
 
+    if provider_name == "azure_openai":
+        from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
+
+        if p and p.api_key and p.api_base:
+            return AzureOpenAIProvider(
+                api_key=p.api_key,
+                api_base=p.api_base,
+                default_model=model,
+            )
+        logger.warning("Azure OpenAI requires api_key and api_base in config")
+
     if provider_name == "custom":
         return CustomProvider(
             api_key=p.api_key if p else "no-key",
@@ -91,7 +102,7 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.channels.manager import ChannelManager
-    from nanobot.config.loader import get_data_dir
+    from nanobot.config.paths import get_data_dir
     from nanobot.cron.service import CronService
     from nanobot.session.manager import SessionManager
     from nanobot.utils.helpers import sync_workspace_templates

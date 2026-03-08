@@ -20,7 +20,6 @@ export default function Bots() {
   const { data: bots = [], isLoading } = useQuery({
     queryKey: ['bots'],
     queryFn: api.listBots,
-    refetchInterval: 10000,
   });
 
   const createMutation = useMutation({

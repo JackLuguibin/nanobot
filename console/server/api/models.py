@@ -109,6 +109,7 @@ class WSMessageType(str, Enum):
     TOOL_PROGRESS = "tool_progress"
     ERROR = "error"
     STATUS_UPDATE = "status_update"
+    BOTS_UPDATE = "bots_update"
 
 
 class WSMessage(BaseModel):

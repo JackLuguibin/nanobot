@@ -135,6 +135,8 @@ async def create_bot(request: BotCreateRequest) -> BotInfoResponse:
 
     running = manager.has_state(bot.id) and manager.get_state(bot.id).is_running
 
+    await get_connection_manager().broadcast_bots_update()
+
     return BotInfoResponse(
         id=bot.id,
         name=bot.name,
@@ -172,6 +174,8 @@ async def delete_bot(bot_id: str) -> dict[str, str]:
 
     registry.delete_bot(bot_id)
 
+    await get_connection_manager().broadcast_bots_update()
+
     return {"status": "deleted", "bot_id": bot_id}
 
 
@@ -185,6 +189,8 @@ async def set_default_bot(request: SetDefaultRequest) -> dict[str, str]:
         raise HTTPException(status_code=404, detail="Bot not found")
 
     get_state_manager().default_bot_id = request.bot_id
+
+    await get_connection_manager().broadcast_bots_update()
 
     return {"status": "ok", "default_bot_id": request.bot_id}
 

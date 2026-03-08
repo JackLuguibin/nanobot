@@ -75,6 +75,16 @@ def _make_provider(config) -> "any":
     if provider_name == "openai_codex" or model.startswith("openai-codex/"):
         return OpenAICodexProvider(default_model=model)
 
+    # Azure OpenAI: direct Azure endpoint, deployment name as model
+    if provider_name == "azure_openai" and p and p.api_key and p.api_base:
+        from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
+
+        return AzureOpenAIProvider(
+            api_key=p.api_key,
+            api_base=p.api_base,
+            default_model=model,
+        )
+
     # Custom: direct OpenAI-compatible endpoint, bypasses LiteLLM
     if provider_name == "custom":
         return CustomProvider(
@@ -177,8 +187,9 @@ def ensure_frontend_built() -> bool:
 def check_and_run_onboard() -> None:
     """检查配置并运行onboard流程。"""
     from nanobot.config.loader import get_config_path, save_config
+    from nanobot.config.paths import get_workspace_path
     from nanobot.config.schema import Config
-    from nanobot.utils.helpers import get_workspace_path, sync_workspace_templates
+    from nanobot.utils.helpers import sync_workspace_templates
 
     config_path = get_config_path()
     if not config_path.exists():
@@ -220,7 +231,8 @@ def run_gateway(
         from nanobot.agent.loop import AgentLoop
         from nanobot.bus.queue import MessageBus
         from nanobot.channels.manager import ChannelManager
-        from nanobot.config.loader import get_data_dir, load_config
+        from nanobot.config.loader import load_config
+        from nanobot.config.paths import get_data_dir
         from nanobot.cron.service import CronService
         from nanobot.cron.types import CronJob
         from nanobot.heartbeat.service import HeartbeatService
@@ -556,7 +568,8 @@ def run_full_stack(
         from nanobot.agent.loop import AgentLoop
         from nanobot.bus.queue import MessageBus
         from nanobot.channels.manager import ChannelManager
-        from nanobot.config.loader import get_data_dir, load_config
+        from nanobot.config.loader import load_config
+        from nanobot.config.paths import get_data_dir
         from nanobot.cron.service import CronService
         from nanobot.cron.types import CronJob
         from nanobot.heartbeat.service import HeartbeatService

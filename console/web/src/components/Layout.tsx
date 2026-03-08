@@ -23,6 +23,7 @@ import {
   Moon,
   Monitor,
   Users,
+  BookOpen,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -60,6 +61,7 @@ const navSections: NavSection[] = [
     items: [
       { path: '/mcp', label: 'MCP', icon: Plug },
       { path: '/logs', label: 'Logs', icon: FileText },
+      { path: '/skills', label: 'Skills', icon: BookOpen },
     ],
   },
   {

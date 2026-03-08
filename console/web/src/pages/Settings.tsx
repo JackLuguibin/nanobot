@@ -22,7 +22,6 @@ import {
   KeyOutlined,
   CodeOutlined,
   MobileOutlined,
-  ReadOutlined,
   ToolOutlined,
   SunOutlined,
 } from '@ant-design/icons';
@@ -32,7 +31,7 @@ import { useAppStore } from '../store';
 
 const { Title, Text } = Typography;
 
-type SettingsTab = 'general' | 'appearance' | 'providers' | 'tools' | 'channels' | 'skills';
+type SettingsTab = 'general' | 'appearance' | 'providers' | 'tools' | 'channels';
 
 interface FormData {
   model: string;
@@ -473,58 +472,6 @@ export default function Settings() {
     "discord": { "enabled": true, "token": "YOUR_DISCORD_TOKEN" }
   }
 }`}
-            </pre>
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: 'skills',
-      label: (
-        <span className="flex items-center gap-1.5">
-          <ReadOutlined /> Skills
-        </span>
-      ),
-      children: (
-        <div className="space-y-6">
-          <Title level={5}>Skills Configuration</Title>
-
-          <Alert
-            message="How Skills Work"
-            description={
-              <div className="space-y-2">
-                <p>
-                  Skills are markdown files that provide additional instructions or knowledge to
-                  the agent. Place skill files in:
-                </p>
-                <code className="block px-3 py-2 bg-gray-100 dark:bg-gray-800 rounded text-sm font-mono">
-                  ~/.nanobot/skills/
-                </code>
-              </div>
-            }
-            type="info"
-            showIcon
-            icon={<ReadOutlined />}
-          />
-
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <Title level={5} className="!text-sm !mb-3">
-              Example Skill File
-            </Title>
-            <pre className="p-5 bg-gray-900 dark:bg-gray-950 rounded-xl overflow-x-auto text-sm text-gray-100 font-mono">
-              {`# Coding Assistant
-
-You are a professional software engineer who:
-- Writes clean, well-documented code
-- Follows best practices and design patterns
-- Considers edge cases and error handling
-- Provides explanations with examples
-
-When reviewing code, focus on:
-1. Correctness and logic
-2. Performance implications
-3. Security vulnerabilities
-4. Maintainability`}
             </pre>
           </div>
         </div>

@@ -8,6 +8,7 @@ import type {
   SessionInfo,
   SessionDetail,
   StatusResponse,
+  SkillInfo,
   ToolCallLog,
   StreamChunk,
   BatchDeleteResponse,
@@ -154,6 +155,70 @@ export async function getToolLogs(
 
 export async function getConfig(botId?: string | null): Promise<ConfigSection> {
   return fetchJson<ConfigSection>(`${API_BASE}/config${botQuery(botId)}`);
+}
+
+// ====================
+// Skills API
+// ====================
+
+export async function listSkills(botId?: string | null): Promise<SkillInfo[]> {
+  return fetchJson<SkillInfo[]>(`${API_BASE}/skills${botQuery(botId)}`);
+}
+
+export async function updateSkillsConfig(
+  data: Record<string, { enabled?: boolean }>,
+  botId?: string | null
+): Promise<ConfigSection> {
+  return updateConfig('skills', data, botId);
+}
+
+export async function getSkillContent(
+  name: string,
+  botId?: string | null
+): Promise<{ name: string; content: string }> {
+  return fetchJson(
+    appendBotQuery(`${API_BASE}/skills/${encodeURIComponent(name)}/content`, botId)
+  );
+}
+
+export async function updateSkillContent(
+  name: string,
+  content: string,
+  botId?: string | null
+): Promise<{ status: string; name: string }> {
+  return fetchJson(
+    appendBotQuery(`${API_BASE}/skills/${encodeURIComponent(name)}/content`, botId),
+    {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }
+  );
+}
+
+export async function createSkill(
+  data: { name: string; description: string; content?: string },
+  botId?: string | null
+): Promise<{ status: string; name: string }> {
+  return fetchJson(`${API_BASE}/skills${botQuery(botId)}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      name: data.name,
+      description: data.description,
+      content: data.content || '',
+    }),
+  });
+}
+
+export async function deleteSkill(
+  name: string,
+  botId?: string | null
+): Promise<{ status: string; name: string }> {
+  return fetchJson(
+    appendBotQuery(`${API_BASE}/skills/${encodeURIComponent(name)}`, botId),
+    {
+      method: 'DELETE',
+    }
+  );
 }
 
 export async function updateConfig(

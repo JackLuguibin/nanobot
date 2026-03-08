@@ -10,6 +10,7 @@ import Sessions from './pages/Sessions';
 import Channels from './pages/Channels';
 import MCPServers from './pages/MCPServers';
 import Settings from './pages/Settings';
+import Skills from './pages/Skills';
 import Logs from './pages/Logs';
 import Bots from './pages/Bots';
 
@@ -32,6 +33,7 @@ function AppRoutes() {
           <Route path="/channels" element={<Channels />} />
           <Route path="/mcp" element={<MCPServers />} />
           <Route path="/bots" element={<Bots />} />
+          <Route path="/skills" element={<Skills />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/logs" element={<Logs />} />
         </Routes>

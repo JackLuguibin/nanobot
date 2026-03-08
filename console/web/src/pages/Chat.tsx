@@ -41,7 +41,7 @@ function ChatInput({ inputRef, value, onChange, onKeyDown, onSend, onStop, isStr
         }`}
       >
         <Input.TextArea
-          ref={inputRef}
+          ref={inputRef as React.RefObject<TextAreaRef>}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={onKeyDown}

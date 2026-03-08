@@ -128,6 +128,15 @@ export interface SkillConfig {
   enabled?: boolean;
 }
 
+export interface SkillInfo {
+  name: string;
+  source: 'builtin' | 'workspace';
+  description: string;
+  enabled: boolean;
+  path?: string;
+  available?: boolean;
+}
+
 export type WSMessageType =
   | 'chat_token'
   | 'chat_done'

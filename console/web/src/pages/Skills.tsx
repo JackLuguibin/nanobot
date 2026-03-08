@@ -1,0 +1,334 @@
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import {
+  Form,
+  Input,
+  Button,
+  Spin,
+  Card,
+  Typography,
+  Space,
+  Tag,
+  Alert,
+  Modal,
+  Select,
+  Empty,
+  Switch,
+} from 'antd';
+import { ReadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import * as api from '../api/client';
+import { useAppStore } from '../store';
+
+const { Title, Text } = Typography;
+
+export default function Skills() {
+  const queryClient = useQueryClient();
+  const { addToast, currentBotId, setCurrentBotId } = useAppStore();
+  const [skillEditModal, setSkillEditModal] = useState<{ name: string; content: string } | null>(null);
+  const [skillCreateModal, setSkillCreateModal] = useState(false);
+  const [skillCreateForm] = Form.useForm<{ name: string; description: string; content: string }>();
+
+  const { data: bots } = useQuery({
+    queryKey: ['bots'],
+    queryFn: api.listBots,
+  });
+
+  const { data: skills, isLoading: skillsLoading } = useQuery({
+    queryKey: ['skills', currentBotId],
+    queryFn: () => api.listSkills(currentBotId),
+  });
+
+  const updateConfigMutation = useMutation({
+    mutationFn: ({ section, data }: { section: string; data: Record<string, unknown> }) =>
+      api.updateConfig(section, data, currentBotId),
+    onSuccess: () => {
+      addToast({ type: 'success', message: 'Settings saved successfully' });
+      queryClient.invalidateQueries({ queryKey: ['config'] });
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+    },
+    onError: (error) => {
+      addToast({ type: 'error', message: String(error) });
+    },
+  });
+
+  const updateSkillContentMutation = useMutation({
+    mutationFn: ({ name, content }: { name: string; content: string }) =>
+      api.updateSkillContent(name, content, currentBotId),
+    onSuccess: () => {
+      addToast({ type: 'success', message: 'Skill updated' });
+      setSkillEditModal(null);
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+    },
+    onError: (error) => {
+      addToast({ type: 'error', message: String(error) });
+    },
+  });
+
+  const createSkillMutation = useMutation({
+    mutationFn: (data: { name: string; description: string; content: string }) =>
+      api.createSkill(data, currentBotId),
+    onSuccess: () => {
+      addToast({ type: 'success', message: 'Skill created' });
+      setSkillCreateModal(false);
+      skillCreateForm.resetFields();
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+    },
+    onError: (error) => {
+      addToast({ type: 'error', message: String(error) });
+    },
+  });
+
+  const deleteSkillMutation = useMutation({
+    mutationFn: (name: string) => api.deleteSkill(name, currentBotId),
+    onSuccess: () => {
+      addToast({ type: 'success', message: 'Skill deleted' });
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+    },
+    onError: (error) => {
+      addToast({ type: 'error', message: String(error) });
+    },
+  });
+
+  return (
+    <div className="p-6 space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+            Skills
+          </h1>
+          <p className="text-sm text-gray-500 mt-1">Manage built-in and workspace skills</p>
+        </div>
+        <Space>
+          {bots && bots.length > 1 && (
+            <Select
+              value={currentBotId || bots.find((b) => b.is_default)?.id || bots[0]?.id}
+              onChange={setCurrentBotId}
+              options={bots.map((b) => ({ label: b.name, value: b.id }))}
+              className="w-40"
+            />
+          )}
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => setSkillCreateModal(true)}>
+            Add Skill
+          </Button>
+        </Space>
+      </div>
+
+      <div className="max-w-3xl">
+        {skillsLoading ? (
+          <div className="flex justify-center py-12">
+            <Spin />
+          </div>
+        ) : !skills || skills.length === 0 ? (
+          <Empty description="No skills found" />
+        ) : (
+          <>
+            <div>
+              <Title level={5} className="!text-sm !mb-3">
+                Built-in Skills (enable/disable)
+              </Title>
+              <div className="space-y-2">
+                {skills
+                  .filter((s) => s.source === 'builtin')
+                  .map((skill) => (
+                    <Card key={skill.name} size="small">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <ReadOutlined className="text-gray-500" />
+                          <div>
+                            <p className="font-medium">{skill.name}</p>
+                            <Text type="secondary" className="text-xs">
+                              {skill.description}
+                            </Text>
+                          </div>
+                          <Tag color="blue">builtin</Tag>
+                          {skill.available === false && (
+                            <Tag color="warning">unavailable</Tag>
+                          )}
+                        </div>
+                        <Space>
+                          <Switch
+                            checked={skill.enabled}
+                            onChange={(checked) =>
+                              updateConfigMutation.mutate({
+                                section: 'skills',
+                                data: { [skill.name]: { enabled: checked } },
+                              })
+                            }
+                          />
+                        </Space>
+                      </div>
+                    </Card>
+                  ))}
+              </div>
+            </div>
+
+            <div className="mt-6">
+              <Title level={5} className="!text-sm !mb-3">
+                Workspace Skills (edit/delete)
+              </Title>
+              <div className="space-y-2">
+                {skills
+                  .filter((s) => s.source === 'workspace')
+                  .map((skill) => (
+                    <Card key={skill.name} size="small">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <ReadOutlined className="text-gray-500" />
+                          <div>
+                            <p className="font-medium">{skill.name}</p>
+                            <Text type="secondary" className="text-xs">
+                              {skill.description}
+                            </Text>
+                          </div>
+                          <Tag color="green">workspace</Tag>
+                        </div>
+                        <Space>
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={async () => {
+                              const res = await api.getSkillContent(skill.name, currentBotId);
+                              setSkillEditModal({ name: res.name, content: res.content });
+                            }}
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="text"
+                            danger
+                            size="small"
+                            icon={<DeleteOutlined />}
+                            onClick={() => {
+                              Modal.confirm({
+                                title: `Delete skill "${skill.name}"?`,
+                                content: 'This cannot be undone.',
+                                okText: 'Delete',
+                                okType: 'danger',
+                                onOk: () => deleteSkillMutation.mutate(skill.name),
+                              });
+                            }}
+                          >
+                            Delete
+                          </Button>
+                        </Space>
+                      </div>
+                    </Card>
+                  ))}
+              </div>
+            </div>
+
+            <Alert
+              className="mt-6"
+              message="Changes require restart"
+              description="Skill enable/disable or content changes take effect after restarting the bot."
+              type="info"
+              showIcon
+            />
+          </>
+        )}
+      </div>
+
+      <Modal
+        title={`Edit skill: ${skillEditModal?.name}`}
+        open={!!skillEditModal}
+        onCancel={() => setSkillEditModal(null)}
+        footer={null}
+        width={700}
+        destroyOnClose
+      >
+        {skillEditModal && (
+          <Form
+            key={skillEditModal.name}
+            layout="vertical"
+            initialValues={{ content: skillEditModal.content }}
+            onFinish={(values) =>
+              updateSkillContentMutation.mutate({
+                name: skillEditModal.name,
+                content: values.content,
+              })
+            }
+          >
+            <Form.Item name="content" rules={[{ required: true }]}>
+              <Input.TextArea rows={16} className="font-mono text-sm" />
+            </Form.Item>
+            <Form.Item className="!mb-0">
+              <Space>
+                <Button onClick={() => setSkillEditModal(null)}>Cancel</Button>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={updateSkillContentMutation.isPending}
+                >
+                  Save
+                </Button>
+              </Space>
+            </Form.Item>
+          </Form>
+        )}
+      </Modal>
+
+      <Modal
+        title="Create Workspace Skill"
+        open={skillCreateModal}
+        onCancel={() => {
+          setSkillCreateModal(false);
+          skillCreateForm.resetFields();
+        }}
+        footer={null}
+        destroyOnClose
+      >
+        <Form
+          form={skillCreateForm}
+          layout="vertical"
+          onFinish={(values) =>
+            createSkillMutation.mutate({
+              name: values.name,
+              description: values.description,
+              content: values.content || '',
+            })
+          }
+        >
+          <Form.Item
+            name="name"
+            label="Name"
+            rules={[
+              { required: true },
+              {
+                pattern: /^[a-zA-Z0-9_-]+$/,
+                message: 'Only letters, numbers, underscore, hyphen',
+              },
+            ]}
+          >
+            <Input placeholder="my-skill" />
+          </Form.Item>
+          <Form.Item name="description" label="Description" rules={[{ required: true }]}>
+            <Input placeholder="Brief description of the skill" />
+          </Form.Item>
+          <Form.Item name="content" label="Content (SKILL.md body)">
+            <Input.TextArea rows={8} placeholder="# Skill instructions..." />
+          </Form.Item>
+          <Form.Item className="!mb-0">
+            <Space>
+              <Button
+                onClick={() => {
+                  setSkillCreateModal(false);
+                  skillCreateForm.resetFields();
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={createSkillMutation.isPending}
+              >
+                Create
+              </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+    </div>
+  );
+}

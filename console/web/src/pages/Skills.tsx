@@ -96,7 +96,7 @@ export default function Skills() {
           <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
             Skills
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Manage built-in and workspace skills</p>
+          <p className="text-sm text-gray-500 mt-1 hidden sm:block">Manage built-in and workspace skills</p>
         </div>
         <Space>
           {bots && bots.length > 1 && (
@@ -108,12 +108,12 @@ export default function Skills() {
             />
           )}
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setSkillCreateModal(true)}>
-            Add Skill
+            <span className="hidden sm:inline">Add Skill</span>
           </Button>
         </Space>
       </div>
 
-      <div className="max-w-3xl">
+      <div className="w-full">
         {skillsLoading ? (
           <div className="flex justify-center py-12">
             <Spin />
@@ -122,21 +122,21 @@ export default function Skills() {
           <Empty description="No skills found" />
         ) : (
           <>
-            <div>
+            <div className="w-full">
               <Title level={5} className="!text-sm !mb-3">
                 Built-in Skills (enable/disable)
               </Title>
-              <div className="space-y-2">
+              <div className="space-y-2 w-full flex flex-col">
                 {skills
                   .filter((s) => s.source === 'builtin')
                   .map((skill) => (
-                    <Card key={skill.name} size="small">
+                    <Card key={skill.name} size="small" className="w-full" style={{ width: '100%' }}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <ReadOutlined className="text-gray-500" />
                           <div>
                             <p className="font-medium">{skill.name}</p>
-                            <Text type="secondary" className="text-xs">
+                            <Text type="secondary" className="text-xs hidden sm:block">
                               {skill.description}
                             </Text>
                           </div>
@@ -162,21 +162,21 @@ export default function Skills() {
               </div>
             </div>
 
-            <div className="mt-6">
+            <div className="mt-6 w-full">
               <Title level={5} className="!text-sm !mb-3">
                 Workspace Skills (edit/delete)
               </Title>
-              <div className="space-y-2">
+              <div className="space-y-2 w-full flex flex-col">
                 {skills
                   .filter((s) => s.source === 'workspace')
                   .map((skill) => (
-                    <Card key={skill.name} size="small">
+                    <Card key={skill.name} size="small" className="w-full" style={{ width: '100%' }}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <ReadOutlined className="text-gray-500" />
                           <div>
                             <p className="font-medium">{skill.name}</p>
-                            <Text type="secondary" className="text-xs">
+                            <Text type="secondary" className="text-xs hidden sm:block">
                               {skill.description}
                             </Text>
                           </div>

@@ -470,6 +470,132 @@ async def validate_config(data: dict[str, Any], bot_id: str | None = Query(None)
 
 
 # ====================
+# Skills Endpoints
+# ====================
+
+
+class SkillCreateRequest(BaseModel):
+    name: str
+    description: str
+    content: str = ""
+
+
+class SkillContentUpdateRequest(BaseModel):
+    content: str
+
+
+@router.get("/skills")
+async def list_skills(bot_id: str | None = Query(None)) -> list[dict[str, Any]]:
+    """List all skills (builtin + workspace) for a bot."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        return []
+
+    from console.server.extension.skills import list_skills_for_bot
+
+    skills = list_skills_for_bot(workspace)
+    config = await state.get_config()
+    skills_config = config.get("skills") or {}
+
+    for s in skills:
+        cfg = skills_config.get(s["name"])
+        s["enabled"] = cfg.get("enabled", True) if isinstance(cfg, dict) else True
+
+    return skills
+
+
+@router.get("/skills/{name}/content")
+async def get_skill_content(
+    name: str,
+    bot_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """Get skill content (read-only for builtin, editable for workspace)."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    from console.server.extension.skills import get_skill_content as _get_content
+
+    content = _get_content(workspace, name)
+    if content is None:
+        raise HTTPException(status_code=404, detail="Skill not found")
+
+    return {"name": name, "content": content}
+
+
+@router.put("/skills/{name}/content")
+async def update_skill_content(
+    name: str,
+    request: SkillContentUpdateRequest,
+    bot_id: str | None = Query(None),
+) -> dict[str, str]:
+    """Update workspace skill content. Builtin skills are read-only."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    from console.server.extension.skills import update_skill_content as _update_content
+
+    content = request.content
+    if not _update_content(workspace, name, content):
+        raise HTTPException(
+            status_code=400,
+            detail="Skill not found or builtin (read-only)",
+        )
+    return {"status": "updated", "name": name}
+
+
+@router.post("/skills")
+async def create_skill(
+    request: SkillCreateRequest,
+    bot_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """Create a new workspace skill."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    from console.server.extension.skills import create_workspace_skill
+
+    if not create_workspace_skill(
+        workspace,
+        request.name,
+        request.description,
+        request.content,
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid skill name or skill already exists",
+        )
+    return {"status": "created", "name": request.name}
+
+
+@router.delete("/skills/{name}")
+async def delete_skill(
+    name: str,
+    bot_id: str | None = Query(None),
+) -> dict[str, str]:
+    """Delete a workspace skill. Builtin skills cannot be deleted."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    from console.server.extension.skills import delete_workspace_skill
+
+    if not delete_workspace_skill(workspace, name):
+        raise HTTPException(
+            status_code=400,
+            detail="Skill not found or builtin (cannot delete)",
+        )
+    return {"status": "deleted", "name": name}
+
+
+# ====================
 # Control Endpoints
 # ====================
 

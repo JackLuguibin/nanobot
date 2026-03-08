@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -97,6 +98,13 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
 
     sync_workspace_templates(config.workspace_path)
 
+    raw_config_json = {}
+    if config_path.exists():
+        try:
+            raw_config_json = json.loads(config_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+
     bus = MessageBus()
     session_manager = SessionManager(config.workspace_path)
 
@@ -134,6 +142,15 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
         except Exception as e:
             logger.warning("Bot '{}': failed to create agent loop: {}", bot_id, e)
 
+    if agent_loop is not None:
+        from console.server.extension.skills import PatchedContextBuilder
+
+        skills_config = raw_config_json.get("skills", {})
+        agent_loop.context = PatchedContextBuilder(
+            agent_loop.workspace,
+            skills_config=skills_config,
+        )
+
     channel_manager = None
     try:
         channel_manager = ChannelManager(config, bus)
@@ -141,6 +158,7 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
         logger.warning("Bot '{}': failed to create channel manager: {}", bot_id, e)
 
     config_dict = config.model_dump(by_alias=True) if hasattr(config, "model_dump") else {}
+    config_dict["skills"] = raw_config_json.get("skills", {})
 
     state = BotState(bot_id=bot_id)
     state.initialize(

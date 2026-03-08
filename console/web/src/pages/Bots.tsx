@@ -7,10 +7,9 @@ import {
   StarOutlined,
   StarFilled,
 } from '@ant-design/icons';
-import { Bot, FolderOpen, Clock, Settings } from 'lucide-react';
+import { Bot, FolderOpen, Clock } from 'lucide-react';
 import { useAppStore } from '../store';
 import * as api from '../api/client';
-import type { BotInfo } from '../api/types';
 
 export default function Bots() {
   const queryClient = useQueryClient();

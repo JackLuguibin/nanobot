@@ -83,7 +83,6 @@ export default function Layout({ children }: LayoutProps) {
   const { data: bots = [] } = useQuery({
     queryKey: ['bots'],
     queryFn: api.listBots,
-    refetchInterval: 15000,
   });
 
   const activeBotId = currentBotId || bots.find(b => b.is_default)?.id || bots[0]?.id || null;

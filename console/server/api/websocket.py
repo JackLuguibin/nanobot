@@ -112,6 +112,11 @@ class ConnectionManager:
         )
         await self.send_message(message)
 
+    async def broadcast_bots_update(self) -> None:
+        """Broadcast that the bots list has changed (create/delete/set_default)."""
+        message = WSMessage(type=WSMessageType.BOTS_UPDATE, data={})
+        await self.send_message(message)
+
 
 # Global connection manager
 _manager: ConnectionManager | None = None

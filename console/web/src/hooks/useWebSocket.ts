@@ -1,8 +1,10 @@
 import { useEffect, useRef, useCallback } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import type { StatusResponse, WSMessage } from '../api/types';
 
 export function useWebSocket() {
+  const queryClient = useQueryClient();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const isConnectingRef = useRef(false);
@@ -44,6 +46,10 @@ export function useWebSocket() {
             const statusData = message.data as StatusResponse;
             setStatus(statusData);
           }
+          if (message.type === 'bots_update') {
+            console.log('[WebSocket] Bots list updated, invalidating query');
+            queryClient.invalidateQueries({ queryKey: ['bots'] });
+          }
         } catch (e) {
           console.error('[WebSocket] Parse error:', e);
         }
@@ -78,7 +84,7 @@ export function useWebSocket() {
         connect();
       }, 5000);
     }
-  }, [setWSConnected, setStatus, addWSMessage]);
+  }, [queryClient, setWSConnected, setStatus, addWSMessage]);
 
   useEffect(() => {
     console.log('[WebSocket] Mounted, connecting...');

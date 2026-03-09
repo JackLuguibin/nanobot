@@ -51,6 +51,7 @@ export function useWebSocket() {
             const statusData = message.data as StatusResponse & { bot_id?: string };
             const targetBotId = statusData.bot_id ?? activeBotId;
             queryClient.setQueryData(['status', targetBotId], statusData);
+            queryClient.invalidateQueries({ queryKey: ['usage-history', targetBotId] });
             if (!statusData.bot_id || statusData.bot_id === activeBotId) {
               setStatus(statusData);
             }

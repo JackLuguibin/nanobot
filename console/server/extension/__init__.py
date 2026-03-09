@@ -22,8 +22,10 @@ __all__ = [
 
 # 扩展模块说明：
 # - cli.py     : Console CLI扩展（启动命令实现）
-# - agent.py     : 扩展Agent相关功能
-# - channels.py : 扩展通道管理功能
-# - providers.py : 扩展LLM Provider功能
-# - session.py  : 扩展会话管理功能
-# - config.py   : 扩展配置加载功能
+# - skills.py  : Skills 管理扩展（PatchedContextBuilder 等）
+# - usage.py   : Token 使用量追踪扩展，包装 LLM provider 累积 prompt/completion/total tokens，供 Dashboard 展示
+# - agent.py   : 扩展Agent相关功能
+# - channels.py: 扩展通道管理功能
+# - providers.py: 扩展LLM Provider功能
+# - session.py : 扩展会话管理功能
+# - config.py  : 扩展配置加载功能

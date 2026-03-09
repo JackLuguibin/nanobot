@@ -208,6 +208,18 @@ async def get_status(bot_id: str | None = Query(None)) -> StatusResponse:
     return StatusResponse(**status)
 
 
+@router.get("/usage/history")
+async def get_usage_history(
+    bot_id: str | None = Query(None),
+    days: int = Query(14, ge=1, le=90),
+) -> list[dict[str, Any]]:
+    """Get daily token usage history for the chart."""
+    from console.server.extension.usage import get_usage_history
+
+    state = _resolve_state(bot_id)
+    return get_usage_history(state.bot_id, days=days)
+
+
 @router.get("/channels", response_model=list[ChannelStatus])
 async def get_channels(bot_id: str | None = Query(None)) -> list[ChannelStatus]:
     """Get all channels from config, merged with runtime status when available."""

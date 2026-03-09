@@ -754,7 +754,7 @@ def run_full_stack(
             host="0.0.0.0",
             port=console_port,
             log_level="info",
-            reload=True,
+            reload=False,
         )
 
     console_thread = threading.Thread(target=run_console_server_thread, daemon=True)

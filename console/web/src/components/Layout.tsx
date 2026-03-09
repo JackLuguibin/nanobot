@@ -24,6 +24,7 @@ import {
   Monitor,
   Users,
   BookOpen,
+  Brain,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -60,6 +61,7 @@ const navSections: NavSection[] = [
     title: 'Agent',
     items: [
       { path: '/mcp', label: 'MCP', icon: Plug },
+      { path: '/memory', label: '记忆', icon: Brain },
       { path: '/logs', label: 'Logs', icon: FileText },
       { path: '/skills', label: 'Skills', icon: BookOpen },
     ],
@@ -234,7 +236,7 @@ export default function Layout({ children }: LayoutProps) {
           />
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto pt-2">
+        <div className="flex-1 min-h-0 overflow-y-auto pt-2 flex flex-col">
           {children}
         </div>
       </main>

@@ -434,6 +434,29 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 
 # ====================
+# Memory Endpoints
+# ====================
+
+
+@router.get("/memory")
+async def get_memory(bot_id: str | None = Query(None)) -> dict[str, str]:
+    """Get long-term memory (MEMORY.md) and history (HISTORY.md)."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    from nanobot.agent.memory import MemoryStore
+
+    store = MemoryStore(workspace)
+    return {
+        "long_term": store.read_long_term(),
+        "history": store.history_file.read_text(encoding="utf-8")
+        if store.history_file.exists()
+        else "",
+    }
+
+
+# ====================
 # Config Endpoints
 # ====================
 

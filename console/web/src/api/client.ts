@@ -5,6 +5,7 @@ import type {
   ChannelStatus,
   ConfigSection,
   MCPStatus,
+  MemoryResponse,
   SessionInfo,
   SessionDetail,
   StatusResponse,
@@ -147,6 +148,14 @@ export async function getToolLogs(
   if (toolName) params.append('tool_name', toolName);
   if (botId) params.append('bot_id', botId);
   return fetchJson<ToolCallLog[]>(`${API_BASE}/tools/log?${params}`);
+}
+
+// ====================
+// Memory API
+// ====================
+
+export async function getMemory(botId?: string | null): Promise<MemoryResponse> {
+  return fetchJson<MemoryResponse>(appendBotQuery(`${API_BASE}/memory`, botId));
 }
 
 // ====================

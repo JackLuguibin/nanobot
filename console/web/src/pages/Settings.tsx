@@ -24,6 +24,9 @@ import {
   MobileOutlined,
   ToolOutlined,
   SunOutlined,
+  EnvironmentOutlined,
+  PlusOutlined,
+  DeleteOutlined,
 } from '@ant-design/icons';
 import { Sun, Moon, Monitor } from 'lucide-react';
 import * as api from '../api/client';
@@ -31,7 +34,7 @@ import { useAppStore } from '../store';
 
 const { Title, Text } = Typography;
 
-type SettingsTab = 'general' | 'appearance' | 'providers' | 'tools' | 'channels';
+type SettingsTab = 'general' | 'appearance' | 'providers' | 'tools' | 'channels' | 'environment';
 
 interface FormData {
   model: string;
@@ -52,6 +55,22 @@ export default function Settings() {
     queryKey: ['config', currentBotId],
     queryFn: () => api.getConfig(currentBotId),
   });
+
+  const { data: envData, isLoading: envLoading } = useQuery({
+    queryKey: ['env', currentBotId],
+    queryFn: () => api.getEnv(currentBotId),
+  });
+
+  const [envEntries, setEnvEntries] = useState<Array<{ key: string; value: string }>>([]);
+  useEffect(() => {
+    if (envData?.vars) {
+      setEnvEntries(
+        Object.entries(envData.vars).map(([key, value]) => ({ key, value }))
+      );
+    } else if (envData && Object.keys(envData.vars || {}).length === 0) {
+      setEnvEntries([]);
+    }
+  }, [envData]);
 
   useEffect(() => {
     if (config) {
@@ -82,6 +101,20 @@ export default function Settings() {
     },
   });
 
+  const updateEnvMutation = useMutation({
+    mutationFn: (vars: Record<string, string>) => api.updateEnv(vars, currentBotId),
+    onSuccess: () => {
+      addToast({
+        type: 'success',
+        message: 'Environment variables saved. Restart the bot for changes to take effect.',
+      });
+      queryClient.invalidateQueries({ queryKey: ['env'] });
+    },
+    onError: (error) => {
+      addToast({ type: 'error', message: String(error) });
+    },
+  });
+
   const handleSave = async () => {
     const values = await form.validateFields();
     updateConfigMutation.mutate({
@@ -96,6 +129,15 @@ export default function Settings() {
         },
       },
     });
+  };
+
+  const handleSaveEnv = () => {
+    const vars: Record<string, string> = {};
+    for (const { key, value } of envEntries) {
+      const k = key?.trim();
+      if (k) vars[k] = value ?? '';
+    }
+    updateEnvMutation.mutate(vars);
   };
 
   const handleExportConfig = () => {
@@ -124,6 +166,75 @@ export default function Settings() {
       </div>
     );
   }
+
+  const envTabContent = (
+    <div className="max-w-2xl space-y-4">
+      <Title level={5} className="!mb-4">
+        Environment Variables
+      </Title>
+      <Alert
+        message="These variables are written to .env and loaded when the bot starts."
+        description="Restart the bot after saving for changes to take effect. Values are stored as plain text."
+        type="info"
+        showIcon
+        className="mb-4"
+      />
+      {envLoading ? (
+        <Spin />
+      ) : (
+        <>
+          <div className="space-y-2">
+            {envEntries.map((entry, idx) => (
+              <div key={idx} className="flex gap-2 items-center">
+                <Input
+                  placeholder="KEY"
+                  value={entry.key}
+                  onChange={(e) => {
+                    const next = [...envEntries];
+                    next[idx] = { ...next[idx], key: e.target.value };
+                    setEnvEntries(next);
+                  }}
+                  className="flex-1 font-mono"
+                />
+                <Input.Password
+                  placeholder="value"
+                  value={entry.value}
+                  onChange={(e) => {
+                    const next = [...envEntries];
+                    next[idx] = { ...next[idx], value: e.target.value };
+                    setEnvEntries(next);
+                  }}
+                  className="flex-1 font-mono"
+                />
+                <Button
+                  type="text"
+                  danger
+                  icon={<DeleteOutlined />}
+                  onClick={() => setEnvEntries(envEntries.filter((_, i) => i !== idx))}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2">
+            <Button
+              icon={<PlusOutlined />}
+              onClick={() => setEnvEntries([...envEntries, { key: '', value: '' }])}
+            >
+              Add Variable
+            </Button>
+            <Button
+              type="primary"
+              icon={<SaveOutlined />}
+              loading={updateEnvMutation.isPending}
+              onClick={handleSaveEnv}
+            >
+              Save Environment
+            </Button>
+          </div>
+        </>
+      )}
+    </div>
+  );
 
   const tabItems = [
     {
@@ -476,6 +587,15 @@ export default function Settings() {
           </div>
         </div>
       ),
+    },
+    {
+      key: 'environment',
+      label: (
+        <span className="flex items-center gap-1.5">
+          <EnvironmentOutlined /> Environment
+        </span>
+      ),
+      children: envTabContent,
     },
   ];
 

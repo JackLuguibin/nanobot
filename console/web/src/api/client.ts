@@ -247,6 +247,24 @@ export async function validateConfig(
 }
 
 // ====================
+// Environment Variables API
+// ====================
+
+export async function getEnv(botId?: string | null): Promise<{ vars: Record<string, string> }> {
+  return fetchJson<{ vars: Record<string, string> }>(`${API_BASE}/env${botQuery(botId)}`);
+}
+
+export async function updateEnv(
+  vars: Record<string, string>,
+  botId?: string | null
+): Promise<{ status: string; vars?: Record<string, string> }> {
+  return fetchJson(`${API_BASE}/env${botQuery(botId)}`, {
+    method: 'PUT',
+    body: JSON.stringify({ vars }),
+  });
+}
+
+// ====================
 // Control API
 // ====================
 

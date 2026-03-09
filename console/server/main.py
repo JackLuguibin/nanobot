@@ -99,6 +99,8 @@ def _make_provider(config) -> Any:
 
 def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
     """Create a BotState from a loaded Config object."""
+    from dotenv import load_dotenv
+
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.channels.manager import ChannelManager
@@ -106,6 +108,10 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
     from nanobot.cron.service import CronService
     from nanobot.session.manager import SessionManager
     from nanobot.utils.helpers import sync_workspace_templates
+
+    env_path = config_path.parent / ".env"
+    if env_path.exists():
+        load_dotenv(env_path)
 
     sync_workspace_templates(config.workspace_path)
 

@@ -91,6 +91,29 @@ export async function getChannels(botId?: string | null): Promise<ChannelStatus[
   return fetchJson<ChannelStatus[]>(`${API_BASE}/channels${botQuery(botId)}`);
 }
 
+export async function updateChannel(
+  name: string,
+  data: Record<string, unknown>,
+  botId?: string | null
+): Promise<Record<string, unknown>> {
+  return fetchJson<Record<string, unknown>>(
+    appendBotQuery(`${API_BASE}/channels/${encodeURIComponent(name)}`, botId),
+    {
+      method: 'PUT',
+      body: JSON.stringify({ data }),
+    }
+  );
+}
+
+export async function deleteChannel(
+  name: string,
+  botId?: string | null
+): Promise<{ status: string }> {
+  return fetchJson(appendBotQuery(`${API_BASE}/channels/${encodeURIComponent(name)}`, botId), {
+    method: 'DELETE',
+  });
+}
+
 export async function getMCPServers(botId?: string | null): Promise<MCPStatus[]> {
   return fetchJson<MCPStatus[]>(`${API_BASE}/mcp${botQuery(botId)}`);
 }

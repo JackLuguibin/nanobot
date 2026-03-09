@@ -26,12 +26,12 @@ export default function Bots() {
     mutationFn: (name: string) => api.createBot(name),
     onSuccess: (bot) => {
       queryClient.invalidateQueries({ queryKey: ['bots'] });
-      addToast({ type: 'success', message: `Bot "${bot.name}" 创建成功` });
+      addToast({ type: 'success', message: `Bot "${bot.name}" created successfully` });
       setCreateModalOpen(false);
       setNewBotName('');
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `创建失败: ${err.message}` });
+      addToast({ type: 'error', message: `Create failed: ${err.message}` });
     },
   });
 
@@ -42,10 +42,10 @@ export default function Bots() {
       if (currentBotId === botId) {
         setCurrentBotId(null);
       }
-      addToast({ type: 'success', message: 'Bot 已删除' });
+      addToast({ type: 'success', message: 'Bot deleted' });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `删除失败: ${err.message}` });
+      addToast({ type: 'error', message: `Delete failed: ${err.message}` });
     },
   });
 
@@ -53,10 +53,10 @@ export default function Bots() {
     mutationFn: (botId: string) => api.setDefaultBot(botId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['bots'] });
-      addToast({ type: 'success', message: '默认 Bot 已更新' });
+      addToast({ type: 'success', message: 'Default Bot updated' });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `设置默认失败: ${err.message}` });
+      addToast({ type: 'error', message: `Set default failed: ${err.message}` });
     },
   });
 
@@ -68,7 +68,7 @@ export default function Bots() {
 
   const handleSelect = (botId: string) => {
     setCurrentBotId(botId);
-    addToast({ type: 'info', message: '已切换当前 Bot' });
+    addToast({ type: 'info', message: 'Switched to current Bot' });
   };
 
   return (
@@ -76,10 +76,10 @@ export default function Bots() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Bot 管理
+            Bot Management
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-            管理多个 Bot 实例，每个 Bot 拥有独立的配置和工作空间
+            Manage multiple Bot instances, each with its own config and workspace
           </p>
         </div>
         <Button
@@ -87,7 +87,7 @@ export default function Bots() {
           icon={<PlusOutlined />}
           onClick={() => setCreateModalOpen(true)}
         >
-          新建 Bot
+          New Bot
         </Button>
       </div>
 
@@ -97,7 +97,7 @@ export default function Bots() {
         </div>
       ) : bots.length === 0 ? (
         <Empty
-          description="暂无 Bot，点击右上角创建"
+          description="No Bot yet, click the button above to create"
           className="py-20"
         />
       ) : (
@@ -132,13 +132,13 @@ export default function Bots() {
                       </h3>
                       <div className="flex items-center gap-1.5 mt-0.5">
                         {bot.is_default && (
-                          <Tag color="blue" className="text-xs !mr-0">默认</Tag>
+                          <Tag color="blue" className="text-xs !mr-0">Default</Tag>
                         )}
                         <Tag
                           color={bot.running ? 'green' : 'default'}
                           className="text-xs !mr-0"
                         >
-                          {bot.running ? '运行中' : '已停止'}
+                          {bot.running ? 'Running' : 'Stopped'}
                         </Tag>
                       </div>
                     </div>
@@ -159,14 +159,14 @@ export default function Bots() {
                     <span>
                       {bot.created_at
                         ? new Date(bot.created_at).toLocaleDateString('zh-CN')
-                        : '未知'}
+                        : 'Unknown'}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
                   {!bot.is_default && (
-                    <Tooltip title="设为默认">
+                    <Tooltip title="Set as default">
                       <Button
                         type="text"
                         size="small"
@@ -179,7 +179,7 @@ export default function Bots() {
                     </Tooltip>
                   )}
                   {bot.is_default && (
-                    <Tooltip title="当前默认">
+                    <Tooltip title="Current default">
                       <Button
                         type="text"
                         size="small"
@@ -190,18 +190,18 @@ export default function Bots() {
                     </Tooltip>
                   )}
                   <Popconfirm
-                    title="确认删除"
-                    description="将同时删除该 Bot 的配置和工作空间数据"
+                    title="Confirm delete"
+                    description="This will also delete the Bot's config and workspace data"
                     onConfirm={(e) => {
                       e?.stopPropagation();
                       deleteMutation.mutate(bot.id);
                     }}
                     onCancel={(e) => e?.stopPropagation()}
-                    okText="删除"
-                    cancelText="取消"
+                    okText="Delete"
+                    cancelText="Cancel"
                     okButtonProps={{ danger: true }}
                   >
-                    <Tooltip title="删除">
+                    <Tooltip title="Delete">
                       <Button
                         type="text"
                         size="small"
@@ -219,31 +219,31 @@ export default function Bots() {
       )}
 
       <Modal
-        title="新建 Bot"
+        title="New Bot"
         open={createModalOpen}
         onOk={handleCreate}
         onCancel={() => {
           setCreateModalOpen(false);
           setNewBotName('');
         }}
-        okText="创建"
-        cancelText="取消"
+        okText="Create"
+        cancelText="Cancel"
         confirmLoading={createMutation.isPending}
         okButtonProps={{ disabled: !newBotName.trim() }}
       >
         <div className="py-4">
           <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Bot 名称
+            Bot name
           </label>
           <Input
-            placeholder="例如：工作助手、代码审查、翻译助手"
+            placeholder="e.g. Work Assistant, Code Review, Translation"
             value={newBotName}
             onChange={(e) => setNewBotName(e.target.value)}
             onPressEnter={handleCreate}
             autoFocus
           />
           <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
-            每个 Bot 都有独立的配置、工作空间和会话历史
+            Each Bot has its own config, workspace and session history
           </p>
         </div>
       </Modal>

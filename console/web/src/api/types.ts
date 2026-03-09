@@ -211,3 +211,13 @@ export interface MemoryResponse {
   long_term: string;
   history: string;
 }
+
+// Bot profile files (SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY)
+export interface BotFilesResponse {
+  soul: string;
+  user: string;
+  heartbeat: string;
+  tools: string;
+  agents: string;
+  identity: string;
+}

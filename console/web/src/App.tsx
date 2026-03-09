@@ -14,6 +14,7 @@ import Skills from './pages/Skills';
 import Logs from './pages/Logs';
 import Bots from './pages/Bots';
 import Memory from './pages/Memory';
+import BotProfile from './pages/BotProfile';
 
 function resolveIsDark(theme: 'light' | 'dark' | 'system'): boolean {
   if (theme === 'dark') return true;
@@ -36,6 +37,7 @@ function AppRoutes() {
           <Route path="/bots" element={<Bots />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/memory" element={<Memory />} />
+          <Route path="/bot-profile" element={<BotProfile />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/logs" element={<Logs />} />
         </Routes>

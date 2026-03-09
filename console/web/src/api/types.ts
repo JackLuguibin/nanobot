@@ -205,3 +205,9 @@ export interface MCPTestResult {
 export interface SessionDetail extends SessionInfo {
   preview_messages?: Message[];
 }
+
+// Memory
+export interface MemoryResponse {
+  long_term: string;
+  history: string;
+}

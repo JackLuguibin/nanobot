@@ -742,23 +742,8 @@ def run_full_stack(
 
     time.sleep(2)
 
-    # 2. Start console API server (调试模式: reload=True)
+    # 2. Start console API server (调试模式: reload=True，必须在主线程运行)
     _print(f"[green]✓[/green] Starting console API on port {console_port}...")
-
-    def run_console_server_thread():
-        import uvicorn
-
-        # 使用字符串形式以便 reload 能正确监视文件变化
-        uvicorn.run(
-            "console.server.main:app",
-            host="0.0.0.0",
-            port=console_port,
-            log_level="info",
-            reload=False,
-        )
-
-    console_thread = threading.Thread(target=run_console_server_thread, daemon=True)
-    console_thread.start()
 
     # 3. Optionally start frontend dev server
     if frontend:
@@ -800,7 +785,15 @@ def run_full_stack(
             browser_thread.start()
 
     try:
-        while True:
-            time.sleep(1)
+        import uvicorn
+
+        # reload=True 必须在主线程运行（signal 仅支持主线程）
+        uvicorn.run(
+            "console.server.main:app",
+            host="0.0.0.0",
+            port=console_port,
+            log_level="info",
+            reload=True,
+        )
     except KeyboardInterrupt:
         _print("\n[yellow]Shutting down...[/yellow]")

@@ -134,6 +134,11 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
     except Exception as e:
         logger.warning("Bot '{}': failed to create provider: {}", bot_id, e)
 
+    if provider is not None:
+        from console.server.extension.usage import UsageTrackingProvider
+
+        provider = UsageTrackingProvider(provider, bot_id)
+
     agent_loop: AgentLoop | None = None
     if provider is not None:
         try:

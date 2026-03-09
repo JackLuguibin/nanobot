@@ -188,12 +188,21 @@ class BotState:
         if self._agent_loop and hasattr(self._agent_loop, "model"):
             model = self._agent_loop.model
 
+        token_usage = {}
+        try:
+            from console.server.extension.usage import get_usage_today
+
+            token_usage = get_usage_today(self.bot_id)
+        except Exception:
+            pass
+
         return {
             "running": self.is_running,
             "uptime_seconds": self.uptime_seconds,
             "model": model,
             "active_sessions": active_sessions,
             "messages_today": self._messages_today,
+            "token_usage": token_usage,
             "channels": channels,
             "mcp_servers": mcp_servers,
         }

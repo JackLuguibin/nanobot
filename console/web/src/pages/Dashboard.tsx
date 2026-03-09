@@ -26,9 +26,20 @@ import {
   MobileOutlined,
   ApiOutlined,
   CheckCircleOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons';
+import { Column } from '@ant-design/plots';
+import type { UsageHistoryItem } from '../api/types';
 
 const { Text } = Typography;
+
+/** 将 usageHistory 转为柱状图分组数据 */
+function toColumnData(history: UsageHistoryItem[]) {
+  return history.flatMap((d) => [
+    { date: d.date, type: '输入', value: d.prompt_tokens ?? 0 },
+    { date: d.date, type: '输出', value: d.completion_tokens ?? 0 },
+  ]);
+}
 
 function formatUptime(seconds: number): string {
   const hours = Math.floor(seconds / 3600);
@@ -69,6 +80,12 @@ export default function Dashboard() {
       const sessions = await api.listSessions(currentBotId);
       return sessions.slice(0, 5);
     },
+    refetchInterval: false,
+  });
+
+  const { data: usageHistory, isLoading: usageLoading } = useQuery({
+    queryKey: ['usage-history', currentBotId],
+    queryFn: () => api.getUsageHistory(currentBotId, 14),
     refetchInterval: false,
   });
 
@@ -160,12 +177,18 @@ export default function Dashboard() {
           >
             <span className="hidden sm:inline">Restart</span>
           </Button>
-          <Button icon={<ReloadOutlined />} onClick={() => refetch()} />
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => {
+              refetch();
+              queryClient.invalidateQueries({ queryKey: ['usage-history', currentBotId] });
+            }}
+          />
         </Space>
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card hoverable>
           <Statistic
             title="Status"
@@ -201,24 +224,114 @@ export default function Dashboard() {
             prefix={<MessageOutlined className="text-orange-500" />}
           />
         </Card>
+        <Card hoverable>
+          <Statistic
+            title="Tokens Today"
+            value={
+              status?.token_usage?.total_tokens != null
+                ? status.token_usage.total_tokens.toLocaleString()
+                : '-'
+            }
+            prefix={<ThunderboltOutlined className="text-amber-500" />}
+          />
+        </Card>
       </div>
 
-      {/* Model Info */}
+      {/* Model Info & Token Usage */}
       {status?.model && (
         <Card size="small">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-900/30">
-              <ThunderboltOutlined className="text-blue-600 text-lg" />
+          <div className="flex items-center justify-between gap-4 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-blue-100 dark:bg-blue-900/30">
+                <ThunderboltOutlined className="text-blue-600 text-lg" />
+              </div>
+              <div>
+                <Text type="secondary" className="text-xs">
+                  Current Model
+                </Text>
+                <p className="font-semibold text-base">{status.model}</p>
+              </div>
             </div>
-            <div>
-              <Text type="secondary" className="text-xs">
-                Current Model
-              </Text>
-              <p className="font-semibold text-base">{status.model}</p>
-            </div>
+            {status?.token_usage && ((status?.token_usage?.total_tokens ?? 0) + (status?.token_usage?.prompt_tokens ?? 0) + (status?.token_usage?.completion_tokens ?? 0)) > 0 && (
+              <div className="flex items-center gap-4 text-sm">
+                <div>
+                  <Text type="secondary" className="text-xs block">今日 Token 使用</Text>
+                  <span className="font-medium">
+                    {(status?.token_usage?.total_tokens ?? 0).toLocaleString()}
+                  </span>
+                  <Text type="secondary" className="text-xs ml-1">total</Text>
+                </div>
+                <div>
+                  <Text type="secondary" className="text-xs block">输入</Text>
+                  <span className="font-medium">
+                    {(status?.token_usage?.prompt_tokens ?? 0).toLocaleString()}
+                  </span>
+                </div>
+                <div>
+                  <Text type="secondary" className="text-xs block">输出</Text>
+                  <span className="font-medium">
+                    {(status?.token_usage?.completion_tokens ?? 0).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       )}
+
+      {/* Token Usage Chart - 输入/输出柱状图 + 趋势线 */}
+      <Card
+        title={
+          <span className="flex items-center gap-2">
+            <BarChartOutlined className="text-amber-500" /> 每日 Token 使用量
+          </span>
+        }
+        size="small"
+      >
+        {usageLoading ? (
+          <div className="flex items-center justify-center h-[280px]">
+            <Spin />
+          </div>
+        ) : usageHistory && usageHistory.length > 0 ? (
+          <div className="h-[280px] w-full" style={{ minHeight: 240 }}>
+            <Column
+              data={toColumnData(usageHistory)}
+              xField="date"
+              yField="value"
+              seriesField="type"
+              group
+              style={{
+                fill: (d: { type: string }) =>
+                  d.type === '输入' ? '#3b82f6' : d.type === '输出' ? '#22c55e' : '#94a3b8',
+              }}
+              label={{
+                text: 'value',
+                position: 'top',
+                style: { dy: -16 },
+                formatter: (v: unknown) => {
+                  const n = Number(v);
+                  return n > 0 ? n.toLocaleString() : '';
+                },
+              }}
+              xAxis={{
+                label: {
+                  formatter: (v: string) => (typeof v === 'string' ? v.slice(5) : String(v)),
+                },
+              }}
+              yAxis={{
+                label: {
+                  formatter: (v: string) => Number(v).toLocaleString(),
+                },
+              }}
+              legend={{ position: 'top' }}
+            />
+          </div>
+        ) : (
+          <Text type="secondary" className="block text-center py-12">
+            暂无使用数据，与模型对话后会自动记录
+          </Text>
+        )}
+      </Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Sessions */}

@@ -73,12 +73,26 @@ export interface ToolCallLog {
   timestamp: string;
 }
 
+export interface TokenUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+export interface UsageHistoryItem {
+  date: string;
+  total_tokens: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+}
+
 export interface StatusResponse {
   running: boolean;
   uptime_seconds: number;
   model?: string;
   active_sessions: number;
   messages_today: number;
+  token_usage?: TokenUsage;
   channels: ChannelStatus[];
   mcp_servers: MCPStatus[];
 }

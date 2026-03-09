@@ -87,6 +87,16 @@ export async function getStatus(botId?: string | null): Promise<StatusResponse> 
   return fetchJson<StatusResponse>(`${API_BASE}/status${botQuery(botId)}`);
 }
 
+export async function getUsageHistory(
+  botId?: string | null,
+  days: number = 14
+): Promise<import('./types').UsageHistoryItem[]> {
+  const params = new URLSearchParams();
+  if (botId) params.set('bot_id', botId);
+  params.set('days', String(days));
+  return fetchJson(`${API_BASE}/usage/history?${params}`);
+}
+
 export async function getChannels(botId?: string | null): Promise<ChannelStatus[]> {
   return fetchJson<ChannelStatus[]>(`${API_BASE}/channels${botQuery(botId)}`);
 }

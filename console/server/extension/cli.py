@@ -742,15 +742,20 @@ def run_full_stack(
 
     time.sleep(2)
 
-    # 2. Start console API server
+    # 2. Start console API server (调试模式: reload=True)
     _print(f"[green]✓[/green] Starting console API on port {console_port}...")
 
     def run_console_server_thread():
         import uvicorn
 
-        from console.server.main import app as fastapi_app
-
-        uvicorn.run(fastapi_app, host="0.0.0.0", port=console_port, log_level="info")
+        # 使用字符串形式以便 reload 能正确监视文件变化
+        uvicorn.run(
+            "console.server.main:app",
+            host="0.0.0.0",
+            port=console_port,
+            log_level="info",
+            reload=True,
+        )
 
     console_thread = threading.Thread(target=run_console_server_thread, daemon=True)
     console_thread.start()

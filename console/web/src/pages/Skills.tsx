@@ -15,7 +15,8 @@ import {
   Empty,
   Switch,
 } from 'antd';
-import { ReadOutlined, EditOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import { ReadOutlined, EditOutlined, DeleteOutlined, PlusOutlined, EyeOutlined } from '@ant-design/icons';
+import ReactMarkdown from 'react-markdown';
 import * as api from '../api/client';
 import { useAppStore } from '../store';
 
@@ -28,11 +29,37 @@ const SKILL_TABS: { key: SkillTabKey; label: string }[] = [
   { key: 'workspace', label: 'Workspace Skills' },
 ];
 
+/** Parse SKILL.md content to extract description and body (workspace skills have frontmatter). */
+function parseSkillContent(full: string): { description: string; body: string } {
+  const match = full.match(/^---\s*\n([\s\S]*?)\n---\s*\n?([\s\S]*)$/);
+  if (!match) return { description: '', body: full };
+  const [, frontmatter, body] = match;
+  const descMatch = frontmatter.match(/description:\s*"((?:[^"\\]|\\.)*)"/);
+  return {
+    description: descMatch ? descMatch[1].replace(/\\"/g, '"') : '',
+    body: (body || '').trim(),
+  };
+}
+
+/** Build full SKILL.md content from name, description, and body. */
+function buildSkillContent(name: string, description: string, body: string): string {
+  const descEscaped = description.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, ' ');
+  return `---\nname: "${name}"\ndescription: "${descEscaped}"\n---\n\n${body}`;
+}
+
 export default function Skills() {
   const queryClient = useQueryClient();
   const { addToast, currentBotId, setCurrentBotId } = useAppStore();
   const [activeTab, setActiveTab] = useState<SkillTabKey>('builtin');
-  const [skillEditModal, setSkillEditModal] = useState<{ name: string; content: string } | null>(null);
+  const [skillViewModal, setSkillViewModal] = useState<{ name: string; content: string } | null>(null);
+  const [skillViewMode, setSkillViewMode] = useState<'raw' | 'preview'>('preview');
+  const [skillEditModal, setSkillEditModal] = useState<{
+    name: string;
+    content: string;
+    description: string;
+    body: string;
+    isWorkspace: boolean;
+  } | null>(null);
   const [skillCreateModal, setSkillCreateModal] = useState(false);
   const [skillCreateForm] = Form.useForm<{ name: string; description: string; content: string }>();
 
@@ -96,6 +123,35 @@ export default function Skills() {
       addToast({ type: 'error', message: String(error) });
     },
   });
+
+  const copyToWorkspaceMutation = useMutation({
+    mutationFn: (name: string) => api.copySkillToWorkspace(name, currentBotId),
+    onSuccess: () => {
+      addToast({ type: 'success', message: 'Skill copied to workspace' });
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+    },
+    onError: (error) => {
+      addToast({ type: 'error', message: String(error) });
+    },
+  });
+
+  const handleEditBuiltin = async (skill: { name: string; description: string }) => {
+    try {
+      await copyToWorkspaceMutation.mutateAsync(skill.name);
+      setActiveTab('workspace');
+      const res = await api.getSkillContent(skill.name, currentBotId);
+      const { description, body } = parseSkillContent(res.content);
+      setSkillEditModal({
+        name: res.name,
+        content: res.content,
+        description: description || skill.description,
+        body,
+        isWorkspace: true,
+      });
+    } catch {
+      // Error already handled by mutation
+    }
+  };
 
   return (
     <div className="p-6 flex flex-col flex-1 min-h-0">
@@ -184,6 +240,27 @@ export default function Skills() {
                             )}
                           </div>
                           <Space>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<EditOutlined />}
+                              onClick={() => handleEditBuiltin(skill)}
+                              loading={copyToWorkspaceMutation.isPending}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<EyeOutlined />}
+                              onClick={async () => {
+                                const res = await api.getSkillContent(skill.name, currentBotId);
+                                setSkillViewModal({ name: res.name, content: res.content });
+                                setSkillViewMode('preview');
+                              }}
+                            >
+                              View
+                            </Button>
                             <Switch
                               checked={skill.enabled}
                               onChange={(checked) =>
@@ -231,7 +308,14 @@ export default function Skills() {
                               icon={<EditOutlined />}
                               onClick={async () => {
                                 const res = await api.getSkillContent(skill.name, currentBotId);
-                                setSkillEditModal({ name: res.name, content: res.content });
+                                const { description, body } = parseSkillContent(res.content);
+                                setSkillEditModal({
+                                  name: res.name,
+                                  content: res.content,
+                                  description: description || skill.description,
+                                  body,
+                                  isWorkspace: true,
+                                });
                               }}
                             >
                               Edit
@@ -266,6 +350,49 @@ export default function Skills() {
       )}
 
       <Modal
+        title={`View skill: ${skillViewModal?.name}`}
+        open={!!skillViewModal}
+        onCancel={() => setSkillViewModal(null)}
+        footer={
+          <div className="flex items-center justify-between w-full">
+            <div className="flex gap-1">
+              <button
+                type="button"
+                onClick={() => setSkillViewMode('preview')}
+                className={`px-3 py-1 rounded text-sm ${skillViewMode === 'preview' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}
+              >
+                Preview
+              </button>
+              <button
+                type="button"
+                onClick={() => setSkillViewMode('raw')}
+                className={`px-3 py-1 rounded text-sm ${skillViewMode === 'raw' ? 'bg-primary-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400'}`}
+              >
+                Raw
+              </button>
+            </div>
+            <Button onClick={() => setSkillViewModal(null)}>Close</Button>
+          </div>
+        }
+        width={700}
+        destroyOnClose
+      >
+        {skillViewModal && (
+          <div className="overflow-auto max-h-[60vh]">
+            {skillViewMode === 'raw' ? (
+              <pre className="p-4 rounded-lg bg-gray-50 dark:bg-gray-900 text-sm font-mono whitespace-pre-wrap">
+                {skillViewModal.content}
+              </pre>
+            ) : (
+              <div className="p-4 prose prose-slate dark:prose-invert prose-sm max-w-none">
+                <ReactMarkdown>{skillViewModal.content}</ReactMarkdown>
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
+
+      <Modal
         title={`Edit skill: ${skillEditModal?.name}`}
         open={!!skillEditModal}
         onCancel={() => setSkillEditModal(null)}
@@ -273,20 +400,31 @@ export default function Skills() {
         width={700}
         destroyOnClose
       >
-        {skillEditModal && (
+        {skillEditModal && skillEditModal.isWorkspace && (
           <Form
             key={skillEditModal.name}
             layout="vertical"
-            initialValues={{ content: skillEditModal.content }}
-            onFinish={(values) =>
+            initialValues={{
+              description: skillEditModal.description,
+              body: skillEditModal.body,
+            }}
+            onFinish={(values) => {
+              const content = buildSkillContent(
+                skillEditModal.name,
+                values.description,
+                values.body
+              );
               updateSkillContentMutation.mutate({
                 name: skillEditModal.name,
-                content: values.content,
-              })
-            }
+                content,
+              });
+            }}
           >
-            <Form.Item name="content" rules={[{ required: true }]}>
-              <Input.TextArea rows={16} className="font-mono text-sm" />
+            <Form.Item name="description" label="Description" rules={[{ required: true }]}>
+              <Input placeholder="Brief description of the skill" />
+            </Form.Item>
+            <Form.Item name="body" label="Content (SKILL.md body)" rules={[{ required: true }]}>
+              <Input.TextArea rows={14} className="font-mono text-sm" placeholder="# Skill instructions..." />
             </Form.Item>
             <Form.Item className="!mb-0">
               <Space>

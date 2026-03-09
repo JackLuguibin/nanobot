@@ -105,6 +105,10 @@ class BotState:
         return self._workspace
 
     @property
+    def config_path(self) -> Path | None:
+        return self._config_path
+
+    @property
     def is_running(self) -> bool:
         return (
             self._agent_loop is not None

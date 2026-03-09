@@ -60,7 +60,7 @@ export default function Dashboard() {
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['status', currentBotId],
     queryFn: () => api.getStatus(currentBotId),
-    refetchInterval: 30000,
+    refetchInterval: false,
   });
 
   const { data: recentSessions } = useQuery({
@@ -69,7 +69,7 @@ export default function Dashboard() {
       const sessions = await api.listSessions(currentBotId);
       return sessions.slice(0, 5);
     },
-    refetchInterval: 60000,
+    refetchInterval: false,
   });
 
   useEffect(() => {

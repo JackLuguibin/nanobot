@@ -47,7 +47,7 @@ function ChatInput({ inputRef, value, onChange, onKeyDown, onSend, onStop, isStr
           onKeyDown={onKeyDown}
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
-          placeholder="发送消息..."
+          placeholder="Send a message..."
           autoSize={{ minRows: 1, maxRows: 8 }}
           variant="borderless"
           className="!text-[15px] !leading-relaxed !py-3.5 !px-4 !pr-14 resize-none bg-transparent"
@@ -60,10 +60,10 @@ function ChatInput({ inputRef, value, onChange, onKeyDown, onSend, onStop, isStr
             {isStreaming ? (
               <span className="flex items-center gap-1.5 text-blue-500">
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
-                正在生成…
+                Generating…
               </span>
             ) : (
-              <span>Enter 发送 · Shift+Enter 换行</span>
+              <span>Enter to send · Shift+Enter for new line</span>
             )}
           </span>
 
@@ -77,7 +77,7 @@ function ChatInput({ inputRef, value, onChange, onKeyDown, onSend, onStop, isStr
                 ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-500/30 hover:shadow-blue-500/40 hover:scale-105'
                 : 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed'
             }`}
-            title={isStreaming ? '停止生成' : '发送消息'}
+            title={isStreaming ? 'Stop generating' : 'Send message'}
           >
             {isStreaming ? (
               <Square className="w-3.5 h-3.5 fill-current" />
@@ -142,7 +142,7 @@ export default function Chat() {
     enabled: !!activeSessionKey,
   });
 
-  // 切换会话时立即清空消息，避免短暂显示上一会话的内容
+  // Clear messages when switching sessions to avoid briefly showing previous session content
   const prevActiveSessionKeyRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
     if (prevActiveSessionKeyRef.current !== undefined && prevActiveSessionKeyRef.current !== activeSessionKey) {
@@ -156,7 +156,7 @@ export default function Chat() {
     if (sessionData?.messages && !isStreaming) {
       const serverMessages = sessionData.messages as Message[];
       setMessages((prev) => {
-        // 若本地消息更多（例如刚在 chat_done 里加了助手消息），不要用旧的 sessionData 覆盖
+        // If local has more messages (e.g. assistant msg just added in chat_done), don't overwrite with old sessionData
         if (prev.length > serverMessages.length) return prev;
         return serverMessages.map((msg, idx) => ({
           ...msg,
@@ -169,7 +169,7 @@ export default function Chat() {
     }
   }, [sessionData, activeSessionKey, isStreaming]);
 
-  // 当当前会话数据加载/更新时，刷新会话列表以便侧边栏消息条数同步
+  // Refresh session list when current session data loads/updates so sidebar message count stays in sync
   const sessionMessageCount = sessionData?.message_count;
   useEffect(() => {
     if (activeSessionKey && sessionMessageCount !== undefined) {
@@ -314,9 +314,9 @@ export default function Chat() {
   };
 
   const suggestions = [
-    { text: '帮我审查一下当前仓库的代码结构。', label: '审查代码结构' },
-    { text: '能告诉我有哪些自动化可以接入吗？', label: '查看自动化选项' },
-    { text: '帮我写一个简单的 Python 脚本', label: '编写脚本' },
+    { text: 'Review the code structure of the current repository.', label: 'Review code structure' },
+    { text: 'What automation options can be integrated?', label: 'View automation options' },
+    { text: 'Write a simple Python script for me', label: 'Write a script' },
   ];
 
   const toolCallTagColor = (status: ToolCall['status']) => {
@@ -461,7 +461,7 @@ export default function Chat() {
                         : 'bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 shadow-sm rounded-bl-md'
                     }`}
                   >
-                    <Tooltip title="复制" placement="top">
+                    <Tooltip title="Copy" placement="top">
                       <Button
                         type="text"
                         size="small"

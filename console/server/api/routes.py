@@ -456,6 +456,35 @@ async def get_memory(bot_id: str | None = Query(None)) -> dict[str, str]:
     }
 
 
+def _read_workspace_file(workspace: Path, filename: str) -> str:
+    """Read a file from workspace, return empty string if not found."""
+    path = workspace / filename
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+
+
+@router.get("/bot-files")
+async def get_bot_files(bot_id: str | None = Query(None)) -> dict[str, str]:
+    """Get SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY from workspace."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    return {
+        "soul": _read_workspace_file(workspace, "SOUL.md"),
+        "user": _read_workspace_file(workspace, "USER.md"),
+        "heartbeat": _read_workspace_file(workspace, "HEARTBEAT.md"),
+        "tools": _read_workspace_file(workspace, "TOOLS.md"),
+        "agents": _read_workspace_file(workspace, "AGENTS.md"),
+        "identity": _read_workspace_file(workspace, "IDENTITY.md"),
+    }
+
+
 # ====================
 # Config Endpoints
 # ====================

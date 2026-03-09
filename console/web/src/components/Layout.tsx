@@ -25,6 +25,7 @@ import {
   Users,
   BookOpen,
   Brain,
+  UserCircle,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -61,7 +62,8 @@ const navSections: NavSection[] = [
     title: 'Agent',
     items: [
       { path: '/mcp', label: 'MCP', icon: Plug },
-      { path: '/memory', label: '记忆', icon: Brain },
+      { path: '/memory', label: 'Memory', icon: Brain },
+      { path: '/bot-profile', label: 'Bot Profile', icon: UserCircle },
       { path: '/logs', label: 'Logs', icon: FileText },
       { path: '/skills', label: 'Skills', icon: BookOpen },
     ],
@@ -201,7 +203,7 @@ export default function Layout({ children }: LayoutProps) {
                 className={wsConnected ? '' : 'opacity-50'}
               />
               <span className="text-xs text-gray-400">
-                {wsConnected ? '实时同步中' : '点击重连'}
+                {wsConnected ? 'Syncing' : 'Click to reconnect'}
               </span>
             </button>
             {bots.length > 0 && (
@@ -216,7 +218,7 @@ export default function Layout({ children }: LayoutProps) {
                     <span className="flex items-center gap-1.5">
                       <Bot className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>{b.name}</span>
-                      {b.is_default && <span className="text-[10px] text-blue-500">(默认)</span>}
+                      {b.is_default && <span className="text-[10px] text-blue-500">(default)</span>}
                     </span>
                   ),
                 }))}

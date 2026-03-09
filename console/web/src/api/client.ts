@@ -1,5 +1,6 @@
 import type {
   BotInfo,
+  BotFilesResponse,
   ChatRequest,
   ChatResponse,
   ChannelStatus,
@@ -156,6 +157,10 @@ export async function getToolLogs(
 
 export async function getMemory(botId?: string | null): Promise<MemoryResponse> {
   return fetchJson<MemoryResponse>(appendBotQuery(`${API_BASE}/memory`, botId));
+}
+
+export async function getBotFiles(botId?: string | null): Promise<BotFilesResponse> {
+  return fetchJson<BotFilesResponse>(appendBotQuery(`${API_BASE}/bot-files`, botId));
 }
 
 // ====================

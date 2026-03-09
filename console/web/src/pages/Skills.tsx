@@ -21,9 +21,17 @@ import { useAppStore } from '../store';
 
 const { Title, Text } = Typography;
 
+type SkillTabKey = 'builtin' | 'workspace';
+
+const SKILL_TABS: { key: SkillTabKey; label: string }[] = [
+  { key: 'builtin', label: 'Built-in Skills' },
+  { key: 'workspace', label: 'Workspace Skills' },
+];
+
 export default function Skills() {
   const queryClient = useQueryClient();
   const { addToast, currentBotId, setCurrentBotId } = useAppStore();
+  const [activeTab, setActiveTab] = useState<SkillTabKey>('builtin');
   const [skillEditModal, setSkillEditModal] = useState<{ name: string; content: string } | null>(null);
   const [skillCreateModal, setSkillCreateModal] = useState(false);
   const [skillCreateForm] = Form.useForm<{ name: string; description: string; content: string }>();
@@ -90,8 +98,8 @@ export default function Skills() {
   });
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-6 flex flex-col flex-1 min-h-0">
+      <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
             Skills
@@ -113,121 +121,149 @@ export default function Skills() {
         </Space>
       </div>
 
-      <div className="w-full">
-        {skillsLoading ? (
-          <div className="flex justify-center py-12">
-            <Spin />
+      {skillsLoading ? (
+        <div className="flex justify-center py-12 shrink-0">
+          <Spin />
+        </div>
+      ) : !skills || skills.length === 0 ? (
+        <Empty description="No skills found" className="shrink-0" />
+      ) : (
+        <>
+          <Alert
+            className="shrink-0 mt-4"
+            message="Changes require restart"
+            description="Skill enable/disable or content changes take effect after restarting the bot."
+            type="info"
+            showIcon
+          />
+          <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-gray-100/80 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/50 w-fit shrink-0 mt-4 mb-3">
+            {SKILL_TABS.map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setActiveTab(key)}
+                className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  activeTab === key
+                    ? 'bg-white dark:bg-gray-700/80 text-gray-900 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
           </div>
-        ) : !skills || skills.length === 0 ? (
-          <Empty description="No skills found" />
-        ) : (
-          <>
-            <div className="w-full">
-              <Title level={5} className="!text-sm !mb-3">
-                Built-in Skills (enable/disable)
-              </Title>
-              <div className="space-y-2 w-full flex flex-col">
-                {skills
-                  .filter((s) => s.source === 'builtin')
-                  .map((skill) => (
-                    <Card key={skill.name} size="small" className="w-full" style={{ width: '100%' }}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <ReadOutlined className="text-gray-500" />
-                          <div>
-                            <p className="font-medium">{skill.name}</p>
-                            <Text type="secondary" className="text-xs hidden sm:block">
-                              {skill.description}
-                            </Text>
-                          </div>
-                          <Tag color="blue">builtin</Tag>
-                          {skill.available === false && (
-                            <Tag color="warning">unavailable</Tag>
-                          )}
-                        </div>
-                        <Space>
-                          <Switch
-                            checked={skill.enabled}
-                            onChange={(checked) =>
-                              updateConfigMutation.mutate({
-                                section: 'skills',
-                                data: { [skill.name]: { enabled: checked } },
-                              })
-                            }
-                          />
-                        </Space>
-                      </div>
-                    </Card>
-                  ))}
-              </div>
-            </div>
 
-            <div className="mt-6 w-full">
-              <Title level={5} className="!text-sm !mb-3">
-                Workspace Skills (edit/delete)
-              </Title>
-              <div className="space-y-2 w-full flex flex-col">
-                {skills
-                  .filter((s) => s.source === 'workspace')
-                  .map((skill) => (
-                    <Card key={skill.name} size="small" className="w-full" style={{ width: '100%' }}>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <ReadOutlined className="text-gray-500" />
-                          <div>
-                            <p className="font-medium">{skill.name}</p>
-                            <Text type="secondary" className="text-xs hidden sm:block">
-                              {skill.description}
-                            </Text>
+          <Card
+            className="flex-1 min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 shadow-sm hover:shadow-md transition-shadow"
+            styles={{ body: { padding: '1.5rem 2rem', flex: 1, minHeight: 0, overflowY: 'auto' } }}
+          >
+            {activeTab === 'builtin' ? (
+              <div className="space-y-4">
+                <Title level={5} className="!text-sm !mb-3">
+                  Enable or disable built-in skills
+                </Title>
+                {skills.filter((s) => s.source === 'builtin').length === 0 ? (
+                  <Empty description="No built-in skills" />
+                ) : (
+                <div className="space-y-2">
+                  {skills
+                    .filter((s) => s.source === 'builtin')
+                    .map((skill) => (
+                      <Card key={skill.name} size="small" className="w-full">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <ReadOutlined className="text-gray-500" />
+                            <div>
+                              <p className="font-medium">{skill.name}</p>
+                              <Text type="secondary" className="text-xs hidden sm:block">
+                                {skill.description}
+                              </Text>
+                            </div>
+                            <Tag color="blue">builtin</Tag>
+                            {skill.available === false && (
+                              <Tag color="warning">unavailable</Tag>
+                            )}
                           </div>
-                          <Tag color="green">workspace</Tag>
+                          <Space>
+                            <Switch
+                              checked={skill.enabled}
+                              onChange={(checked) =>
+                                updateConfigMutation.mutate({
+                                  section: 'skills',
+                                  data: { [skill.name]: { enabled: checked } },
+                                })
+                              }
+                            />
+                          </Space>
                         </div>
-                        <Space>
-                          <Button
-                            type="text"
-                            size="small"
-                            icon={<EditOutlined />}
-                            onClick={async () => {
-                              const res = await api.getSkillContent(skill.name, currentBotId);
-                              setSkillEditModal({ name: res.name, content: res.content });
-                            }}
-                          >
-                            Edit
-                          </Button>
-                          <Button
-                            type="text"
-                            danger
-                            size="small"
-                            icon={<DeleteOutlined />}
-                            onClick={() => {
-                              Modal.confirm({
-                                title: `Delete skill "${skill.name}"?`,
-                                content: 'This cannot be undone.',
-                                okText: 'Delete',
-                                okType: 'danger',
-                                onOk: () => deleteSkillMutation.mutate(skill.name),
-                              });
-                            }}
-                          >
-                            Delete
-                          </Button>
-                        </Space>
-                      </div>
-                    </Card>
-                  ))}
+                      </Card>
+                    ))}
+                </div>
+                )}
               </div>
-            </div>
-
-            <Alert
-              className="mt-6"
-              message="Changes require restart"
-              description="Skill enable/disable or content changes take effect after restarting the bot."
-              type="info"
-              showIcon
-            />
-          </>
-        )}
-      </div>
+            ) : (
+              <div className="space-y-4">
+                <Title level={5} className="!text-sm !mb-3">
+                  Edit or delete workspace skills
+                </Title>
+                {skills.filter((s) => s.source === 'workspace').length === 0 ? (
+                  <Empty description="No workspace skills" />
+                ) : (
+                <div className="space-y-2">
+                  {skills
+                    .filter((s) => s.source === 'workspace')
+                    .map((skill) => (
+                      <Card key={skill.name} size="small" className="w-full">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <ReadOutlined className="text-gray-500" />
+                            <div>
+                              <p className="font-medium">{skill.name}</p>
+                              <Text type="secondary" className="text-xs hidden sm:block">
+                                {skill.description}
+                              </Text>
+                            </div>
+                            <Tag color="green">workspace</Tag>
+                          </div>
+                          <Space>
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<EditOutlined />}
+                              onClick={async () => {
+                                const res = await api.getSkillContent(skill.name, currentBotId);
+                                setSkillEditModal({ name: res.name, content: res.content });
+                              }}
+                            >
+                              Edit
+                            </Button>
+                            <Button
+                              type="text"
+                              danger
+                              size="small"
+                              icon={<DeleteOutlined />}
+                              onClick={() => {
+                                Modal.confirm({
+                                  title: `Delete skill "${skill.name}"?`,
+                                  content: 'This cannot be undone.',
+                                  okText: 'Delete',
+                                  okType: 'danger',
+                                  onOk: () => deleteSkillMutation.mutate(skill.name),
+                                });
+                              }}
+                            >
+                              Delete
+                            </Button>
+                          </Space>
+                        </div>
+                      </Card>
+                    ))}
+                </div>
+                )}
+              </div>
+            )}
+          </Card>
+        </>
+      )}
 
       <Modal
         title={`Edit skill: ${skillEditModal?.name}`}

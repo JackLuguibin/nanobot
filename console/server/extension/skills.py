@@ -175,6 +175,20 @@ def delete_workspace_skill(workspace: Path, name: str) -> bool:
     return True
 
 
+def copy_builtin_skill_to_workspace(workspace: Path, name: str) -> bool:
+    """Copy a built-in skill to workspace, enabling editing. Returns False if already in workspace or not found."""
+    loader = SkillsLoader(workspace)
+    skill_dir = workspace / "skills" / name
+    if skill_dir.exists():
+        return False  # Already in workspace
+    content = loader.load_skill(name)
+    if content is None:
+        return False
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
+    return True
+
+
 def _is_valid_skill_name(name: str) -> bool:
     """Validate skill name to prevent path injection."""
     if not name or not name.strip():

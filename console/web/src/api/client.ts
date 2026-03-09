@@ -186,6 +186,20 @@ export async function getBotFiles(botId?: string | null): Promise<BotFilesRespon
   return fetchJson<BotFilesResponse>(appendBotQuery(`${API_BASE}/bot-files`, botId));
 }
 
+export async function updateBotFile(
+  key: keyof BotFilesResponse,
+  content: string,
+  botId?: string | null
+): Promise<{ status: string; key: string }> {
+  return fetchJson(
+    appendBotQuery(`${API_BASE}/bot-files/${encodeURIComponent(key)}`, botId),
+    {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }
+  );
+}
+
 // ====================
 // Config API
 // ====================
@@ -215,6 +229,16 @@ export async function getSkillContent(
 ): Promise<{ name: string; content: string }> {
   return fetchJson(
     appendBotQuery(`${API_BASE}/skills/${encodeURIComponent(name)}/content`, botId)
+  );
+}
+
+export async function copySkillToWorkspace(
+  name: string,
+  botId?: string | null
+): Promise<{ status: string; name: string }> {
+  return fetchJson(
+    appendBotQuery(`${API_BASE}/skills/${encodeURIComponent(name)}/copy-to-workspace`, botId),
+    { method: 'POST' }
   );
 }
 

@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Spin, Empty, Card, Select } from 'antd';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { Spin, Empty, Card, Select, Button, Input } from 'antd';
+import { EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import ReactMarkdown from 'react-markdown';
 import * as api from '../api/client';
 import { useAppStore } from '../store';
@@ -30,8 +31,11 @@ const PROSE_CLASS = `
 `;
 
 export default function BotProfile() {
-  const { currentBotId, setCurrentBotId } = useAppStore();
+  const queryClient = useQueryClient();
+  const { currentBotId, setCurrentBotId, addToast } = useAppStore();
   const [activeTab, setActiveTab] = useState<TabKey>('soul');
+  const [editMode, setEditMode] = useState(false);
+  const [editContent, setEditContent] = useState('');
 
   const { data: bots } = useQuery({
     queryKey: ['bots'],
@@ -43,7 +47,34 @@ export default function BotProfile() {
     queryFn: () => api.getBotFiles(currentBotId),
   });
 
+  const updateFileMutation = useMutation({
+    mutationFn: ({ key, content }: { key: TabKey; content: string }) =>
+      api.updateBotFile(key, content, currentBotId),
+    onSuccess: () => {
+      addToast({ type: 'success', message: 'File saved' });
+      setEditMode(false);
+      queryClient.invalidateQueries({ queryKey: ['bot-files'] });
+    },
+    onError: (err) => {
+      addToast({ type: 'error', message: String(err) });
+    },
+  });
+
   const activeContent = botFiles?.[activeTab]?.trim() ?? '';
+
+  const startEdit = () => {
+    setEditContent(activeContent);
+    setEditMode(true);
+  };
+
+  const cancelEdit = () => {
+    setEditMode(false);
+    setEditContent('');
+  };
+
+  const saveEdit = () => {
+    updateFileMutation.mutate({ key: activeTab, content: editContent });
+  };
 
   return (
     <div className="p-6 flex flex-col flex-1 min-h-0">
@@ -56,21 +87,45 @@ export default function BotProfile() {
             SOUL, USER, HEARTBEAT, TOOLS, AGENTS and other bootstrap files
           </p>
         </div>
-        {bots && bots.length > 1 && (
-          <Select
-            value={currentBotId || bots.find((b) => b.is_default)?.id || bots[0]?.id}
-            onChange={setCurrentBotId}
-            options={bots.map((b) => ({ label: b.name, value: b.id }))}
-            className="w-40"
-          />
-        )}
+        <div className="flex items-center gap-2">
+          {bots && bots.length > 1 && (
+            <Select
+              value={currentBotId || bots.find((b) => b.is_default)?.id || bots[0]?.id}
+              onChange={setCurrentBotId}
+              options={bots.map((b) => ({ label: b.name, value: b.id }))}
+              className="w-40"
+            />
+          )}
+          {!editMode ? (
+            <Button icon={<EditOutlined />} onClick={startEdit}>
+              Edit
+            </Button>
+          ) : (
+            <>
+              <Button
+                type="primary"
+                icon={<SaveOutlined />}
+                onClick={saveEdit}
+                loading={updateFileMutation.isPending}
+              >
+                Save
+              </Button>
+              <Button icon={<CloseOutlined />} onClick={cancelEdit}>
+                Cancel
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-gray-100/80 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/50 w-fit shrink-0 mt-4 mb-3">
         {TABS.map(({ key, label }) => (
           <button
             key={key}
-            onClick={() => setActiveTab(key)}
+            onClick={() => {
+              setActiveTab(key);
+              setEditMode(false);
+            }}
             className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
               activeTab === key
                 ? 'bg-white dark:bg-gray-700/80 text-gray-900 dark:text-gray-100 shadow-sm'
@@ -99,7 +154,30 @@ export default function BotProfile() {
           className="flex-1 min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 shadow-sm hover:shadow-md transition-shadow"
           styles={{ body: { padding: '2rem 2.5rem', flex: 1, minHeight: 0, overflowY: 'auto' } }}
         >
-          {activeContent ? (
+          {editMode ? (
+            <div className="flex flex-col gap-4">
+              <Input.TextArea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={24}
+                className="font-mono text-sm"
+                placeholder={`Write ${TABS.find((t) => t.key === activeTab)?.label ?? activeTab}.md content...`}
+              />
+              <div className="flex gap-2 shrink-0">
+                <Button
+                  type="primary"
+                  icon={<SaveOutlined />}
+                  onClick={saveEdit}
+                  loading={updateFileMutation.isPending}
+                >
+                  Save
+                </Button>
+                <Button icon={<CloseOutlined />} onClick={cancelEdit}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : activeContent ? (
             <div className="max-w-3xl">
               <div className={PROSE_CLASS}>
                 <ReactMarkdown>{activeContent}</ReactMarkdown>
@@ -111,6 +189,9 @@ export default function BotProfile() {
                 description={`No content in ${TABS.find((t) => t.key === activeTab)?.label ?? activeTab}.md yet`}
                 className="text-gray-500"
               />
+              <Button type="primary" icon={<EditOutlined />} onClick={startEdit} className="mt-4">
+                Create content
+              </Button>
             </div>
           )}
         </Card>

@@ -506,6 +506,16 @@ def _read_workspace_file(workspace: Path, filename: str) -> str:
         return ""
 
 
+BOT_FILE_KEYS = {
+    "soul": "SOUL.md",
+    "user": "USER.md",
+    "heartbeat": "HEARTBEAT.md",
+    "tools": "TOOLS.md",
+    "agents": "AGENTS.md",
+    "identity": "IDENTITY.md",
+}
+
+
 @router.get("/bot-files")
 async def get_bot_files(bot_id: str | None = Query(None)) -> dict[str, str]:
     """Get SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY from workspace."""
@@ -522,6 +532,30 @@ async def get_bot_files(bot_id: str | None = Query(None)) -> dict[str, str]:
         "agents": _read_workspace_file(workspace, "AGENTS.md"),
         "identity": _read_workspace_file(workspace, "IDENTITY.md"),
     }
+
+
+class BotFileUpdateRequest(BaseModel):
+    content: str
+
+
+@router.put("/bot-files/{key}")
+async def update_bot_file(
+    key: str,
+    request: BotFileUpdateRequest,
+    bot_id: str | None = Query(None),
+) -> dict[str, str]:
+    """Update a bot profile MD file (SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY)."""
+    if key not in BOT_FILE_KEYS:
+        raise HTTPException(status_code=400, detail=f"Invalid key. Must be one of: {list(BOT_FILE_KEYS.keys())}")
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    filename = BOT_FILE_KEYS[key]
+    path = workspace / filename
+    path.write_text(request.content, encoding="utf-8")
+    return {"status": "updated", "key": key}
 
 
 # ====================
@@ -681,6 +715,27 @@ async def get_skill_content(
         raise HTTPException(status_code=404, detail="Skill not found")
 
     return {"name": name, "content": content}
+
+
+@router.post("/skills/{name}/copy-to-workspace")
+async def copy_skill_to_workspace(
+    name: str,
+    bot_id: str | None = Query(None),
+) -> dict[str, str]:
+    """Copy a built-in skill to workspace, enabling editing."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    from console.server.extension.skills import copy_builtin_skill_to_workspace
+
+    if not copy_builtin_skill_to_workspace(workspace, name):
+        raise HTTPException(
+            status_code=400,
+            detail="Skill already in workspace or not found",
+        )
+    return {"status": "copied", "name": name}
 
 
 @router.put("/skills/{name}/content")

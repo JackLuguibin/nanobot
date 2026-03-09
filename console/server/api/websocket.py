@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 
 from console.server.api.models import WSMessage, WSMessageType
+from console.server.api.state import get_state, get_state_manager
 
 
 class ConnectionManager:
@@ -60,11 +61,37 @@ class ConnectionManager:
         # For now, broadcast to all - could be enhanced to track per-session
         await self.send_message(message)
 
-    async def broadcast_status_update(self, status: dict[str, Any]) -> None:
+    async def send_to_connection(self, websocket: WebSocket, message: WSMessage) -> None:
+        """Send a message to a single WebSocket connection."""
+        try:
+            message_json = json.dumps(message.model_dump(), default=str)
+            await websocket.send_text(message_json)
+        except Exception:
+            pass
+
+    async def broadcast_status_update(
+        self, status: dict[str, Any], bot_id: str | None = None
+    ) -> None:
         """Broadcast a status update to all clients."""
+        data = dict(status)
+        if bot_id is not None:
+            data["bot_id"] = bot_id
         message = WSMessage(
             type=WSMessageType.STATUS_UPDATE,
-            data=status,
+            data=data,
+        )
+        await self.send_message(message)
+
+    async def broadcast_sessions_update(
+        self, sessions: list[dict[str, Any]], bot_id: str | None = None
+    ) -> None:
+        """Broadcast a sessions update to all clients."""
+        data: dict[str, Any] = {"sessions": sessions}
+        if bot_id is not None:
+            data["bot_id"] = bot_id
+        message = WSMessage(
+            type=WSMessageType.SESSIONS_UPDATE,
+            data=data,
         )
         await self.send_message(message)
 
@@ -135,9 +162,34 @@ async def handle_websocket(websocket: WebSocket) -> None:
 
     This is a simple implementation that maintains the connection
     and allows sending messages from other parts of the application.
+    On connect, sends initial status and sessions for the default bot.
     """
     manager = get_connection_manager()
     await manager.connect(websocket)
+
+    # Send initial status and sessions for default bot on connect
+    try:
+        state_manager = get_state_manager()
+        default_bot_id = state_manager.default_bot_id
+        if default_bot_id:
+            state = get_state(default_bot_id)
+            status = await state.get_status()
+            status_data = dict(status)
+            status_data["bot_id"] = default_bot_id
+            await manager.send_to_connection(
+                websocket,
+                WSMessage(type=WSMessageType.STATUS_UPDATE, data=status_data),
+            )
+            sessions = await state.get_sessions()
+            await manager.send_to_connection(
+                websocket,
+                WSMessage(
+                    type=WSMessageType.SESSIONS_UPDATE,
+                    data={"bot_id": default_bot_id, "sessions": sessions},
+                ),
+            )
+    except Exception:
+        pass
 
     try:
         # Keep the connection alive and handle incoming messages
@@ -158,6 +210,26 @@ async def handle_websocket(websocket: WebSocket) -> None:
                             "data": {"status": "received"},
                         }
                         await websocket.send_text(json.dumps(response))
+                    elif msg_type == "subscribe" or msg_type == "request_initial":
+                        # Client requests initial status/sessions for a specific bot
+                        bot_id = message.get("bot_id") or get_state_manager().default_bot_id
+                        if bot_id:
+                            state = get_state(bot_id)
+                            status = await state.get_status()
+                            status_data = dict(status)
+                            status_data["bot_id"] = bot_id
+                            await manager.send_to_connection(
+                                websocket,
+                                WSMessage(type=WSMessageType.STATUS_UPDATE, data=status_data),
+                            )
+                            sessions = await state.get_sessions()
+                            await manager.send_to_connection(
+                                websocket,
+                                WSMessage(
+                                    type=WSMessageType.SESSIONS_UPDATE,
+                                    data={"bot_id": bot_id, "sessions": sessions},
+                                ),
+                            )
 
                 except json.JSONDecodeError:
                     pass

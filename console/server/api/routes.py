@@ -274,7 +274,9 @@ async def create_session(key: str | None = None, bot_id: str | None = Query(None
     try:
         manager = get_connection_manager()
         status = await state.get_status()
-        await manager.broadcast_status_update(status)
+        sessions = await state.get_sessions()
+        await manager.broadcast_status_update(status, state.bot_id)
+        await manager.broadcast_sessions_update(sessions, state.bot_id)
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 
@@ -292,7 +294,9 @@ async def delete_session(key: str, bot_id: str | None = Query(None)) -> dict[str
     try:
         manager = get_connection_manager()
         status = await state.get_status()
-        await manager.broadcast_status_update(status)
+        sessions = await state.get_sessions()
+        await manager.broadcast_status_update(status, state.bot_id)
+        await manager.broadcast_sessions_update(sessions, state.bot_id)
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 
@@ -405,7 +409,9 @@ async def send_chat_message_stream(request: ChatRequest):
             try:
                 manager = get_connection_manager()
                 status = await state.get_status()
-                await manager.broadcast_status_update(status)
+                sessions = await state.get_sessions()
+                await manager.broadcast_status_update(status, state.bot_id)
+                await manager.broadcast_sessions_update(sessions, state.bot_id)
             except Exception as e:
                 logger.warning("Failed to broadcast status update: {}", e)
 
@@ -506,7 +512,7 @@ async def update_config(request: ConfigUpdateRequest, bot_id: str | None = Query
     try:
         manager = get_connection_manager()
         status = await state.get_status()
-        await manager.broadcast_status_update(status)
+        await manager.broadcast_status_update(status, state.bot_id)
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 
@@ -730,7 +736,7 @@ async def stop_current_task(bot_id: str | None = Query(None)) -> dict[str, str]:
     try:
         manager = get_connection_manager()
         status = await state.get_status()
-        await manager.broadcast_status_update(status)
+        await manager.broadcast_status_update(status, state.bot_id)
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 
@@ -748,7 +754,7 @@ async def restart_bot(bot_id: str | None = Query(None)) -> dict[str, str]:
     try:
         manager = get_connection_manager()
         status = await state.get_status()
-        await manager.broadcast_status_update(status)
+        await manager.broadcast_status_update(status, state.bot_id)
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 

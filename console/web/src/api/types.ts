@@ -146,6 +146,7 @@ export type WSMessageType =
   | 'tool_progress'
   | 'error'
   | 'status_update'
+  | 'sessions_update'
   | 'bots_update';
 
 export interface WSMessage {

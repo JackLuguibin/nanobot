@@ -1,14 +1,14 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
-import type { StatusResponse, WSMessage } from '../api/types';
+import type { StatusResponse, SessionInfo, WSMessage } from '../api/types';
 
 export function useWebSocket() {
   const queryClient = useQueryClient();
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const isConnectingRef = useRef(false);
-  const { setWSConnected, setStatus, addWSMessage } = useAppStore();
+  const { setWSConnected, setStatus, setSessions, addWSMessage } = useAppStore();
 
   const connect = useCallback(() => {
     // Prevent multiple concurrent connections
@@ -33,6 +33,10 @@ export function useWebSocket() {
         console.log('[WebSocket] Connected!');
         isConnectingRef.current = false;
         setWSConnected(true);
+        const botId = useAppStore.getState().currentBotId;
+        if (botId) {
+          ws.send(JSON.stringify({ type: 'subscribe', bot_id: botId }));
+        }
       };
 
       ws.onmessage = (event) => {
@@ -41,10 +45,24 @@ export function useWebSocket() {
           console.log('[WebSocket] Message:', message);
           addWSMessage(message);
 
+          const activeBotId = useAppStore.getState().currentBotId;
+
           if (message.type === 'status_update' && message.data) {
-            console.log('[WebSocket] Status update:', message.data);
-            const statusData = message.data as StatusResponse;
-            setStatus(statusData);
+            const statusData = message.data as StatusResponse & { bot_id?: string };
+            const targetBotId = statusData.bot_id ?? activeBotId;
+            queryClient.setQueryData(['status', targetBotId], statusData);
+            if (!statusData.bot_id || statusData.bot_id === activeBotId) {
+              setStatus(statusData);
+            }
+          }
+          if (message.type === 'sessions_update' && message.data) {
+            const { sessions, bot_id } = message.data as { sessions: SessionInfo[]; bot_id?: string };
+            const targetBotId = bot_id ?? activeBotId;
+            queryClient.setQueryData(['sessions', targetBotId], sessions);
+            queryClient.setQueryData(['sessions', 'recent', targetBotId], sessions?.slice(0, 5));
+            if (!targetBotId || targetBotId === activeBotId) {
+              setSessions(sessions);
+            }
           }
           if (message.type === 'bots_update') {
             console.log('[WebSocket] Bots list updated, invalidating query');
@@ -84,7 +102,7 @@ export function useWebSocket() {
         connect();
       }, 5000);
     }
-  }, [queryClient, setWSConnected, setStatus, addWSMessage]);
+  }, [queryClient, setWSConnected, setStatus, setSessions, addWSMessage]);
 
   useEffect(() => {
     console.log('[WebSocket] Mounted, connecting...');

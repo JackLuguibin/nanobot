@@ -149,8 +149,11 @@ class BotState:
         self._reset_daily_stats()
 
         channels = []
-        if self._channel_manager and hasattr(self._channel_manager, "_channels"):
-            for name, channel in self._channel_manager._channels.items():
+        ch_dict = getattr(self._channel_manager, "channels", None) or getattr(
+            self._channel_manager, "_channels", None
+        )
+        if self._channel_manager and ch_dict is not None:
+            for name, channel in ch_dict.items():
                 channels.append(
                     {
                         "name": name,
@@ -306,6 +309,122 @@ class BotState:
                 pass
 
         return False
+
+    # Known channel types from ChannelsConfig (excluding send_progress, send_tool_hints)
+    CHANNEL_NAMES = (
+        "whatsapp",
+        "telegram",
+        "discord",
+        "feishu",
+        "mochat",
+        "dingtalk",
+        "email",
+        "slack",
+        "qq",
+        "matrix",
+    )
+
+    async def get_channels(self) -> list[dict[str, Any]]:
+        """Get channel list from config, merged with runtime status when available."""
+        config_channels = self._config.get("channels") or {}
+        runtime_by_name: dict[str, dict] = {}
+
+        ch_dict = None
+        if self._channel_manager:
+            ch_dict = getattr(self._channel_manager, "channels", None) or getattr(
+                self._channel_manager, "_channels", None
+            )
+        if ch_dict is not None:
+            for name, ch in ch_dict.items():
+                runtime_by_name[name] = {
+                    "name": name,
+                    "enabled": True,
+                    "status": (
+                        "online"
+                        if hasattr(ch, "_connected") and ch._connected
+                        else "offline"
+                    ),
+                    "stats": {},
+                }
+
+        result = []
+        for name in self.CHANNEL_NAMES:
+            cfg = config_channels.get(name)
+            if isinstance(cfg, dict):
+                enabled = cfg.get("enabled", False)
+            else:
+                enabled = False
+
+            if name in runtime_by_name:
+                row = dict(runtime_by_name[name])
+                row["enabled"] = enabled
+            else:
+                row = {
+                    "name": name,
+                    "enabled": enabled,
+                    "status": "offline",
+                    "stats": {},
+                }
+            result.append(row)
+
+        return result
+
+    def _deep_merge(self, base: dict, update: dict) -> dict:
+        """Deep merge update into base. Mutates base."""
+        for k, v in update.items():
+            if k in base and isinstance(base[k], dict) and isinstance(v, dict):
+                self._deep_merge(base[k], v)
+            else:
+                base[k] = v
+        return base
+
+    async def update_channel(self, name: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Update a single channel config. Deep merges with existing."""
+        if name not in self.CHANNEL_NAMES:
+            raise ValueError(f"Unknown channel: {name}")
+
+        async with self._lock:
+            if "channels" not in self._config:
+                self._config["channels"] = {}
+            if name not in self._config["channels"]:
+                self._config["channels"][name] = {}
+            self._deep_merge(self._config["channels"][name], data)
+
+            if self._config_path and self._config_path.exists():
+                import json
+
+                try:
+                    self._config_path.write_text(
+                        json.dumps(self._config, indent=2, ensure_ascii=False)
+                    )
+                except Exception as e:
+                    logger.warning("Failed to write config: {}", e)
+
+            return self._config["channels"][name]
+
+    async def delete_channel(self, name: str) -> bool:
+        """Disable a channel (set enabled=False). Returns True if updated."""
+        if name not in self.CHANNEL_NAMES:
+            return False
+
+        async with self._lock:
+            if "channels" not in self._config:
+                self._config["channels"] = {}
+            if name not in self._config["channels"]:
+                self._config["channels"][name] = {}
+            self._config["channels"][name]["enabled"] = False
+
+            if self._config_path and self._config_path.exists():
+                import json
+
+                try:
+                    self._config_path.write_text(
+                        json.dumps(self._config, indent=2, ensure_ascii=False)
+                    )
+                except Exception as e:
+                    logger.warning("Failed to write config: {}", e)
+
+            return True
 
     async def get_config(self) -> dict[str, Any]:
         """Get the current configuration."""

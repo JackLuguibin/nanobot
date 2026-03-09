@@ -210,10 +210,43 @@ async def get_status(bot_id: str | None = Query(None)) -> StatusResponse:
 
 @router.get("/channels", response_model=list[ChannelStatus])
 async def get_channels(bot_id: str | None = Query(None)) -> list[ChannelStatus]:
-    """Get all channel statuses."""
+    """Get all channels from config, merged with runtime status when available."""
     state = _resolve_state(bot_id)
-    status = await state.get_status()
-    return [ChannelStatus(**ch) for ch in status.get("channels", [])]
+    channels = await state.get_channels()
+    return [ChannelStatus(**ch) for ch in channels]
+
+
+class ChannelUpdateRequest(BaseModel):
+    """Request body for updating a channel."""
+
+    data: dict[str, Any]
+
+
+@router.put("/channels/{name}")
+async def update_channel(
+    name: str,
+    request: ChannelUpdateRequest,
+    bot_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """Update a channel's configuration."""
+    state = _resolve_state(bot_id)
+    try:
+        return await state.update_channel(name, request.data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/channels/{name}")
+async def delete_channel(
+    name: str,
+    bot_id: str | None = Query(None),
+) -> dict[str, str]:
+    """Disable a channel (set enabled=False)."""
+    state = _resolve_state(bot_id)
+    ok = await state.delete_channel(name)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Unknown channel: {name}")
+    return {"status": "ok"}
 
 
 @router.get("/mcp", response_model=list[MCPStatus])

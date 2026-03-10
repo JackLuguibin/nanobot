@@ -691,13 +691,12 @@ BOT_FILE_KEYS = {
     "heartbeat": "HEARTBEAT.md",
     "tools": "TOOLS.md",
     "agents": "AGENTS.md",
-    "identity": "IDENTITY.md",
 }
 
 
 @router.get("/bot-files")
 async def get_bot_files(bot_id: str | None = Query(None)) -> dict[str, str]:
-    """Get SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY from workspace."""
+    """Get SOUL, USER, HEARTBEAT, TOOLS, AGENTS from workspace."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
     if not workspace:
@@ -709,7 +708,6 @@ async def get_bot_files(bot_id: str | None = Query(None)) -> dict[str, str]:
         "heartbeat": _read_workspace_file(workspace, "HEARTBEAT.md"),
         "tools": _read_workspace_file(workspace, "TOOLS.md"),
         "agents": _read_workspace_file(workspace, "AGENTS.md"),
-        "identity": _read_workspace_file(workspace, "IDENTITY.md"),
     }
 
 
@@ -723,7 +721,7 @@ async def update_bot_file(
     request: BotFileUpdateRequest,
     bot_id: str | None = Query(None),
 ) -> dict[str, str]:
-    """Update a bot profile MD file (SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY)."""
+    """Update a bot profile MD file (SOUL, USER, HEARTBEAT, TOOLS, AGENTS)."""
     if key not in BOT_FILE_KEYS:
         raise HTTPException(status_code=400, detail=f"Invalid key. Must be one of: {list(BOT_FILE_KEYS.keys())}")
     state = _resolve_state(bot_id)

@@ -226,7 +226,7 @@ export interface BatchDeleteResponse {
 // Activity feed
 export interface ActivityItem {
   id: string;
-  type: 'message' | 'tool' | 'channel' | 'session' | 'error';
+  type: 'message' | 'tool_call' | 'channel' | 'session' | 'error' | string;
   title: string;
   description?: string;
   timestamp: string;

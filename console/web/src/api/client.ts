@@ -593,9 +593,14 @@ export async function deleteSessionsBatch(
 // Activity Feed
 // ====================
 
-export async function getRecentActivity(limit = 20, botId?: string | null): Promise<ActivityItem[]> {
+export async function getRecentActivity(
+  limit = 20,
+  botId?: string | null,
+  activityType?: string
+): Promise<ActivityItem[]> {
   const params = new URLSearchParams({ limit: String(limit) });
   if (botId) params.append('bot_id', botId);
+  if (activityType) params.append('activity_type', activityType);
   return fetchJson<ActivityItem[]>(`${API_BASE}/activity?${params}`);
 }
 

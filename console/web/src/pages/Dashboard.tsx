@@ -27,7 +27,9 @@ import {
   ApiOutlined,
   CheckCircleOutlined,
   BarChartOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
 import { Column } from '@ant-design/plots';
 import type { UsageHistoryItem } from '../api/types';
 
@@ -87,6 +89,11 @@ export default function Dashboard() {
     queryKey: ['usage-history', currentBotId],
     queryFn: () => api.getUsageHistory(currentBotId, 14),
     refetchInterval: false,
+  });
+
+  const { data: cronJobs = [] } = useQuery({
+    queryKey: ['cron', currentBotId],
+    queryFn: () => api.listCronJobs(currentBotId, true),
   });
 
   useEffect(() => {
@@ -424,6 +431,21 @@ export default function Dashboard() {
                 {status?.running ? 'Healthy' : 'Stopped'}
               </Tag>
             </div>
+            <Link to="/cron">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
+                <span className="flex items-center gap-2 font-medium">
+                  <CalendarOutlined className="text-amber-500" /> Cron 任务
+                </span>
+                <Space>
+                  <Text type="secondary" className="text-sm">
+                    {cronJobs.filter((j) => j.enabled).length} / {cronJobs.length}
+                  </Text>
+                  <Badge
+                    status={cronJobs.length > 0 ? 'success' : 'default'}
+                  />
+                </Space>
+              </div>
+            </Link>
           </div>
         </Card>
       </div>

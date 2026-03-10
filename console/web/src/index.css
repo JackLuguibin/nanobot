@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Plus Jakarta Sans", Inter, system-ui, -apple-system, sans-serif;
   line-height: 1.5;
   font-weight: 400;
   color-scheme: light dark;
@@ -110,4 +110,14 @@ button, input, select, textarea {
 
 .no-scrollbar::-webkit-scrollbar {
   display: none; /* Chrome, Safari */
+}
+
+/* Sidebar menu - selected item styling */
+.ant-menu-item-selected {
+  border-radius: 10px !important;
+  font-weight: 500 !important;
+}
+
+.ant-menu-item:not(.ant-menu-item-selected):hover {
+  border-radius: 10px !important;
 }

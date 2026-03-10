@@ -15,6 +15,7 @@ import Logs from './pages/Logs';
 import Bots from './pages/Bots';
 import Memory from './pages/Memory';
 import BotProfile from './pages/BotProfile';
+import Cron from './pages/Cron';
 
 function resolveIsDark(theme: 'light' | 'dark' | 'system'): boolean {
   if (theme === 'dark') return true;
@@ -33,6 +34,7 @@ function AppRoutes() {
           <Route path="/chat/:sessionKey" element={<Chat />} />
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/channels" element={<Channels />} />
+          <Route path="/cron" element={<Cron />} />
           <Route path="/mcp" element={<MCPServers />} />
           <Route path="/bots" element={<Bots />} />
           <Route path="/skills" element={<Skills />} />
@@ -67,8 +69,28 @@ function App() {
         algorithm: isDark ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm,
         token: {
           colorPrimary: '#3b82f6',
-          borderRadius: 8,
-          fontFamily: 'Inter, system-ui, Avenir, Helvetica, Arial, sans-serif',
+          borderRadius: 10,
+          fontFamily: '"Plus Jakarta Sans", Inter, system-ui, -apple-system, sans-serif',
+          colorBgContainer: isDark ? undefined : '#ffffff',
+          colorBgElevated: isDark ? undefined : '#ffffff',
+        },
+        components: {
+          Card: {
+            borderRadiusLG: 16,
+            borderRadius: 12,
+          },
+          Button: {
+            borderRadius: 10,
+            controlHeight: 36,
+          },
+          Input: {
+            borderRadius: 10,
+            controlHeight: 40,
+          },
+          Select: {
+            borderRadius: 10,
+            controlHeight: 40,
+          },
         },
       }}
     >

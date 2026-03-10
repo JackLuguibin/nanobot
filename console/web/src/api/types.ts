@@ -227,6 +227,60 @@ export interface MemoryResponse {
   history: string;
 }
 
+// Cron
+export type CronScheduleKind = 'at' | 'every' | 'cron';
+
+export interface CronSchedule {
+  kind: CronScheduleKind;
+  at_ms?: number | null;
+  every_ms?: number | null;
+  expr?: string | null;
+  tz?: string | null;
+}
+
+export interface CronJobState {
+  next_run_at_ms?: number | null;
+  last_run_at_ms?: number | null;
+  last_status?: 'ok' | 'error' | 'skipped' | null;
+  last_error?: string | null;
+}
+
+export interface CronPayload {
+  kind: string;
+  message: string;
+  deliver?: boolean;
+  channel?: string | null;
+  to?: string | null;
+}
+
+export interface CronJob {
+  id: string;
+  name: string;
+  enabled: boolean;
+  schedule: CronSchedule;
+  payload: CronPayload;
+  state: CronJobState;
+  created_at_ms: number;
+  updated_at_ms: number;
+  delete_after_run: boolean;
+}
+
+export interface CronAddRequest {
+  name: string;
+  schedule: CronSchedule;
+  message?: string;
+  deliver?: boolean;
+  channel?: string | null;
+  to?: string | null;
+  delete_after_run?: boolean;
+}
+
+export interface CronStatus {
+  enabled: boolean;
+  jobs: number;
+  next_wake_at_ms: number | null;
+}
+
 // Bot profile files (SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY)
 export interface BotFilesResponse {
   soul: string;

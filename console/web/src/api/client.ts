@@ -5,6 +5,9 @@ import type {
   ChatResponse,
   ChannelStatus,
   ConfigSection,
+  CronAddRequest,
+  CronJob,
+  CronStatus,
   MCPStatus,
   MemoryResponse,
   SessionInfo,
@@ -333,6 +336,70 @@ export async function updateEnv(
     method: 'PUT',
     body: JSON.stringify({ vars }),
   });
+}
+
+// ====================
+// Cron API
+// ====================
+
+export async function listCronJobs(
+  botId?: string | null,
+  includeDisabled = false
+): Promise<CronJob[]> {
+  const params = new URLSearchParams();
+  if (botId) params.set('bot_id', botId);
+  if (includeDisabled) params.set('include_disabled', 'true');
+  return fetchJson<CronJob[]>(`${API_BASE}/cron?${params}`);
+}
+
+export async function addCronJob(
+  data: CronAddRequest,
+  botId?: string | null
+): Promise<CronJob> {
+  return fetchJson<CronJob>(appendBotQuery(`${API_BASE}/cron`, botId), {
+    method: 'POST',
+    body: JSON.stringify(data),
+  });
+}
+
+export async function removeCronJob(
+  jobId: string,
+  botId?: string | null
+): Promise<{ status: string; job_id: string }> {
+  return fetchJson(
+    appendBotQuery(`${API_BASE}/cron/${encodeURIComponent(jobId)}`, botId),
+    { method: 'DELETE' }
+  );
+}
+
+export async function enableCronJob(
+  jobId: string,
+  enabled: boolean,
+  botId?: string | null
+): Promise<CronJob> {
+  const params = new URLSearchParams({ enabled: String(enabled) });
+  if (botId) params.set('bot_id', botId);
+  return fetchJson<CronJob>(
+    `${API_BASE}/cron/${encodeURIComponent(jobId)}/enable?${params}`,
+    { method: 'PUT' }
+  );
+}
+
+export async function runCronJob(
+  jobId: string,
+  force = false,
+  botId?: string | null
+): Promise<{ status: string; job_id: string }> {
+  const params = new URLSearchParams({ force: String(force) });
+  if (botId) params.set('bot_id', botId);
+  return fetchJson(
+    `${API_BASE}/cron/${encodeURIComponent(jobId)}/run?${params}`,
+    { method: 'POST' }
+  );
+}
+
+export async function getCronStatus(botId?: string | null): Promise<CronStatus> {
+  return fetchJson<CronStatus>(appendBotQuery(`${API_BASE}/cron/status`, botId));
 }
 
 // ====================

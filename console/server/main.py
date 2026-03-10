@@ -177,6 +177,9 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
         from nanobot.agent.tools.cron import CronTool
         from nanobot.cron.types import CronJob
 
+        import time
+        from console.server.extension.cron_history import append_cron_run
+
         async def on_cron_job(job: CronJob) -> str | None:
             reminder_note = (
                 "[Scheduled Task] Timer finished.\n\n"
@@ -187,6 +190,7 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
             cron_token = None
             if isinstance(cron_tool, CronTool):
                 cron_token = cron_tool.set_cron_context(True)
+            start_ms = int(time.time() * 1000)
             try:
                 response = await agent_loop.process_direct(
                     reminder_note,
@@ -194,12 +198,23 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
                     channel=job.payload.channel or "console",
                     chat_id=job.payload.to or "web",
                 )
+                duration_ms = int(time.time() * 1000) - start_ms
+                append_cron_run(bot_id, job.id, job.name, start_ms, "ok", duration_ms, None)
                 return response
+            except Exception as e:
+                duration_ms = int(time.time() * 1000) - start_ms
+                append_cron_run(bot_id, job.id, job.name, start_ms, "error", duration_ms, str(e))
+                raise
             finally:
                 if isinstance(cron_tool, CronTool) and cron_token is not None:
                     cron_tool.reset_cron_context(cron_token)
 
         cron.on_job = on_cron_job
+
+        # Wrap tool registry to log tool calls to state and activity
+        from console.server.extension.activity import wrap_tool_registry_for_logging
+
+        wrap_tool_registry_for_logging(agent_loop.tools, bot_id)
 
     channel_manager = None
     try:

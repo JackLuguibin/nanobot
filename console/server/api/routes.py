@@ -220,11 +220,26 @@ async def get_usage_history(
     bot_id: str | None = Query(None),
     days: int = Query(14, ge=1, le=90),
 ) -> list[dict[str, Any]]:
-    """Get daily token usage history for the chart."""
+    """Get daily token usage history for the chart (includes cost_usd, cost_by_model)."""
     from console.server.extension.usage import get_usage_history
 
     state = _resolve_state(bot_id)
     return get_usage_history(state.bot_id, days=days)
+
+
+@router.get("/usage/cost")
+async def get_usage_cost(
+    bot_id: str | None = Query(None),
+    date_str: str | None = Query(None, description="ISO date, e.g. 2025-03-10"),
+) -> dict[str, Any]:
+    """Get cost for a specific date (default: today)."""
+    from datetime import date
+
+    from console.server.extension.usage import get_usage_cost as _get_usage_cost
+
+    state = _resolve_state(bot_id)
+    target = date.fromisoformat(date_str) if date_str else None
+    return _get_usage_cost(state.bot_id, target)
 
 
 @router.get("/channels", response_model=list[ChannelStatus])
@@ -276,20 +291,60 @@ async def get_mcp_servers(bot_id: str | None = Query(None)) -> list[MCPStatus]:
     return [MCPStatus(**mcp) for mcp in status.get("mcp_servers", [])]
 
 
+def _activity_to_tool_log(entry: dict) -> dict:
+    """Convert activity entry to ToolCallLog format."""
+    from datetime import datetime
+
+    data = entry.get("data") or {}
+    ts = entry.get("timestamp", 0)
+    if isinstance(ts, (int, float)):
+        dt = datetime.fromtimestamp(ts)
+        ts_str = dt.isoformat()
+    else:
+        ts_str = str(ts)
+    return {
+        "id": entry.get("id", ""),
+        "tool_name": data.get("tool_name", ""),
+        "arguments": data.get("arguments") or {},
+        "result": data.get("result") or data.get("error"),
+        "status": "success" if data.get("status") == "success" else "error",
+        "duration_ms": data.get("duration_ms", 0),
+        "timestamp": ts_str,
+    }
+
+
 @router.get("/tools/log", response_model=list[ToolCallLog])
 async def get_tool_logs(
     limit: int = 50,
     tool_name: str | None = None,
     bot_id: str | None = Query(None),
 ) -> list[ToolCallLog]:
-    """Get tool call logs."""
+    """Get tool call logs (in-memory + persisted activity)."""
     state = _resolve_state(bot_id)
-    logs = state.tool_call_logs
+    logs = list(state.tool_call_logs)
+
+    # Merge with persisted activity (for tool_call type)
+    if state.bot_id != "_empty":
+        try:
+            from console.server.extension.activity import get_activity
+
+            activity = get_activity(state.bot_id, limit=limit * 2, activity_type="tool_call")
+            seen_ids = {log.get("id") for log in logs}
+            for entry in activity:
+                if entry.get("id") in seen_ids:
+                    continue
+                log = _activity_to_tool_log(entry)
+                if tool_name and log.get("tool_name") != tool_name:
+                    continue
+                logs.append(log)
+                seen_ids.add(entry.get("id"))
+        except Exception:
+            pass
 
     if tool_name:
         logs = [log for log in logs if log.get("tool_name") == tool_name]
 
-    logs = logs[-limit:]
+    logs = sorted(logs, key=lambda x: x.get("timestamp", ""), reverse=True)[:limit]
 
     return [ToolCallLog(**log) for log in logs]
 
@@ -523,6 +578,111 @@ def _read_workspace_file(workspace: Path, filename: str) -> str:
         return path.read_text(encoding="utf-8")
     except Exception:
         return ""
+
+
+def _resolve_workspace_path(workspace: Path, rel_path: str) -> Path | None:
+    """Resolve relative path within workspace. Returns None if path escapes workspace."""
+    if not workspace or not workspace.exists():
+        return None
+    try:
+        resolved = (workspace / rel_path).resolve()
+        if not str(resolved).startswith(str(workspace.resolve())):
+            return None
+        return resolved
+    except Exception:
+        return None
+
+
+@router.get("/workspace/files")
+async def list_workspace_files(
+    path: str = Query("", description="Relative path from workspace root"),
+    depth: int = Query(2, ge=1, le=5),
+    bot_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """List workspace directory structure. depth limits recursion."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace or not workspace.exists():
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    resolved = _resolve_workspace_path(workspace, path or ".")
+    if resolved is None or not resolved.exists():
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    def _list_dir(p: Path, d: int) -> list[dict]:
+        if d <= 0:
+            return []
+        items = []
+        try:
+            for child in sorted(p.iterdir()):
+                name = child.name
+                if name.startswith(".") and name != ".env":
+                    continue
+                rel = child.relative_to(workspace)
+                item = {
+                    "name": name,
+                    "path": str(rel).replace("\\", "/"),
+                    "is_dir": child.is_dir(),
+                }
+                if child.is_dir() and d > 1:
+                    item["children"] = _list_dir(child, d - 1)
+                items.append(item)
+        except PermissionError:
+            pass
+        return items
+
+    return {"path": path or ".", "items": _list_dir(resolved, depth)}
+
+
+@router.get("/workspace/file")
+async def get_workspace_file(
+    path: str = Query(..., description="Relative path from workspace root"),
+    bot_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """Read a file from workspace."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace or not workspace.exists():
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    resolved = _resolve_workspace_path(workspace, path)
+    if resolved is None or not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        content = resolved.read_text(encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"path": path, "content": content}
+
+
+class WorkspaceFileUpdateRequest(BaseModel):
+    path: str
+    content: str
+
+
+@router.put("/workspace/file")
+async def update_workspace_file(
+    request: WorkspaceFileUpdateRequest,
+    bot_id: str | None = Query(None),
+) -> dict[str, str]:
+    """Update a file in workspace."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace or not workspace.exists():
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    resolved = _resolve_workspace_path(workspace, request.path)
+    if resolved is None or not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        resolved.write_text(request.content, encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    return {"status": "updated", "path": request.path}
 
 
 BOT_FILE_KEYS = {
@@ -780,6 +940,52 @@ async def update_skill_content(
     return {"status": "updated", "name": name}
 
 
+@router.get("/skills/registry/search")
+async def search_skills_registry(
+    q: str = Query("", description="Search query"),
+    registry_url: str | None = Query(None),
+    bot_id: str | None = Query(None),
+) -> list[dict[str, Any]]:
+    """Search skills in the registry."""
+    from console.server.extension.skills_registry import search_registry
+
+    config = {}
+    if bot_id:
+        state = _resolve_state(bot_id)
+        config = await state.get_config()
+    url = registry_url or config.get("console", {}).get("skills_registry_url")
+    return search_registry(q or "", url)
+
+
+class SkillInstallFromRegistryRequest(BaseModel):
+    name: str
+    registry_url: str | None = None
+
+
+@router.post("/skills/install-from-registry")
+async def install_skill_from_registry(
+    request: SkillInstallFromRegistryRequest,
+    bot_id: str | None = Query(None),
+) -> dict[str, Any]:
+    """Install a skill from the registry into workspace."""
+    state = _resolve_state(bot_id)
+    workspace = state.workspace
+    if not workspace or not workspace.exists():
+        raise HTTPException(status_code=404, detail="Workspace not found")
+
+    from console.server.extension.skills_registry import install_skill_from_registry as _install
+
+    config = await state.get_config()
+    url = request.registry_url or config.get("console", {}).get("skills_registry_url")
+    ok = _install(request.name, workspace, url)
+    if not ok:
+        raise HTTPException(
+            status_code=400,
+            detail="Skill not found in registry, already installed, or invalid name",
+        )
+    return {"status": "installed", "name": request.name}
+
+
 @router.post("/skills")
 async def create_skill(
     request: SkillCreateRequest,
@@ -1015,6 +1221,75 @@ async def get_cron_status(bot_id: str | None = Query(None)) -> dict[str, Any]:
     return cron.status()
 
 
+@router.get("/cron/history")
+async def get_cron_history(
+    bot_id: str | None = Query(None),
+    job_id: str | None = Query(None),
+) -> dict[str, list[dict[str, Any]]]:
+    """Get cron execution history per job."""
+    state = _resolve_state(bot_id)
+    from console.server.extension.cron_history import get_cron_history as _get_history
+
+    return _get_history(state.bot_id, job_id)
+
+
+# ====================
+# Alerts
+# ====================
+
+
+@router.get("/alerts")
+async def get_alerts(
+    bot_id: str | None = Query(None),
+    include_dismissed: bool = Query(False),
+) -> list[dict[str, Any]]:
+    """Get alerts, with optional refresh from current status."""
+    state = _resolve_state(bot_id)
+    bid = state.bot_id
+    if bid == "_empty":
+        return []
+
+    from console.server.extension.alerts import get_alerts as _get_alerts
+    from console.server.extension.usage import get_usage_today
+    from console.server.extension.alerts import refresh_alerts
+
+    status = await state.get_status()
+    usage_today = get_usage_today(bid)
+    cron_jobs: list[dict[str, Any]] = []
+    if state.cron_service:
+        try:
+            jobs = state.cron_service.list_jobs(include_disabled=True)
+            for j in jobs:
+                cron_jobs.append({
+                    "id": j.id,
+                    "name": j.name,
+                    "enabled": j.enabled,
+                    "state": {
+                        "next_run_at_ms": j.state.next_run_at_ms,
+                        "last_run_at_ms": j.state.last_run_at_ms,
+                    },
+                })
+        except Exception:
+            pass
+    refresh_alerts(bid, status, cron_jobs, usage_today)
+    return _get_alerts(bid, include_dismissed=include_dismissed)
+
+
+@router.post("/alerts/{alert_id}/dismiss")
+async def dismiss_alert(
+    alert_id: str,
+    bot_id: str | None = Query(None),
+) -> dict[str, str]:
+    """Dismiss an alert."""
+    state = _resolve_state(bot_id)
+    from console.server.extension.alerts import dismiss_alert as _dismiss
+
+    ok = _dismiss(state.bot_id, alert_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Alert not found")
+    return {"status": "ok", "alert_id": alert_id}
+
+
 # ====================
 # Health Check
 # ====================
@@ -1032,3 +1307,16 @@ async def health_check() -> dict[str, str]:
         "version": __version__,
         "timestamp": datetime.utcnow().isoformat(),
     }
+
+
+@router.get("/health/audit")
+async def health_audit(bot_id: str | None = Query(None)) -> dict[str, Any]:
+    """Get health audit issues (bootstrap files, MCP config, channels, etc.)."""
+    state = _resolve_state(bot_id)
+    from console.server.extension.health import run_health_audit
+
+    status = await state.get_status()
+    config = await state.get_config()
+    workspace = state.workspace
+    issues = run_health_audit(state.bot_id, workspace, config, status)
+    return {"issues": issues}

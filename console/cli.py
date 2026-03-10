@@ -91,6 +91,45 @@ def console_build():
     build_frontend()
 
 
+@app.command("skills")
+def console_skills(
+    action: str = typer.Argument(..., help="search | install"),
+    query: str = typer.Option("", "--query", "-q", help="Search query (for search)"),
+    name: str = typer.Option("", "--name", "-n", help="Skill name (for install)"),
+    registry_url: str = typer.Option("", "--registry", "-r", help="Registry JSON URL"),
+):
+    """Search or install skills from registry."""
+    from console.server.extension.skills_registry import search_registry, install_skill_from_registry
+    from nanobot.config.loader import get_config_path, load_config
+
+    config_path = get_config_path()
+    config = load_config(config_path)
+    cfg = config.model_dump() if hasattr(config, "model_dump") else {}
+    url = registry_url or (cfg.get("console") or {}).get("skills_registry_url") or ""
+
+    if action == "search":
+        skills = search_registry(query, url or None)
+        if not skills:
+            typer.echo("No skills found. Configure registry URL with --registry or in config.")
+            raise typer.Exit(1)
+        for s in skills:
+            typer.echo(f"  {s.get('name', '')}: {s.get('description', '')}")
+    elif action == "install":
+        if not name:
+            typer.echo("Use --name to specify skill to install")
+            raise typer.Exit(1)
+        workspace = Path(config.workspace_path)
+        ok = install_skill_from_registry(name, workspace, url or None)
+        if ok:
+            typer.echo(f"Installed skill: {name}")
+        else:
+            typer.echo("Failed to install. Skill not found or already installed.")
+            raise typer.Exit(1)
+    else:
+        typer.echo("Use 'search' or 'install'")
+        raise typer.Exit(1)
+
+
 @app.command("run")
 def console_run(
     gateway_port: int = typer.Option(18790, "--gateway-port", "-g", help="Gateway port"),

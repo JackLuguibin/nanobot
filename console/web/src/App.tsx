@@ -16,6 +16,8 @@ import Bots from './pages/Bots';
 import Memory from './pages/Memory';
 import BotProfile from './pages/BotProfile';
 import Cron from './pages/Cron';
+import Health from './pages/Health';
+import Workspace from './pages/Workspace';
 
 function resolveIsDark(theme: 'light' | 'dark' | 'system'): boolean {
   if (theme === 'dark') return true;
@@ -35,6 +37,8 @@ function AppRoutes() {
           <Route path="/sessions" element={<Sessions />} />
           <Route path="/channels" element={<Channels />} />
           <Route path="/cron" element={<Cron />} />
+          <Route path="/health" element={<Health />} />
+          <Route path="/workspace" element={<Workspace />} />
           <Route path="/mcp" element={<MCPServers />} />
           <Route path="/bots" element={<Bots />} />
           <Route path="/skills" element={<Skills />} />

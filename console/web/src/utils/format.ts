@@ -10,3 +10,13 @@ export function formatTokenCount(n: number): string {
   if (n < 1_000_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
   return `${(n / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}G`;
 }
+
+/**
+ * 将成本（美元）格式化为显示字符串
+ */
+export function formatCost(usd: number): string {
+  if (typeof usd !== 'number' || !Number.isFinite(usd)) return '-';
+  if (usd < 0) return '-';
+  if (usd < 0.01 && usd > 0) return '<$0.01';
+  return `$${usd.toFixed(2)}`;
+}

@@ -53,10 +53,67 @@ function formatSchedule(job: CronJob): string {
 function formatNextRun(timestamp?: number | null): string {
   if (!timestamp) return '-';
   const diff = timestamp - Date.now();
+  if (diff < 0) return '已逾期';
   if (diff < 60000) return '即将执行';
   if (diff < 3600000) return `${Math.floor(diff / 60000)} 分钟后`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)} 小时后`;
   return new Date(timestamp).toLocaleString();
+}
+
+function isOverdue(job: CronJob): boolean {
+  if (!job.enabled || !job.state.next_run_at_ms) return false;
+  return job.state.next_run_at_ms < Date.now();
+}
+
+function CronJobDetails({ job }: { job: CronJob }) {
+  const { currentBotId } = useAppStore();
+  const { data: historyData } = useQuery({
+    queryKey: ['cron-history', currentBotId, job.id],
+    queryFn: () => api.getCronHistory(currentBotId, job.id),
+    enabled: !!job.id,
+  });
+  const history = historyData?.[job.id] || [];
+
+  return (
+    <div className="space-y-2 mt-2 pl-0 pt-2 border-t border-gray-100 dark:border-gray-700">
+      {job.payload.message && (
+        <div className="text-sm text-gray-500 break-words">
+          指令：{job.payload.message}
+        </div>
+      )}
+      <div className="text-xs text-gray-400">
+        下次执行：{formatNextRun(job.state.next_run_at_ms)}
+        {job.state.last_run_at_ms && (
+          <> · 上次：{new Date(job.state.last_run_at_ms).toLocaleString()}</>
+        )}
+      </div>
+      {history.length > 0 && (
+        <div className="mt-2">
+          <div className="text-xs font-medium text-gray-500 mb-1">执行历史</div>
+          <div className="space-y-1 max-h-32 overflow-y-auto">
+            {[...history].reverse().slice(0, 10).map((h, i) => (
+              <div
+                key={i}
+                className="flex items-center justify-between text-xs py-0.5 border-b border-gray-50 dark:border-gray-800 last:border-0"
+              >
+                <span className="text-gray-500">
+                  {new Date(h.run_at_ms).toLocaleString()}
+                </span>
+                <Space size={4}>
+                  <Tag color={h.status === 'ok' ? 'green' : 'red'} className="m-0 text-xs">
+                    {h.status === 'ok' ? '成功' : '失败'}
+                  </Tag>
+                  <span className="text-gray-400">
+                    {h.duration_ms < 1000 ? `${h.duration_ms}ms` : `${(h.duration_ms / 1000).toFixed(1)}s`}
+                  </span>
+                </Space>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function Cron() {
@@ -150,6 +207,7 @@ export default function Cron() {
     onSuccess: () => {
       addToast({ type: 'success', message: '任务已触发执行' });
       queryClient.invalidateQueries({ queryKey: ['cron', currentBotId] });
+      queryClient.invalidateQueries({ queryKey: ['cron-history', currentBotId] });
     },
     onError: (e) => addToast({ type: 'error', message: String(e) }),
   });
@@ -310,6 +368,9 @@ export default function Cron() {
                     title={
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-medium">{job.name}</span>
+                        {isOverdue(job) && (
+                          <Tag color="orange">逾期</Tag>
+                        )}
                         {job.state.last_status === 'error' && (
                           <Tag color="red">上次失败</Tag>
                         )}
@@ -320,19 +381,7 @@ export default function Cron() {
                     }
                     description={
                       isExpanded && hasDetails ? (
-                        <div className="space-y-1 mt-2 pl-0 pt-2 border-t border-gray-100 dark:border-gray-700">
-                          {job.payload.message && (
-                            <div className="text-sm text-gray-500 break-words">
-                              指令：{job.payload.message}
-                            </div>
-                          )}
-                          <div className="text-xs text-gray-400">
-                            下次执行：{formatNextRun(job.state.next_run_at_ms)}
-                            {job.state.last_run_at_ms && (
-                              <> · 上次：{new Date(job.state.last_run_at_ms).toLocaleString()}</>
-                            )}
-                          </div>
-                        </div>
+                        <CronJobDetails job={job} />
                       ) : null
                     }
                   />

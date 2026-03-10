@@ -5,7 +5,6 @@ import {
   Input,
   Button,
   Spin,
-  Card,
   Typography,
   Space,
   Tag,
@@ -20,7 +19,7 @@ import ReactMarkdown from 'react-markdown';
 import * as api from '../api/client';
 import { useAppStore } from '../store';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 type SkillTabKey = 'builtin' | 'workspace';
 
@@ -28,6 +27,8 @@ const SKILL_TABS: { key: SkillTabKey; label: string }[] = [
   { key: 'builtin', label: 'Built-in Skills' },
   { key: 'workspace', label: 'Workspace Skills' },
 ];
+
+type RegistrySkill = { name: string; description?: string; url?: string; version?: string };
 
 /** Parse SKILL.md content to extract description and body (workspace skills have frontmatter). */
 function parseSkillContent(full: string): { description: string; body: string } {
@@ -62,6 +63,8 @@ export default function Skills() {
   } | null>(null);
   const [skillCreateModal, setSkillCreateModal] = useState(false);
   const [skillCreateForm] = Form.useForm<{ name: string; description: string; content: string }>();
+  const [registryUrl, setRegistryUrl] = useState('');
+  const [registrySearch, setRegistrySearch] = useState('');
 
   const { data: bots } = useQuery({
     queryKey: ['bots'],
@@ -71,6 +74,22 @@ export default function Skills() {
   const { data: skills, isLoading: skillsLoading } = useQuery({
     queryKey: ['skills', currentBotId],
     queryFn: () => api.listSkills(currentBotId),
+  });
+
+  const { data: registrySkills = [], isLoading: registryLoading } = useQuery({
+    queryKey: ['skills-registry', registryUrl, registrySearch, currentBotId],
+    queryFn: () => api.searchSkillsRegistry(registrySearch || undefined, registryUrl || undefined, currentBotId),
+    enabled: !!registryUrl.trim(),
+  });
+
+  const installFromRegistryMutation = useMutation({
+    mutationFn: (name: string) =>
+      api.installSkillFromRegistry(name, currentBotId, registryUrl || undefined),
+    onSuccess: () => {
+      addToast({ type: 'success', message: 'Skill installed from registry' });
+      queryClient.invalidateQueries({ queryKey: ['skills'] });
+    },
+    onError: (e) => addToast({ type: 'error', message: String(e) }),
   });
 
   const updateConfigMutation = useMutation({
@@ -153,14 +172,58 @@ export default function Skills() {
     }
   };
 
+  const SkillItemCard = ({
+    skill,
+    source,
+    children,
+  }: {
+    skill: { name: string; description?: string; available?: boolean };
+    source: 'builtin' | 'workspace';
+    children: React.ReactNode;
+  }) => (
+    <div
+      className={`
+        group flex items-center justify-between gap-4 px-5 py-4 rounded-xl
+        border border-gray-200/70 dark:border-gray-700/60
+        bg-white dark:bg-gray-800/50
+        hover:border-primary-300/60 dark:hover:border-primary-500/40
+        hover:shadow-md hover:shadow-primary-500/5 dark:hover:shadow-primary-500/10
+        transition-all duration-200
+      `}
+    >
+      <div className="flex items-center gap-4 min-w-0 flex-1">
+        <div className="flex-shrink-0 w-10 h-10 rounded-xl bg-gradient-to-br from-primary-50 to-primary-100 dark:from-primary-900/40 dark:to-primary-800/30 flex items-center justify-center">
+          <ReadOutlined className="text-primary-500 dark:text-primary-400 text-base" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{skill.name}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5 line-clamp-1 hidden sm:block">
+            {skill.description || 'No description'}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <Tag color={source === 'builtin' ? 'blue' : 'green'} className="!m-0">
+            {source}
+          </Tag>
+          {skill.available === false && (
+            <Tag color="warning" className="!m-0">unavailable</Tag>
+          )}
+        </div>
+      </div>
+      <div className="flex items-center gap-2 flex-shrink-0">{children}</div>
+    </div>
+  );
+
   return (
     <div className="p-6 flex flex-col flex-1 min-h-0">
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 via-primary-700 to-gray-700 dark:from-white dark:via-primary-300 dark:to-gray-300 bg-clip-text text-transparent">
             Skills
           </h1>
-          <p className="text-sm text-gray-500 mt-1 hidden sm:block">Manage built-in and workspace skills</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 hidden sm:block">
+            Manage built-in and workspace skills
+          </p>
         </div>
         <Space>
           {bots && bots.length > 1 && (
@@ -171,181 +234,231 @@ export default function Skills() {
               className="w-40"
             />
           )}
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setSkillCreateModal(true)}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={() => setSkillCreateModal(true)}
+            className="shadow-md shadow-primary-500/25"
+          >
             <span className="hidden sm:inline">Add Skill</span>
           </Button>
         </Space>
       </div>
 
+      {/* Registry Install Section */}
+      <div className="mt-6 p-5 rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 shadow-sm">
+        <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">
+          Install from Registry
+        </h3>
+        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+          Registry URL (JSON format). Load skills and install with one click.
+        </p>
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              placeholder="Registry URL e.g. https://example.com/registry.json"
+              value={registryUrl}
+              onChange={(e) => setRegistryUrl(e.target.value)}
+              className="flex-1 min-w-[200px] border-gray-300 dark:border-gray-600 hover:border-primary-400 focus:border-primary-500"
+            />
+            <Input
+              placeholder="Search skill name or description"
+              value={registrySearch}
+              onChange={(e) => setRegistrySearch(e.target.value)}
+              className="w-64"
+              onPressEnter={() => queryClient.invalidateQueries({ queryKey: ['skills-registry'] })}
+            />
+            <Button
+              type="default"
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['skills-registry'] })}
+              loading={registryLoading}
+              className="border-gray-300 dark:border-gray-600 hover:border-primary-400 hover:text-primary-500 shrink-0"
+            >
+              Search
+            </Button>
+          </div>
+          {registryUrl.trim() && (
+            registrySkills.length === 0 ? (
+              <Empty description={registryLoading ? 'Loading...' : 'No skills found or registry empty'} />
+            ) : (
+              <div className="space-y-3">
+                {registrySkills.map((s: RegistrySkill) => {
+                  const installed = skills?.some((sk) => sk.name === s.name);
+                  return (
+                    <div
+                      key={s.name}
+                      className="flex items-center justify-between px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700/50 hover:border-primary-200 dark:hover:border-primary-500/30 transition-colors"
+                    >
+                      <div>
+                        <p className="font-medium text-gray-900 dark:text-gray-100">{s.name}</p>
+                        <Text type="secondary" className="text-xs">
+                          {s.description || '-'}
+                        </Text>
+                      </div>
+                      <Button
+                        type="primary"
+                        size="small"
+                        disabled={!!installed}
+                        loading={installFromRegistryMutation.isPending}
+                        onClick={() => installFromRegistryMutation.mutate(s.name)}
+                        className="!rounded-lg"
+                      >
+                        {installed ? 'Installed' : 'Install'}
+                      </Button>
+                    </div>
+                  );
+                })}
+              </div>
+            )
+          )}
+        </div>
+      </div>
+
       {skillsLoading ? (
         <div className="flex justify-center py-12 shrink-0">
-          <Spin />
+          <Spin size="large" />
         </div>
       ) : !skills || skills.length === 0 ? (
         <Empty description="No skills found" className="shrink-0" />
       ) : (
         <>
           <Alert
-            className="shrink-0 mt-4"
+            className="shrink-0 mt-6 rounded-xl border-0"
             message="Changes require restart"
             description="Skill enable/disable or content changes take effect after restarting the bot."
             type="info"
             showIcon
           />
-          <div className="flex flex-wrap gap-1 p-1 rounded-xl bg-gray-100/80 dark:bg-gray-800/50 border border-gray-200/60 dark:border-gray-700/50 w-fit shrink-0 mt-4 mb-3">
+          {/* Tabs with underline indicator */}
+          <div className="flex border-b border-gray-200 dark:border-gray-700 mt-6 mb-4 gap-0">
             {SKILL_TABS.map(({ key, label }) => (
               <button
                 key={key}
                 onClick={() => setActiveTab(key)}
-                className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                  activeTab === key
-                    ? 'bg-white dark:bg-gray-700/80 text-gray-900 dark:text-gray-100 shadow-sm'
-                    : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
-                }`}
+                className={`
+                  relative px-6 py-3 text-sm font-medium transition-all duration-200
+                  ${activeTab === key
+                    ? 'text-primary-600 dark:text-primary-400'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+                  }
+                `}
               >
                 {label}
+                {activeTab === key && (
+                  <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary-500 rounded-full" />
+                )}
               </button>
             ))}
           </div>
 
-          <Card
-            className="flex-1 min-h-0 overflow-hidden flex flex-col rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 shadow-sm hover:shadow-md transition-shadow"
-            styles={{ body: { padding: '1.5rem 2rem', flex: 1, minHeight: 0, overflowY: 'auto' } }}
-          >
+          <div className="flex-1 min-h-0 overflow-y-auto pt-2">
             {activeTab === 'builtin' ? (
               <div className="space-y-4">
-                <Title level={5} className="!text-sm !mb-3">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                   Enable or disable built-in skills
-                </Title>
+                </p>
                 {skills.filter((s) => s.source === 'builtin').length === 0 ? (
                   <Empty description="No built-in skills" />
                 ) : (
-                <div className="space-y-2">
-                  {skills
-                    .filter((s) => s.source === 'builtin')
-                    .map((skill) => (
-                      <Card key={skill.name} size="small" className="w-full">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <ReadOutlined className="text-gray-500" />
-                            <div>
-                              <p className="font-medium">{skill.name}</p>
-                              <Text type="secondary" className="text-xs hidden sm:block">
-                                {skill.description}
-                              </Text>
-                            </div>
-                            <Tag color="blue">builtin</Tag>
-                            {skill.available === false && (
-                              <Tag color="warning">unavailable</Tag>
-                            )}
-                          </div>
-                          <Space>
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<EditOutlined />}
-                              onClick={() => handleEditBuiltin(skill)}
-                              loading={copyToWorkspaceMutation.isPending}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<EyeOutlined />}
-                              onClick={async () => {
-                                const res = await api.getSkillContent(skill.name, currentBotId);
-                                setSkillViewModal({ name: res.name, content: res.content });
-                                setSkillViewMode('preview');
-                              }}
-                            >
-                              View
-                            </Button>
-                            <Switch
-                              checked={skill.enabled}
-                              onChange={(checked) =>
-                                updateConfigMutation.mutate({
-                                  section: 'skills',
-                                  data: { [skill.name]: { enabled: checked } },
-                                })
-                              }
-                            />
-                          </Space>
-                        </div>
-                      </Card>
-                    ))}
-                </div>
+                  <div className="space-y-3">
+                    {skills
+                      .filter((s) => s.source === 'builtin')
+                      .map((skill) => (
+                        <SkillItemCard key={skill.name} skill={skill} source="builtin">
+                          <Button
+                            type="text"
+                            size="middle"
+                            icon={<EditOutlined />}
+                            onClick={() => handleEditBuiltin(skill)}
+                            loading={copyToWorkspaceMutation.isPending}
+                            className="text-gray-600 dark:text-gray-400 hover:text-primary-500"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="text"
+                            size="middle"
+                            icon={<EyeOutlined />}
+                            onClick={async () => {
+                              const res = await api.getSkillContent(skill.name, currentBotId);
+                              setSkillViewModal({ name: res.name, content: res.content });
+                              setSkillViewMode('preview');
+                            }}
+                            className="text-gray-600 dark:text-gray-400 hover:text-primary-500"
+                          >
+                            View
+                          </Button>
+                          <Switch
+                            checked={skill.enabled}
+                            onChange={(checked) =>
+                              updateConfigMutation.mutate({
+                                section: 'skills',
+                                data: { [skill.name]: { enabled: checked } },
+                              })
+                            }
+                          />
+                        </SkillItemCard>
+                      ))}
+                  </div>
                 )}
               </div>
             ) : (
               <div className="space-y-4">
-                <Title level={5} className="!text-sm !mb-3">
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
                   Edit or delete workspace skills
-                </Title>
+                </p>
                 {skills.filter((s) => s.source === 'workspace').length === 0 ? (
                   <Empty description="No workspace skills" />
                 ) : (
-                <div className="space-y-2">
-                  {skills
-                    .filter((s) => s.source === 'workspace')
-                    .map((skill) => (
-                      <Card key={skill.name} size="small" className="w-full">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            <ReadOutlined className="text-gray-500" />
-                            <div>
-                              <p className="font-medium">{skill.name}</p>
-                              <Text type="secondary" className="text-xs hidden sm:block">
-                                {skill.description}
-                              </Text>
-                            </div>
-                            <Tag color="green">workspace</Tag>
-                          </div>
-                          <Space>
-                            <Button
-                              type="text"
-                              size="small"
-                              icon={<EditOutlined />}
-                              onClick={async () => {
-                                const res = await api.getSkillContent(skill.name, currentBotId);
-                                const { description, body } = parseSkillContent(res.content);
-                                setSkillEditModal({
-                                  name: res.name,
-                                  content: res.content,
-                                  description: description || skill.description,
-                                  body,
-                                  isWorkspace: true,
-                                });
-                              }}
-                            >
-                              Edit
-                            </Button>
-                            <Button
-                              type="text"
-                              danger
-                              size="small"
-                              icon={<DeleteOutlined />}
-                              onClick={() => {
-                                Modal.confirm({
-                                  title: `Delete skill "${skill.name}"?`,
-                                  content: 'This cannot be undone.',
-                                  okText: 'Delete',
-                                  okType: 'danger',
-                                  onOk: () => deleteSkillMutation.mutate(skill.name),
-                                });
-                              }}
-                            >
-                              Delete
-                            </Button>
-                          </Space>
-                        </div>
-                      </Card>
-                    ))}
-                </div>
+                  <div className="space-y-3">
+                    {skills
+                      .filter((s) => s.source === 'workspace')
+                      .map((skill) => (
+                        <SkillItemCard key={skill.name} skill={skill} source="workspace">
+                          <Button
+                            type="text"
+                            size="middle"
+                            icon={<EditOutlined />}
+                            onClick={async () => {
+                              const res = await api.getSkillContent(skill.name, currentBotId);
+                              const { description, body } = parseSkillContent(res.content);
+                              setSkillEditModal({
+                                name: res.name,
+                                content: res.content,
+                                description: description || skill.description,
+                                body,
+                                isWorkspace: true,
+                              });
+                            }}
+                            className="text-gray-600 dark:text-gray-400 hover:text-primary-500"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            type="text"
+                            danger
+                            size="middle"
+                            icon={<DeleteOutlined />}
+                            onClick={() => {
+                              Modal.confirm({
+                                title: `Delete skill "${skill.name}"?`,
+                                content: 'This cannot be undone.',
+                                okText: 'Delete',
+                                okType: 'danger',
+                                onOk: () => deleteSkillMutation.mutate(skill.name),
+                              });
+                            }}
+                            className="hover:!text-red-500"
+                          >
+                            Delete
+                          </Button>
+                        </SkillItemCard>
+                      ))}
+                  </div>
                 )}
               </div>
             )}
-          </Card>
+          </div>
         </>
       )}
 

@@ -27,6 +27,7 @@ import {
   Brain,
   UserCircle,
   Clock,
+  Heart,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -58,6 +59,7 @@ const navSections: NavSection[] = [
       { path: '/channels', label: 'Channels', icon: Smartphone },
       { path: '/sessions', label: 'Sessions', icon: FolderOpen },
       { path: '/cron', label: 'Cron', icon: Clock },
+      { path: '/health', label: 'Health', icon: Heart },
     ],
   },
   {
@@ -65,6 +67,7 @@ const navSections: NavSection[] = [
     items: [
       { path: '/mcp', label: 'MCP', icon: Plug },
       { path: '/memory', label: 'Memory', icon: Brain },
+      { path: '/workspace', label: 'Workspace', icon: FolderOpen },
       { path: '/bot-profile', label: 'Bot Profile', icon: UserCircle },
       { path: '/logs', label: 'Logs', icon: FileText },
       { path: '/skills', label: 'Skills', icon: BookOpen },

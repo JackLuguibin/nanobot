@@ -77,6 +77,8 @@ export interface TokenUsage {
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
+  /** 按模型分别的使用量 */
+  by_model?: Record<string, { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }>;
 }
 
 export interface UsageHistoryItem {
@@ -84,6 +86,8 @@ export interface UsageHistoryItem {
   total_tokens: number;
   prompt_tokens: number;
   completion_tokens: number;
+  /** 按模型分别的使用量 */
+  by_model?: Record<string, { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }>;
 }
 
 export interface StatusResponse {

@@ -26,6 +26,7 @@ import {
   BookOpen,
   Brain,
   UserCircle,
+  Clock,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -56,6 +57,7 @@ const navSections: NavSection[] = [
     items: [
       { path: '/channels', label: 'Channels', icon: Smartphone },
       { path: '/sessions', label: 'Sessions', icon: FolderOpen },
+      { path: '/cron', label: 'Cron', icon: Clock },
     ],
   },
   {

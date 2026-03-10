@@ -104,7 +104,6 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
     from nanobot.agent.loop import AgentLoop
     from nanobot.bus.queue import MessageBus
     from nanobot.channels.manager import ChannelManager
-    from nanobot.config.paths import get_data_dir
     from nanobot.cron.service import CronService
     from nanobot.session.manager import SessionManager
     from nanobot.utils.helpers import sync_workspace_templates
@@ -125,7 +124,8 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
     bus = MessageBus()
     session_manager = SessionManager(config.workspace_path)
 
-    cron_store_path = get_data_dir() / "cron" / f"jobs_{bot_id}.json"
+    cron_store_path = config_path.parent / "cron" / "jobs.json"
+    cron_store_path.parent.mkdir(parents=True, exist_ok=True)
     cron = CronService(cron_store_path)
 
     provider = None
@@ -173,6 +173,34 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
             skills_config=skills_config,
         )
 
+        # Set cron callback to run jobs through the agent
+        from nanobot.agent.tools.cron import CronTool
+        from nanobot.cron.types import CronJob
+
+        async def on_cron_job(job: CronJob) -> str | None:
+            reminder_note = (
+                "[Scheduled Task] Timer finished.\n\n"
+                f"Task '{job.name}' has been triggered.\n"
+                f"Scheduled instruction: {job.payload.message}"
+            )
+            cron_tool = agent_loop.tools.get("cron")
+            cron_token = None
+            if isinstance(cron_tool, CronTool):
+                cron_token = cron_tool.set_cron_context(True)
+            try:
+                response = await agent_loop.process_direct(
+                    reminder_note,
+                    session_key=f"cron:{job.id}",
+                    channel=job.payload.channel or "console",
+                    chat_id=job.payload.to or "web",
+                )
+                return response
+            finally:
+                if isinstance(cron_tool, CronTool) and cron_token is not None:
+                    cron_tool.reset_cron_context(cron_token)
+
+        cron.on_job = on_cron_job
+
     channel_manager = None
     try:
         channel_manager = ChannelManager(config, bus)
@@ -187,6 +215,7 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
         agent_loop=agent_loop,
         session_manager=session_manager,
         channel_manager=channel_manager,
+        cron_service=cron,
         config=config_dict,
         config_path=config_path,
         workspace=config.workspace_path,
@@ -230,6 +259,8 @@ async def initialize_bot_state(app: FastAPI) -> None:
             config = load_config(Path(bot_info.config_path))
             state = _initialize_bot(bot_info.id, config, Path(bot_info.config_path))
             manager.set_state(bot_info.id, state)
+            if state.cron_service and state.agent_loop:
+                await state.cron_service.start()
             logger.info("Initialized bot '{}' ({})", bot_info.name, bot_info.id)
         except Exception as e:
             logger.error("Failed to initialize bot '{}': {}", bot_info.id, e)
@@ -249,6 +280,10 @@ async def lifespan(app: FastAPI):
     yield
 
     logger.info("Shutting down nanobot console")
+    manager = get_state_manager()
+    for state in manager.all_states().values():
+        if state.cron_service:
+            state.cron_service.stop()
 
 
 def create_app() -> FastAPI:

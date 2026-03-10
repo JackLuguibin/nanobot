@@ -18,6 +18,7 @@ from loguru import logger
 if TYPE_CHECKING:
     from nanobot.agent.loop import AgentLoop
     from nanobot.channels.manager import ChannelManager
+    from nanobot.cron.service import CronService
     from nanobot.session.manager import SessionManager
 
 
@@ -45,6 +46,7 @@ class BotState:
         self._agent_loop: AgentLoop | None = None
         self._session_manager: SessionManager | None = None
         self._channel_manager: ChannelManager | None = None
+        self._cron_service: CronService | None = None
         self._start_time: float | None = None
         self._config: dict[str, Any] = {}
         self._config_path: Path | None = None
@@ -60,6 +62,7 @@ class BotState:
         agent_loop: "AgentLoop | None" = None,
         session_manager: "SessionManager | None" = None,
         channel_manager: "ChannelManager | None" = None,
+        cron_service: "CronService | None" = None,
         config: dict[str, Any] | None = None,
         config_path: Path | None = None,
         workspace: Path | None = None,
@@ -68,6 +71,7 @@ class BotState:
         self._agent_loop = agent_loop
         self._session_manager = session_manager
         self._channel_manager = channel_manager
+        self._cron_service = cron_service
         self._config = config or {}
         self._config_path = config_path
         self._workspace = workspace
@@ -95,6 +99,10 @@ class BotState:
     @property
     def channel_manager(self) -> ChannelManager | None:
         return self._channel_manager
+
+    @property
+    def cron_service(self) -> CronService | None:
+        return self._cron_service
 
     @property
     def config(self) -> dict[str, Any]:

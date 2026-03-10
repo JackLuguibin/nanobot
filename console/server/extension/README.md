@@ -8,7 +8,12 @@
 |------|------|
 | `cli.py` | Console CLI 扩展，提供启动命令实现（run_console_server、run_full_stack 等） |
 | `skills.py` | Skills 管理扩展，提供 PatchedContextBuilder、技能列表与内容管理 |
-| `usage.py` | **Token 使用量追踪**：包装 LLM provider，在每次 chat 调用后累积 prompt_tokens、completion_tokens、total_tokens，供 Dashboard 展示。按 bot_id 存储，每日自动重置。 |
+| `skills_registry.py` | **Skills Registry**：从远程 JSON 拉取技能列表，支持 search/install |
+| `usage.py` | **Token 使用量追踪**：包装 LLM provider，累积 token 用量与成本，供 Dashboard 展示 |
+| `alerts.py` | **Smart Alerts**：成本超阈值、Cron 逾期、MCP/通道异常告警 |
+| `health.py` | **Health Audit**：Bootstrap 文件、MCP 配置、通道等健康检查 |
+| `activity.py` | **Activity 持久化**：tool_call 日志持久化到 activity.json |
+| `cron_history.py` | **Cron 执行历史**：记录每次 Cron 执行到 history.json |
 
 ## usage.py 实现说明
 

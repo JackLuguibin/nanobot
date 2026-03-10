@@ -1,4 +1,6 @@
 import type {
+  Alert,
+  HealthIssue,
   BotInfo,
   BotFilesResponse,
   ChatRequest,
@@ -129,6 +131,23 @@ export async function deleteChannel(
 
 export async function getMCPServers(botId?: string | null): Promise<MCPStatus[]> {
   return fetchJson<MCPStatus[]>(`${API_BASE}/mcp${botQuery(botId)}`);
+}
+
+export async function getAlerts(
+  botId?: string | null,
+  includeDismissed?: boolean
+): Promise<Alert[]> {
+  const params = new URLSearchParams();
+  if (botId) params.set('bot_id', botId);
+  if (includeDismissed) params.set('include_dismissed', 'true');
+  return fetchJson<Alert[]>(`${API_BASE}/alerts?${params}`);
+}
+
+export async function dismissAlert(alertId: string, botId?: string | null): Promise<{ status: string }> {
+  return fetchJson(
+    appendBotQuery(`${API_BASE}/alerts/${encodeURIComponent(alertId)}/dismiss`, botId),
+    { method: 'POST' }
+  );
 }
 
 // ====================
@@ -402,6 +421,16 @@ export async function getCronStatus(botId?: string | null): Promise<CronStatus> 
   return fetchJson<CronStatus>(appendBotQuery(`${API_BASE}/cron/status`, botId));
 }
 
+export async function getCronHistory(
+  botId?: string | null,
+  jobId?: string | null
+): Promise<Record<string, Array<{ run_at_ms: number; status: string; duration_ms: number; error?: string }>>> {
+  const params = new URLSearchParams();
+  if (botId) params.set('bot_id', botId);
+  if (jobId) params.set('job_id', jobId);
+  return fetchJson(`${API_BASE}/cron/history?${params}`);
+}
+
 // ====================
 // Control API
 // ====================
@@ -420,6 +449,69 @@ export async function restartBot(botId?: string | null): Promise<{ status: strin
 
 export async function healthCheck(): Promise<{ status: string; version: string }> {
   return fetchJson(`${API_BASE}/health`);
+}
+
+export async function getHealthAudit(botId?: string | null): Promise<{ issues: HealthIssue[] }> {
+  return fetchJson(`${API_BASE}/health/audit${botQuery(botId)}`);
+}
+
+// ====================
+// Workspace API
+// ====================
+
+export async function listWorkspaceFiles(
+  path?: string,
+  depth?: number,
+  botId?: string | null
+): Promise<{ path: string; items: Array<{ name: string; path: string; is_dir: boolean; children?: unknown[] }> }> {
+  const params = new URLSearchParams();
+  if (path) params.set('path', path);
+  if (depth != null) params.set('depth', String(depth));
+  if (botId) params.set('bot_id', botId);
+  return fetchJson(`${API_BASE}/workspace/files?${params}`);
+}
+
+export async function getWorkspaceFile(
+  path: string,
+  botId?: string | null
+): Promise<{ path: string; content: string }> {
+  const params = new URLSearchParams({ path });
+  if (botId) params.set('bot_id', botId);
+  return fetchJson(`${API_BASE}/workspace/file?${params}`);
+}
+
+export async function searchSkillsRegistry(
+  query?: string,
+  registryUrl?: string,
+  botId?: string | null
+): Promise<Array<{ name: string; description?: string; url?: string; version?: string }>> {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (registryUrl) params.set('registry_url', registryUrl);
+  if (botId) params.set('bot_id', botId);
+  return fetchJson(`${API_BASE}/skills/registry/search?${params}`);
+}
+
+export async function installSkillFromRegistry(
+  name: string,
+  botId?: string | null,
+  registryUrl?: string
+): Promise<{ status: string; name: string }> {
+  return fetchJson(appendBotQuery(`${API_BASE}/skills/install-from-registry`, botId), {
+    method: 'POST',
+    body: JSON.stringify({ name, registry_url: registryUrl || undefined }),
+  });
+}
+
+export async function updateWorkspaceFile(
+  path: string,
+  content: string,
+  botId?: string | null
+): Promise<{ status: string; path: string }> {
+  return fetchJson(appendBotQuery(`${API_BASE}/workspace/file`, botId), {
+    method: 'PUT',
+    body: JSON.stringify({ path, content }),
+  });
 }
 
 // ====================

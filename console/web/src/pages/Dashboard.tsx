@@ -28,11 +28,12 @@ import {
   CheckCircleOutlined,
   BarChartOutlined,
   CalendarOutlined,
+  DollarOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
-import { Column, Tiny } from '@ant-design/plots';
+import { Column, Tiny, Pie } from '@ant-design/plots';
 import type { UsageHistoryItem } from '../api/types';
-import { formatTokenCount } from '../utils/format';
+import { formatTokenCount, formatCost } from '../utils/format';
 
 const { Text } = Typography;
 
@@ -97,6 +98,19 @@ export default function Dashboard() {
     queryFn: () => api.listCronJobs(currentBotId, true),
   });
 
+  const { data: alerts = [], refetch: refetchAlerts } = useQuery({
+    queryKey: ['alerts', currentBotId],
+    queryFn: () => api.getAlerts(currentBotId),
+    refetchInterval: 60000,
+  });
+
+  const dismissAlertMutation = useMutation({
+    mutationFn: (alertId: string) => api.dismissAlert(alertId, currentBotId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts', currentBotId] });
+    },
+  });
+
   useEffect(() => {
     if (data) {
       setStatus(data);
@@ -159,6 +173,33 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
+      {/* Alerts Banner */}
+      {alerts.length > 0 && (
+        <div className="space-y-2">
+          {alerts.slice(0, 5).map((alert) => (
+            <Alert
+              key={alert.id}
+              type={alert.severity === 'critical' ? 'error' : alert.severity === 'warning' ? 'warning' : 'info'}
+              message={
+                <div className="flex items-center justify-between gap-4">
+                  <span>{alert.message}</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => dismissAlertMutation.mutate(alert.id)}
+                    loading={dismissAlertMutation.isPending}
+                  >
+                    关闭
+                  </Button>
+                </div>
+              }
+              showIcon
+              closable={false}
+            />
+          ))}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -189,6 +230,7 @@ export default function Dashboard() {
             icon={<ReloadOutlined />}
             onClick={() => {
               refetch();
+              refetchAlerts();
               queryClient.invalidateQueries({ queryKey: ['usage-history', currentBotId] });
             }}
           />
@@ -196,7 +238,7 @@ export default function Dashboard() {
       </div>
 
       {/* Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card hoverable>
           <Statistic
             title="Status"
@@ -241,6 +283,17 @@ export default function Dashboard() {
                 : '-'
             }
             prefix={<ThunderboltOutlined className="text-amber-500" />}
+          />
+        </Card>
+        <Card hoverable>
+          <Statistic
+            title="Cost Today"
+            value={
+              status?.token_usage?.cost_usd != null && status.token_usage.cost_usd > 0
+                ? formatCost(status.token_usage.cost_usd)
+                : '-'
+            }
+            prefix={<DollarOutlined className="text-green-500" />}
           />
         </Card>
       </div>
@@ -288,6 +341,12 @@ export default function Dashboard() {
                     {Object.entries(status.token_usage.by_model).map(([model, u]) => (
                       <Tag key={model} className="m-0">
                         {model}: {formatTokenCount(u.total_tokens ?? 0)}
+                        {status?.token_usage?.cost_by_model?.[model] != null &&
+                          status.token_usage.cost_by_model[model] > 0 && (
+                            <span className="ml-1 text-green-600 dark:text-green-400">
+                              ({formatCost(status.token_usage.cost_by_model[model])})
+                            </span>
+                          )}
                       </Tag>
                     ))}
                   </div>
@@ -370,6 +429,48 @@ export default function Dashboard() {
           </Text>
         )}
       </Card>
+
+      {/* 按模型成本分布 */}
+      {status?.token_usage?.cost_by_model &&
+        Object.keys(status.token_usage.cost_by_model).length > 0 &&
+        Object.values(status.token_usage.cost_by_model).some((v) => v > 0) && (
+          <Card
+            title={
+              <span className="flex items-center gap-2">
+                <DollarOutlined className="text-green-500" /> 按模型成本分布
+              </span>
+            }
+            size="small"
+          >
+            <div className="flex flex-wrap items-center gap-6">
+              <div style={{ width: 200, height: 200 }}>
+                <Pie
+                  data={Object.entries(status.token_usage.cost_by_model)
+                    .filter(([, v]) => v > 0)
+                    .map(([model, usd]) => ({ type: model, value: usd }))}
+                  angleField="value"
+                  colorField="type"
+                  radius={0.8}
+                  innerRadius={0.4}
+                  label={{ type: 'inner', formatter: (v: { value: number }) => formatCost(v.value) }}
+                  legend={false}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                {Object.entries(status.token_usage.cost_by_model)
+                  .filter(([, v]) => v > 0)
+                  .map(([model, usd]) => (
+                    <div key={model} className="flex items-center justify-between gap-4">
+                      <span className="font-medium truncate max-w-[120px]">{model}</span>
+                      <span className="text-green-600 dark:text-green-400 font-mono">
+                        {formatCost(usd)}
+                      </span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          </Card>
+        )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recent Sessions */}
@@ -454,14 +555,16 @@ export default function Dashboard() {
               </Space>
             </div>
 
-            <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30">
-              <span className="flex items-center gap-2 font-medium">
-                <CheckCircleOutlined className="text-gray-500" /> Health
-              </span>
-              <Tag color={status?.running ? 'success' : 'default'}>
-                {status?.running ? 'Healthy' : 'Stopped'}
-              </Tag>
-            </div>
+            <Link to="/health">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
+                <span className="flex items-center gap-2 font-medium">
+                  <CheckCircleOutlined className="text-gray-500" /> Health
+                </span>
+                <Tag color={status?.running ? 'success' : 'default'}>
+                  {status?.running ? 'Healthy' : 'Stopped'}
+                </Tag>
+              </div>
+            </Link>
             <Link to="/cron">
               <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
                 <span className="flex items-center gap-2 font-medium">

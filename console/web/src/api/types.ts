@@ -79,6 +79,10 @@ export interface TokenUsage {
   total_tokens?: number;
   /** 按模型分别的使用量 */
   by_model?: Record<string, { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }>;
+  /** 当日成本（美元） */
+  cost_usd?: number;
+  /** 按模型分别的成本 */
+  cost_by_model?: Record<string, number>;
 }
 
 export interface UsageHistoryItem {
@@ -88,6 +92,30 @@ export interface UsageHistoryItem {
   completion_tokens: number;
   /** 按模型分别的使用量 */
   by_model?: Record<string, { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }>;
+  /** 当日成本（美元） */
+  cost_usd?: number;
+  /** 按模型分别的成本 */
+  cost_by_model?: Record<string, number>;
+}
+
+export interface Alert {
+  id: string;
+  type: string;
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  bot_id?: string;
+  created_at_ms: number;
+  dismissed: boolean;
+  metadata?: Record<string, unknown>;
+}
+
+export interface HealthIssue {
+  type: string;
+  severity: 'critical' | 'warning' | 'info';
+  message: string;
+  bot_id?: string;
+  path?: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface StatusResponse {

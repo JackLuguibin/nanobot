@@ -15,7 +15,6 @@ const TABS: { key: TabKey; label: string }[] = [
   { key: 'heartbeat', label: 'HEARTBEAT' },
   { key: 'tools', label: 'TOOLS' },
   { key: 'agents', label: 'AGENTS' },
-  { key: 'identity', label: 'IDENTITY' },
 ];
 
 const PROSE_CLASS = `

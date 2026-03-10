@@ -313,12 +313,11 @@ export interface CronStatus {
   next_wake_at_ms: number | null;
 }
 
-// Bot profile files (SOUL, USER, HEARTBEAT, TOOLS, AGENTS, IDENTITY)
+// Bot profile files (SOUL, USER, HEARTBEAT, TOOLS, AGENTS)
 export interface BotFilesResponse {
   soul: string;
   user: string;
   heartbeat: string;
   tools: string;
   agents: string;
-  identity: string;
 }

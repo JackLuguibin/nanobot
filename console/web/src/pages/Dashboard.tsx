@@ -32,6 +32,7 @@ import {
 import { Link } from 'react-router-dom';
 import { Column, Tiny } from '@ant-design/plots';
 import type { UsageHistoryItem } from '../api/types';
+import { formatTokenCount } from '../utils/format';
 
 const { Text } = Typography;
 
@@ -236,7 +237,7 @@ export default function Dashboard() {
             title="Tokens Today"
             value={
               status?.token_usage?.total_tokens != null
-                ? status.token_usage.total_tokens.toLocaleString()
+                ? formatTokenCount(status.token_usage.total_tokens)
                 : '-'
             }
             prefix={<ThunderboltOutlined className="text-amber-500" />}
@@ -265,20 +266,20 @@ export default function Dashboard() {
                   <div>
                     <Text type="secondary" className="text-xs block">今日 Token 使用</Text>
                     <span className="font-medium">
-                      {(status?.token_usage?.total_tokens ?? 0).toLocaleString()}
+                      {formatTokenCount(status?.token_usage?.total_tokens ?? 0)}
                     </span>
                     <Text type="secondary" className="text-xs ml-1">total</Text>
                   </div>
                   <div>
                     <Text type="secondary" className="text-xs block">输入</Text>
                     <span className="font-medium">
-                      {(status?.token_usage?.prompt_tokens ?? 0).toLocaleString()}
+                      {formatTokenCount(status?.token_usage?.prompt_tokens ?? 0)}
                     </span>
                   </div>
                   <div>
                     <Text type="secondary" className="text-xs block">输出</Text>
                     <span className="font-medium">
-                      {(status?.token_usage?.completion_tokens ?? 0).toLocaleString()}
+                      {formatTokenCount(status?.token_usage?.completion_tokens ?? 0)}
                     </span>
                   </div>
                 </div>
@@ -286,7 +287,7 @@ export default function Dashboard() {
                   <div className="flex flex-wrap gap-2">
                     {Object.entries(status.token_usage.by_model).map(([model, u]) => (
                       <Tag key={model} className="m-0">
-                        {model}: {(u.total_tokens ?? 0).toLocaleString()}
+                        {model}: {formatTokenCount(u.total_tokens ?? 0)}
                       </Tag>
                     ))}
                   </div>
@@ -347,7 +348,7 @@ export default function Dashboard() {
                 style: { dy: -16 },
                 formatter: (v: unknown) => {
                   const n = Number(v);
-                  return n > 0 ? n.toLocaleString() : '';
+                  return n > 0 ? formatTokenCount(n) : '';
                 },
               }}
               xAxis={{
@@ -357,7 +358,7 @@ export default function Dashboard() {
               }}
               yAxis={{
                 label: {
-                  formatter: (v: string) => Number(v).toLocaleString(),
+                  formatter: (v: string) => formatTokenCount(Number(v)),
                 },
               }}
               legend={{ position: 'top' }}

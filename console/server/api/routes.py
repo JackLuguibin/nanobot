@@ -1232,6 +1232,73 @@ async def get_cron_history(
 
 
 # ====================
+# Activity Feed
+# ====================
+
+
+@router.get("/activity")
+async def get_activity_feed(
+    bot_id: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    activity_type: str | None = Query(None, description="Filter by activity type: message, tool_call, channel, session, error"),
+) -> list[dict[str, Any]]:
+    """Get activity feed with various event types."""
+    from datetime import datetime
+
+    state = _resolve_state(bot_id)
+
+    if state.bot_id == "_empty":
+        return []
+
+    from console.server.extension.activity import get_activity as _get_activity
+
+    activities = _get_activity(state.bot_id, limit=limit, activity_type=activity_type)
+
+    result = []
+    for entry in activities:
+        ts = entry.get("timestamp", 0)
+        if isinstance(ts, (int, float)):
+            dt = datetime.fromtimestamp(ts)
+            ts_str = dt.isoformat()
+        else:
+            ts_str = str(ts)
+
+        data = entry.get("data") or {}
+        entry_type = entry.get("type", "unknown")
+
+        title = ""
+        description = ""
+
+        if entry_type == "tool_call":
+            title = f"Tool: {data.get('tool_name', 'unknown')}"
+            description = f"Status: {data.get('status', 'unknown')}"
+        elif entry_type == "message":
+            title = "Message received"
+            content = data.get("content", "")
+            description = content[:100] + "..." if len(content) > 100 else content
+        elif entry_type == "channel":
+            title = f"Channel: {data.get('channel', 'unknown')}"
+            description = data.get("event", "event")
+        elif entry_type == "session":
+            title = f"Session: {data.get('action', 'unknown')}"
+            description = data.get("session_key", "")
+        elif entry_type == "error":
+            title = "Error occurred"
+            description = data.get("error", "Unknown error")[:100]
+
+        result.append({
+            "id": entry.get("id", ""),
+            "type": entry_type,
+            "title": title,
+            "description": description,
+            "timestamp": ts_str,
+            "metadata": data,
+        })
+
+    return result
+
+
+# ====================
 # Alerts
 # ====================
 

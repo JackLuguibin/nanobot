@@ -28,6 +28,7 @@ import {
   UserCircle,
   Clock,
   Heart,
+  Activity,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -60,6 +61,7 @@ const navSections: NavSection[] = [
       { path: '/sessions', label: 'Sessions', icon: FolderOpen },
       { path: '/cron', label: 'Cron', icon: Clock },
       { path: '/health', label: 'Health', icon: Heart },
+      { path: '/activity', label: 'Activity', icon: Activity },
     ],
   },
   {

@@ -18,6 +18,7 @@ import BotProfile from './pages/BotProfile';
 import Cron from './pages/Cron';
 import Health from './pages/Health';
 import Workspace from './pages/Workspace';
+import Activity from './pages/Activity';
 
 function resolveIsDark(theme: 'light' | 'dark' | 'system'): boolean {
   if (theme === 'dark') return true;
@@ -46,6 +47,7 @@ function AppRoutes() {
           <Route path="/bot-profile" element={<BotProfile />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/activity" element={<Activity />} />
         </Routes>
       </Layout>
       <ToastBridge />

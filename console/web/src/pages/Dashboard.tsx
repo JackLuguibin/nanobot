@@ -19,16 +19,16 @@ import {
   ReloadOutlined,
   PoweroffOutlined,
   SyncOutlined,
-  ThunderboltOutlined,
   ClockCircleOutlined,
   TeamOutlined,
   MessageOutlined,
-  MobileOutlined,
-  ApiOutlined,
   CheckCircleOutlined,
-  BarChartOutlined,
-  CalendarOutlined,
   DollarOutlined,
+  ApiOutlined,
+  ThunderboltOutlined,
+  BarChartOutlined,
+  MobileOutlined,
+  CalendarOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { Column, Tiny, Pie } from '@ant-design/plots';

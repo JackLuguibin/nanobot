@@ -245,7 +245,7 @@ export default function Settings() {
         </span>
       ),
       children: (
-        <Form form={form} layout="vertical" className="max-w-2xl">
+        <Form form={form} layout="vertical">
           <Title level={5} className="!mb-4">
             Agent Defaults
           </Title>

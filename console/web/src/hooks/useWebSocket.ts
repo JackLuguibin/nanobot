@@ -8,6 +8,7 @@ export function useWebSocket() {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<number | null>(null);
   const isConnectingRef = useRef(false);
+  const initialStatusReceivedRef = useRef(false);
   const { setWSConnected, setStatus, setSessions, addWSMessage } = useAppStore();
 
   const connect = useCallback(() => {
@@ -51,7 +52,12 @@ export function useWebSocket() {
             const statusData = message.data as StatusResponse & { bot_id?: string };
             const targetBotId = statusData.bot_id ?? activeBotId;
             queryClient.setQueryData(['status', targetBotId], statusData);
-            queryClient.invalidateQueries({ queryKey: ['usage-history', targetBotId] });
+            // 跳过连接时的初始 status，避免与页面加载时的 useQuery 重复请求 usage-history
+            if (initialStatusReceivedRef.current) {
+              queryClient.invalidateQueries({ queryKey: ['usage-history', targetBotId] });
+            } else {
+              initialStatusReceivedRef.current = true;
+            }
             if (!statusData.bot_id || statusData.bot_id === activeBotId) {
               setStatus(statusData);
             }

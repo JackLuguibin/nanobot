@@ -30,7 +30,7 @@ import {
   CalendarOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
-import { Column } from '@ant-design/plots';
+import { Column, Tiny } from '@ant-design/plots';
 import type { UsageHistoryItem } from '../api/types';
 
 const { Text } = Typography;
@@ -260,25 +260,55 @@ export default function Dashboard() {
               </div>
             </div>
             {status?.token_usage && ((status?.token_usage?.total_tokens ?? 0) + (status?.token_usage?.prompt_tokens ?? 0) + (status?.token_usage?.completion_tokens ?? 0)) > 0 && (
-              <div className="flex items-center gap-4 text-sm">
-                <div>
-                  <Text type="secondary" className="text-xs block">今日 Token 使用</Text>
-                  <span className="font-medium">
-                    {(status?.token_usage?.total_tokens ?? 0).toLocaleString()}
-                  </span>
-                  <Text type="secondary" className="text-xs ml-1">total</Text>
+              <div className="flex flex-col gap-2 text-sm">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <Text type="secondary" className="text-xs block">今日 Token 使用</Text>
+                    <span className="font-medium">
+                      {(status?.token_usage?.total_tokens ?? 0).toLocaleString()}
+                    </span>
+                    <Text type="secondary" className="text-xs ml-1">total</Text>
+                  </div>
+                  <div>
+                    <Text type="secondary" className="text-xs block">输入</Text>
+                    <span className="font-medium">
+                      {(status?.token_usage?.prompt_tokens ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+                  <div>
+                    <Text type="secondary" className="text-xs block">输出</Text>
+                    <span className="font-medium">
+                      {(status?.token_usage?.completion_tokens ?? 0).toLocaleString()}
+                    </span>
+                  </div>
                 </div>
-                <div>
-                  <Text type="secondary" className="text-xs block">输入</Text>
-                  <span className="font-medium">
-                    {(status?.token_usage?.prompt_tokens ?? 0).toLocaleString()}
-                  </span>
-                </div>
-                <div>
-                  <Text type="secondary" className="text-xs block">输出</Text>
-                  <span className="font-medium">
-                    {(status?.token_usage?.completion_tokens ?? 0).toLocaleString()}
-                  </span>
+                {status?.token_usage?.by_model && Object.keys(status.token_usage.by_model).length > 0 && (
+                  <div className="flex flex-wrap gap-2">
+                    {Object.entries(status.token_usage.by_model).map(([model, u]) => (
+                      <Tag key={model} className="m-0">
+                        {model}: {(u.total_tokens ?? 0).toLocaleString()}
+                      </Tag>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* 每日 Token 用量趋势图 */}
+            {usageHistory && usageHistory.length > 0 && (
+              <div className="w-full min-w-[320px]" style={{ maxWidth: 480 }}>
+                <Text type="secondary" className="text-xs block mb-1">每日 Token 用量</Text>
+                <div style={{ height: 44 }}>
+                  <Tiny.Area
+                    data={usageHistory.map((d) => ({
+                      date: d.date.slice(5),
+                      value: d.total_tokens ?? 0,
+                    }))}
+                    xField="date"
+                    yField="value"
+                    smooth
+                    color="#3b82f6"
+                    areaStyle={{ fill: 'l(90) 0:rgba(59,130,246,0.35) 1:rgba(59,130,246,0.05)' }}
+                  />
                 </div>
               </div>
             )}

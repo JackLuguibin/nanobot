@@ -70,6 +70,7 @@ const navSections: NavSection[] = [
       { path: '/mcp', label: 'MCP', icon: Plug },
       { path: '/memory', label: 'Memory', icon: Brain },
       { path: '/workspace', label: 'Workspace', icon: FolderOpen },
+      { path: '/agents', label: 'Agents', icon: Users },
       { path: '/bot-profile', label: 'Bot Profile', icon: UserCircle },
       { path: '/logs', label: 'Logs', icon: FileText },
       { path: '/skills', label: 'Skills', icon: BookOpen },
@@ -78,7 +79,7 @@ const navSections: NavSection[] = [
   {
     title: 'Settings',
     items: [
-      { path: '/bots', label: 'Bots', icon: Users },
+      { path: '/bots', label: 'Bots', icon: Bot },
       { path: '/settings', label: 'Settings', icon: Settings },
     ],
   },

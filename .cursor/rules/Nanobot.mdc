@@ -1,0 +1,194 @@
+---
+alwaysApply: true
+---
+
+# Nanobot 项目开发规则
+
+## 项目结构
+
+```
+nanobot/                    # 核心AI助手框架（保持独立，不要修改）
+├── agent/                  # Agent循环核心逻辑
+├── bus/                    # 消息总线
+├── channels/               # 通道管理器
+├── providers/             # LLM提供商
+├── session/               # 会话管理
+├── skills/                # 技能定义
+├── templates/             # 提示词模板
+└── ...
+
+console/                   # Web控制台（扩展层）
+├── server/                # FastAPI后端
+│   ├── api/               # API路由、状态、WebSocket
+│   ├── extension/         # nanobot扩展（打补丁、扩展核心功能）
+│   ├── main.py            # 入口点
+│   └── logs/              # 日志目录
+└── web/                   # React + TypeScript前端
+    ├── src/
+    │   ├── api/           # 前端API调用
+    │   ├── components/    # UI组件
+    │   ├── pages/         # 页面组件
+    │   └── store/         # 状态管理
+    └── dist/              # 构建输出
+
+.venv/                     # Python虚拟环境（项目根目录）
+```
+
+## Python环境配置
+
+**重要**: 始终使用项目根目录的 `.venv` 中的Python解释器：
+
+- 解释器路径: `/home/jk_lu/Projects/Repos/nanobot/.venv/bin/python`
+- 或使用 `source .venv/bin/activate` 后运行命令
+
+## 开发原则
+
+### 1. 保持nanobot独立
+
+- **不要修改** `nanobot/` 目录下的任何代码
+- nanobot是核心框架，应保持纯净和独立
+- 所有定制化应该通过扩展机制实现
+
+### 2. Console扩展模式
+
+console作为nanobot的**扩展层**存在，所有扩展代码放在 `console/server/extension/` 目录：
+
+```python
+# 正确的方式：在console/extension中扩展nanobot功能
+from nanobot.agent.loop import AgentLoop
+from nanobot.channels.manager import ChannelManager
+
+# console/server/extension/agent.py     - 扩展Agent功能
+# console/server/extension/channels.py  - 扩展通道功能
+# console/server/extension/providers.py  - 扩展Provider功能
+# console/server/extension/session.py   - 扩展会话功能
+```
+
+### 3. API层与扩展层分离
+
+- **console/server/extension/** - 放置对nanobot核心的补丁和扩展（纯Python逻辑）
+- **console/server/api/** - 放置API端点和WebSocket处理（HTTP层）
+
+扩展层通过导入nanobot核心组件，进行功能增强或打补丁，然后API层调用扩展后的功能。
+
+### 4. 前后端分离开发
+
+**后端 (console/server/)**:
+- 使用FastAPI构建REST API和WebSocket
+- 通过导入nanobot核心组件来使用其功能
+- 在API层添加console特有的功能
+
+**前端 (console/web/)**:
+- 使用React + TypeScript + Vite
+- 使用Ant Design (antd) 作为UI组件库
+- 使用Tailwind CSS进行样式微调
+- 通过API与后端通信
+
+### 5. 依赖管理
+
+- Python依赖在项目根目录的 `pyproject.toml` 中定义
+- 前端依赖在 `console/web/package.json` 中定义
+- 安装Python包: 使用 `.venv/bin/pip install ...`
+- 安装前端包: 在 `console/web/` 目录下运行 `npm install`
+
+### 6. UI组件使用规范
+
+使用Ant Design (antd)作为主要UI组件库，遵循简洁美观的设计原则：
+
+```tsx
+// 正确引入antd组件
+import { Button, Card, Table, Form, Input } from 'antd';
+import { UserOutlined, SendOutlined } from '@ant-design/icons';
+
+// 使用antd组件构建界面
+<Card title="用户信息">
+  <Form>
+    <Form.Item label="用户名">
+      <Input prefix={<UserOutlined />} />
+    </Form.Item>
+  </Form>
+</Card>
+```
+
+**UI设计原则**:
+- 保持界面简洁，避免过度装饰
+- 优先使用antd默认样式，不过度自定义
+- 使用Tailwind进行微调（颜色、间距等），保持整体一致性
+- 色彩搭配协调，遵循antd默认配色
+- 注重留白和层次感
+- 复杂交互可结合React组件和antd
+
+**注意事项**:
+- 优先使用antd组件，减少自定义UI开发
+- 保持与antd默认风格一致
+- 不要为了"炫酷"而添加不必要的动画或效果
+- 注重用户体验，交互流畅直观
+
+## 运行命令
+
+### 后端服务
+
+```bash
+# 方式1: 使用虚拟环境中的Python直接运行
+.venv/bin/python -m console.server.main
+
+# 方式2: 使用uvicorn
+.venv/bin/uvicorn console.server.main:app --reload --port 18791
+
+# 方式3: 如果nanobot已安装为包
+nanobot console run
+```
+
+### 前端开发
+
+```bash
+cd console/web
+npm run dev
+```
+
+### 完整启动
+
+```bash
+# 终端1: 启动后端
+.venv/bin/python -m console.server.main
+
+# 终端2: 启动前端开发服务器
+cd console/web && npm run dev
+```
+
+## 代码规范
+
+### Python
+
+- 遵循 `pyproject.toml` 中的ruff配置
+- 行长度限制: 100字符
+- 目标Python版本: 3.11+
+
+### 前端
+
+- 使用TypeScript进行类型安全开发
+- 使用Ant Design (antd) 作为主要UI组件库
+- 保持UI设计简洁、美观
+- 使用Tailwind CSS进行布局和样式微调
+- 遵循React和antd最佳实践
+
+## 重要文件说明
+
+| 文件 | 用途 |
+|------|------|
+| `console/server/extension/` | nanobot核心扩展目录（打补丁、扩展功能） |
+| `console/server/main.py` | FastAPI应用入口，初始化nanobot核心组件 |
+| `console/server/api/state.py` | 全局状态管理 |
+| `console/server/api/routes.py` | REST API路由定义 |
+| `console/server/api/websocket.py` | WebSocket实时通信 |
+| `console/web/src/App.tsx` | 前端主应用组件 |
+| `console/web/src/pages/` | 页面组件目录 |
+| `console/web/src/api/` | 前端API调用封装 |
+
+## 注意事项
+
+1. nanobot核心代码是独立的，不要在其中添加console特有的逻辑
+2. 所有对nanobot功能的定制和扩展都应该在 `console/server/extension/` 目录中实现
+3. API层 (`console/server/api/`) 只负责HTTP请求处理，核心逻辑放在extension层
+4. 如果需要暴露nanobot的新功能给前端，先在extension中扩展功能，再在api中创建相应的API端点
+5. 前端通过API与后端通信，后端调用extension层，extension层再调用nanobot的核心功能

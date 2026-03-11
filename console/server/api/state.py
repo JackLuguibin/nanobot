@@ -47,6 +47,7 @@ class BotState:
         self._session_manager: SessionManager | None = None
         self._channel_manager: ChannelManager | None = None
         self._cron_service: CronService | None = None
+        self._agent_manager: Any = None  # AgentManager for multi-agent support
         self._start_time: float | None = None
         self._config: dict[str, Any] = {}
         self._config_path: Path | None = None
@@ -66,12 +67,14 @@ class BotState:
         config: dict[str, Any] | None = None,
         config_path: Path | None = None,
         workspace: Path | None = None,
+        agent_manager: Any = None,
     ) -> None:
         """Initialize the state with nanobot core components."""
         self._agent_loop = agent_loop
         self._session_manager = session_manager
         self._channel_manager = channel_manager
         self._cron_service = cron_service
+        self._agent_manager = agent_manager
         self._config = config or {}
         self._config_path = config_path
         self._workspace = workspace

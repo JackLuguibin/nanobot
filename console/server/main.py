@@ -14,7 +14,9 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from console.server.api import routes
+from console.server.api import routes_agents
 from console.server.api.state import BotState, get_state_manager
+from console.server.extension.agents import AgentManager
 from nanobot import __version__
 
 
@@ -273,6 +275,19 @@ async def initialize_bot_state(app: FastAPI) -> None:
         try:
             config = load_config(Path(bot_info.config_path))
             state = _initialize_bot(bot_info.id, config, Path(bot_info.config_path))
+
+            # Initialize AgentManager for multi-agent support
+            if state.workspace:
+                try:
+                    from console.server.extension.agents import AgentManager
+
+                    agent_manager = AgentManager(bot_info.id, state.workspace)
+                    await agent_manager.initialize()
+                    state._agent_manager = agent_manager
+                    logger.info("AgentManager initialized for bot '{}'", bot_info.id)
+                except Exception as e:
+                    logger.warning("Failed to initialize AgentManager for bot '{}': {}", bot_info.id, e)
+
             manager.set_state(bot_info.id, state)
             if state.cron_service and state.agent_loop:
                 await state.cron_service.start()
@@ -315,6 +330,7 @@ def create_app() -> FastAPI:
     setup_cors(app)
 
     app.include_router(routes.router)
+    app.include_router(routes_agents.router)
 
     web_dist = Path(__file__).parent.parent / "web" / "dist"
 

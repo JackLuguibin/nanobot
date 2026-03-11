@@ -648,3 +648,127 @@ export async function getSessionDetail(key: string, botId?: string | null): Prom
     appendBotQuery(`${API_BASE}/sessions/${encodeURIComponent(key)}?detail=true`, botId)
   );
 }
+
+// ====================
+// Agent Management API
+// ====================
+
+export async function listAgents(botId: string): Promise<import('./types_agents').Agent[]> {
+  return fetchJson<import('./types_agents').Agent[]>(`${API_BASE}/bots/${encodeURIComponent(botId)}/agents`);
+}
+
+export async function getAgent(botId: string, agentId: string): Promise<import('./types_agents').Agent> {
+  return fetchJson<import('./types_agents').Agent>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(agentId)}`
+  );
+}
+
+export async function createAgent(botId: string, data: import('./types_agents').AgentCreateRequest): Promise<import('./types_agents').Agent> {
+  return fetchJson<import('./types_agents').Agent>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents`,
+    {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function updateAgent(
+  botId: string,
+  agentId: string,
+  data: import('./types_agents').AgentUpdateRequest
+): Promise<import('./types_agents').Agent> {
+  return fetchJson<import('./types_agents').Agent>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(agentId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }
+  );
+}
+
+export async function deleteAgent(botId: string, agentId: string): Promise<{ status: string; agent_id: string }> {
+  return fetchJson<{ status: string; agent_id: string }>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(agentId)}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+export async function enableAgent(botId: string, agentId: string): Promise<import('./types_agents').Agent> {
+  return fetchJson<import('./types_agents').Agent>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(agentId)}/enable`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function disableAgent(botId: string, agentId: string): Promise<import('./types_agents').Agent> {
+  return fetchJson<import('./types_agents').Agent>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(agentId)}/disable`,
+    {
+      method: 'POST',
+    }
+  );
+}
+
+export async function getAgentStatus(botId: string, agentId: string): Promise<import('./types_agents').AgentStatus> {
+  return fetchJson<import('./types_agents').AgentStatus>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(agentId)}/status`
+  );
+}
+
+export async function getAgentsSystemStatus(botId: string): Promise<import('./types_agents').AgentsSystemStatus> {
+  return fetchJson<import('./types_agents').AgentsSystemStatus>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/system-status/status`
+  );
+}
+
+
+export interface DelegateTaskRequest {
+  to_agent_id: string;
+  task: string;
+  context?: Record<string, unknown>;
+  wait_response?: boolean;
+}
+
+export interface DelegateTaskResponse {
+  correlation_id: string;
+  response: string | null;
+}
+
+export async function delegateTask(
+  botId: string,
+  fromAgentId: string,
+  request: DelegateTaskRequest
+): Promise<DelegateTaskResponse> {
+  return fetchJson<DelegateTaskResponse>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(fromAgentId)}/delegate`,
+    {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }
+  );
+}
+
+export interface BroadcastEventRequest {
+  topic: string;
+  content: string;
+  context?: Record<string, unknown>;
+}
+
+export async function broadcastAgentEvent(
+  botId: string,
+  agentId: string,
+  request: BroadcastEventRequest
+): Promise<{ status: string; topic: string }> {
+  return fetchJson<{ status: string; topic: string }>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/${encodeURIComponent(agentId)}/broadcast`,
+    {
+      method: 'POST',
+      body: JSON.stringify(request),
+    }
+  );
+}

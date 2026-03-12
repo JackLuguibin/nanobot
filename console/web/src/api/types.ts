@@ -193,7 +193,10 @@ export type WSMessageType =
   | 'error'
   | 'status_update'
   | 'sessions_update'
-  | 'bots_update';
+  | 'bots_update'
+  | 'subagent_start'
+  | 'subagent_done'
+  | 'assistant_message';
 
 export interface WSMessage {
   type: WSMessageType;
@@ -211,6 +214,12 @@ export interface StreamChunk {
   tool_result?: string;
   error?: string;
   done?: boolean;
+  // Subagent event fields
+  subagent_id?: string;
+  label?: string;
+  task?: string;
+  result?: string;
+  status?: 'ok' | 'error';
 }
 
 // Batch operations

@@ -11,11 +11,14 @@ import {
   CopyOutlined,
   CheckOutlined,
   CloseOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
 } from '@ant-design/icons';
 import { Bot, User, MessageSquare, X, Wand2, Square } from 'lucide-react';
 import type { StreamChunk } from '../api/types';
 import type { TextAreaRef } from 'antd/es/input/TextArea';
 import Input from 'antd/es/input';
+import { SubagentPanel, type SubagentTask } from '../components/SubagentPanel';
 
 interface ChatInputProps {
   inputRef: React.RefObject<TextAreaRef | null>;
@@ -121,9 +124,12 @@ export default function Chat() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingContent, setStreamingContent] = useState('');
   const [sessionsSidebarOpen, setSessionsSidebarOpen] = useState(false);
+  const [sessionsSidebarCollapsed, setSessionsSidebarCollapsed] = useState(false);
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([]);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [showSuggestions, setShowSuggestions] = useState(true);
+  const [subagentTasks, setSubagentTasks] = useState<SubagentTask[]>([]);
+  const [subagentPanelOpen, setSubagentPanelOpen] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<TextAreaRef>(null);
@@ -212,6 +218,43 @@ export default function Chat() {
       } else if (chunk.type === 'error' && chunk.error) {
         setToolCalls((prev) => prev.map((tc) => ({ ...tc, status: 'error', result: chunk.error })));
         addToast({ type: 'error', message: chunk.error });
+      } else if (chunk.type === 'subagent_start' && chunk.subagent_id && chunk.label) {
+        // Subagent started - add to panel
+        const subagentId = chunk.subagent_id;
+        const subagentLabel = chunk.label;
+        setSubagentTasks((prev) => [
+          ...prev,
+          {
+            id: subagentId,
+            label: subagentLabel,
+            task: chunk.task,
+            status: 'running',
+          },
+        ]);
+        setSubagentPanelOpen(true);
+      } else if (chunk.type === 'assistant_message' && chunk.content) {
+        const assistantContent = chunk.content;
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `msg-${Date.now()}-${Math.random()}`,
+            role: 'assistant',
+            content: assistantContent,
+          },
+        ]);
+      } else if (chunk.type === 'subagent_done' && chunk.subagent_id) {
+        // Subagent completed - update status
+        setSubagentTasks((prev) =>
+          prev.map((task) =>
+            task.id === chunk.subagent_id
+              ? {
+                  ...task,
+                  status: chunk.status === 'ok' ? 'success' : 'error',
+                  result: chunk.result,
+                }
+              : task
+          )
+        );
       } else if (chunk.type === 'chat_done') {
         // Prefer content from chat_done (backend sends full response when no tokens were streamed)
         const finalContent =
@@ -285,6 +328,7 @@ export default function Chat() {
     setCurrentSessionKey(null);
     setMessages([]);
     setShowSuggestions(true);
+    setSubagentTasks([]);
     navigate('/chat');
     inputRef.current?.focus();
     setSessionsSidebarOpen(false);
@@ -326,7 +370,7 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-full bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+    <div className="flex h-full bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative">
       {/* Mobile Sessions Toggle Button */}
       <button
         onClick={() => setSessionsSidebarOpen(!sessionsSidebarOpen)}
@@ -338,9 +382,10 @@ export default function Chat() {
       {/* Sessions Sidebar */}
       <div
         className={`
-          ${sessionsSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+          ${sessionsSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
+          ${sessionsSidebarCollapsed ? 'md:-translate-x-full md:w-0 md:pointer-events-none' : 'md:translate-x-0 md:w-64'}
           fixed md:relative z-20 h-screen md:h-full
-          w-80 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50
+          w-64 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50
           flex flex-col transition-transform duration-300 ease-out
         `}
       >
@@ -374,8 +419,19 @@ export default function Chat() {
         />
       )}
 
+      {sessionsSidebarCollapsed && (
+        <Button
+          type="text"
+          icon={<MenuUnfoldOutlined />}
+          onClick={() => setSessionsSidebarCollapsed(false)}
+          className="hidden md:flex absolute left-2 top-20 z-30 text-gray-500 hover:text-primary-500 bg-white/80 dark:bg-gray-900/80 rounded-full shadow"
+          title="展开会话"
+        />
+      )}
+
       {/* Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex min-w-0">
+        <div className="flex-1 flex flex-col min-w-0">
         {/* Header */}
         <div className="h-12 px-6 flex items-center justify-between border-b border-gray-200/50 dark:border-gray-700/50 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm">
           <div className="flex items-center gap-3">
@@ -387,16 +443,25 @@ export default function Chat() {
               <p className="text-xs text-gray-500">Work with Nanobot</p>
             </div>
           </div>
-          {sessions && sessions.length > 0 && (
+          <div className="flex items-center gap-2">
             <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={handleNewChat}
-              className="hidden md:flex"
-            >
-              New Chat
-            </Button>
-          )}
+              type="text"
+              icon={sessionsSidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+              onClick={() => setSessionsSidebarCollapsed((prev) => !prev)}
+              className="!px-2 !py-1"
+              title={sessionsSidebarCollapsed ? '展开会话列表' : '收起会话列表'}
+            />
+            {sessions && sessions.length > 0 && (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={handleNewChat}
+                className="hidden md:flex"
+              >
+                New Chat
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Messages / Hero */}
@@ -564,6 +629,16 @@ export default function Chat() {
             />
           </div>
         </div>
+        </div>
+
+        {/* Subagent Panel */}
+        {subagentTasks.length > 0 && (
+          <SubagentPanel
+            tasks={subagentTasks}
+            collapsed={!subagentPanelOpen}
+            onCollapse={() => setSubagentPanelOpen(false)}
+          />
+        )}
       </div>
     </div>
   );

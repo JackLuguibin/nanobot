@@ -459,6 +459,8 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
 @router.post("/chat/stream")
 async def send_chat_message_stream(request: ChatRequest):
     """Send a chat message with streaming response (SSE)."""
+    from console.server.extension.subagent_events import set_subagent_callback
+
     state = _resolve_state(request.bot_id)
     agent_loop = state.agent_loop
 
@@ -479,11 +481,73 @@ async def send_chat_message_stream(request: ChatRequest):
             queue: asyncio.Queue[str | None] = asyncio.Queue()
             response_holder: list[str] = []
             agent_failed: list[bool] = [False]
+            subagent_active: set[str] = set()
+            stream_closed = False
+            agent_finished = False
+
+            async def maybe_finish_stream() -> None:
+                nonlocal stream_closed
+                if stream_closed:
+                    return
+                if agent_finished and not subagent_active:
+                    stream_closed = True
+                    await queue.put(None)
 
             async def stream_progress(content: str, *, tool_hint: bool = False) -> None:
                 await queue.put(f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n")
 
+            async def on_subagent_event(event: dict[str, Any]) -> None:
+                """Handle subagent events and forward to SSE."""
+                await queue.put(f"data: {json.dumps(event)}\n\n")
+
+                subagent_id = event.get("subagent_id")
+                event_type = event.get("type")
+                if event_type == "subagent_start" and isinstance(subagent_id, str):
+                    subagent_active.add(subagent_id)
+                elif event_type == "subagent_done" and isinstance(subagent_id, str):
+                    subagent_active.discard(subagent_id)
+
+                if event_type != "subagent_done":
+                    await maybe_finish_stream()
+                    return
+
+                label = event.get("label", "task")
+                task = event.get("task", "")
+                result = event.get("result", "")
+                status = event.get("status", "error")
+                status_text = "completed successfully" if status == "ok" else "failed"
+
+                summarize_content = f"""[Subagent '{label}' {status_text}]
+
+Task: {task}
+
+Result:
+{result}
+
+Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not mention technical details like "subagent" or task IDs."""
+
+                try:
+                    follow_up_response = await agent_loop.process_direct(
+                        content=summarize_content,
+                        session_key=session_key,
+                        channel="console",
+                        chat_id="web",
+                        on_progress=stream_progress,
+                    )
+
+                    if follow_up_response:
+                        await queue.put(
+                            f"data: {json.dumps({'type': 'assistant_message', 'content': follow_up_response})}\n\n"
+                        )
+                except Exception as e:
+                    logger.warning("Failed to process subagent result: {}", e)
+                finally:
+                    await maybe_finish_stream()
+
+            set_subagent_callback(agent_loop, on_subagent_event)
+
             async def run_agent() -> None:
+                nonlocal agent_finished
                 try:
                     response_text = await agent_loop.process_direct(
                         content=request.message,
@@ -497,7 +561,9 @@ async def send_chat_message_stream(request: ChatRequest):
                     agent_failed[0] = True
                     await queue.put(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n")
                 finally:
-                    await queue.put(None)
+                    nonlocal agent_finished
+                    agent_finished = True
+                    await maybe_finish_stream()
 
             task = asyncio.create_task(run_agent())
             while True:

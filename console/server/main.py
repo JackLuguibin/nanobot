@@ -175,6 +175,10 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
             skills_config=skills_config,
         )
 
+        # Patch SubagentManager for event callbacks
+        from console.server.extension.subagent_events import patch_subagent_manager
+        patch_subagent_manager(agent_loop)
+
         # Set cron callback to run jobs through the agent
         from nanobot.agent.tools.cron import CronTool
         from nanobot.cron.types import CronJob

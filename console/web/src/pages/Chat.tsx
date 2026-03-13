@@ -370,7 +370,7 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-full bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative">
+    <div className="flex h-full overflow-x-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative">
       {/* Mobile Sessions Toggle Button */}
       <button
         onClick={() => setSessionsSidebarOpen(!sessionsSidebarOpen)}
@@ -383,7 +383,7 @@ export default function Chat() {
       <div
         className={`
           ${sessionsSidebarOpen ? 'translate-x-0' : '-translate-x-full'}
-          ${sessionsSidebarCollapsed ? 'md:-translate-x-full md:w-0 md:pointer-events-none' : 'md:translate-x-0 md:w-64'}
+          ${sessionsSidebarCollapsed ? 'md:-translate-x-full md:w-0 md:pointer-events-none md:overflow-hidden' : 'md:translate-x-0 md:w-64'}
           fixed md:relative z-20 h-screen md:h-full
           w-64 bg-white/80 dark:bg-gray-800/80 backdrop-blur-xl border-r border-gray-200/50 dark:border-gray-700/50
           flex flex-col transition-transform duration-300 ease-out

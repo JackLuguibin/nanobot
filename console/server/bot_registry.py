@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -199,9 +199,7 @@ class BotRegistry:
             return None
 
         legacy_workspace = Path(
-            config_data.get("agents", {})
-            .get("defaults", {})
-            .get("workspace", "~/.nanobot/workspace")
+            config_data.get("agents", {}).get("defaults", {}).get("workspace", "~/.nanobot/workspace")
         ).expanduser()
 
         bot_id = "default"
@@ -219,9 +217,7 @@ class BotRegistry:
         else:
             workspace_dir.mkdir(parents=True, exist_ok=True)
 
-        config_data.setdefault("agents", {}).setdefault("defaults", {})["workspace"] = str(
-            workspace_dir
-        )
+        config_data.setdefault("agents", {}).setdefault("defaults", {})["workspace"] = str(workspace_dir)
 
         with open(config_file, "w", encoding="utf-8") as f:
             json.dump(config_data, f, indent=2, ensure_ascii=False)

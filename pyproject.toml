@@ -87,6 +87,7 @@ dev = [
     "pytest-cov>=6.0.0,<7.0.0",
     "ruff>=0.1.0",
     "pymupdf>=1.25.0",
+    "pre-commit>=3.0.0",
 ]
 console = [
     "fastapi>=0.115.0,<1.0.0",
@@ -139,6 +140,11 @@ include = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.format]
+# 与 Black 兼容的代码风格，使用项目统一的 line-length
+quote-style = "double"
+indent-style = "space"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]

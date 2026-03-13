@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
+
 def _fetch_url(url: str) -> str:
     """Fetch URL content."""
     req = Request(url, headers={"User-Agent": "Nanobot-Console/1.0"})

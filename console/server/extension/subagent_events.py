@@ -84,9 +84,7 @@ def patch_subagent_manager(agent_loop) -> None:
     logger.info("Patched SubagentManager with event callback support")
 
 
-def set_subagent_callback(
-    agent_loop, callback: Callable[[dict[str, Any]], None] | None
-) -> None:
+def set_subagent_callback(agent_loop, callback: Callable[[dict[str, Any]], None] | None) -> None:
     """Set or update the subagent event callback (e.g. per chat stream request)."""
     if hasattr(agent_loop, "subagents") and agent_loop.subagents is not None:
         agent_loop.subagents._event_callback = callback  # type: ignore[attr-defined]

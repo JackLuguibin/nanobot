@@ -74,16 +74,18 @@ async def list_bots() -> list[BotInfoResponse]:
         running = False
         if manager.has_state(bot.id):
             running = manager.get_state(bot.id).is_running
-        result.append(BotInfoResponse(
-            id=bot.id,
-            name=bot.name,
-            config_path=bot.config_path,
-            workspace_path=bot.workspace_path,
-            created_at=bot.created_at,
-            updated_at=bot.updated_at,
-            is_default=(bot.id == default_id),
-            running=running,
-        ))
+        result.append(
+            BotInfoResponse(
+                id=bot.id,
+                name=bot.name,
+                config_path=bot.config_path,
+                workspace_path=bot.workspace_path,
+                created_at=bot.created_at,
+                updated_at=bot.updated_at,
+                is_default=(bot.id == default_id),
+                running=running,
+            )
+        )
 
     return result
 
@@ -118,10 +120,9 @@ async def get_bot(bot_id: str) -> BotInfoResponse:
 @router.post("/bots")
 async def create_bot(request: BotCreateRequest) -> BotInfoResponse:
     """Create a new bot with independent config and workspace."""
-    from nanobot.config.loader import load_config
-
     from console.server.bot_registry import get_registry
     from console.server.main import _initialize_bot
+    from nanobot.config.loader import load_config
 
     registry = get_registry()
     manager = get_state_manager()
@@ -432,6 +433,7 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
         session_key = session["key"]
 
     try:
+
         async def silent_progress(content: str) -> None:
             pass
 
@@ -494,7 +496,9 @@ async def send_chat_message_stream(request: ChatRequest):
                     await queue.put(None)
 
             async def stream_progress(content: str, *, tool_hint: bool = False) -> None:
-                await queue.put(f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n")
+                await queue.put(
+                    f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n"
+                )
 
             async def on_subagent_event(event: dict[str, Any]) -> None:
                 """Handle subagent events and forward to SSE."""
@@ -789,7 +793,9 @@ async def update_bot_file(
 ) -> dict[str, str]:
     """Update a bot profile MD file (SOUL, USER, HEARTBEAT, TOOLS, AGENTS)."""
     if key not in BOT_FILE_KEYS:
-        raise HTTPException(status_code=400, detail=f"Invalid key. Must be one of: {list(BOT_FILE_KEYS.keys())}")
+        raise HTTPException(
+            status_code=400, detail=f"Invalid key. Must be one of: {list(BOT_FILE_KEYS.keys())}"
+        )
     state = _resolve_state(bot_id)
     workspace = state.workspace
     if not workspace:
@@ -814,7 +820,9 @@ async def get_config(bot_id: str | None = Query(None)) -> dict[str, Any]:
 
 
 @router.put("/config")
-async def update_config(request: ConfigUpdateRequest, bot_id: str | None = Query(None)) -> dict[str, Any]:
+async def update_config(
+    request: ConfigUpdateRequest, bot_id: str | None = Query(None)
+) -> dict[str, Any]:
     """Update configuration."""
     state = _resolve_state(bot_id)
     result = await state.update_config(request.section.value, request.data)
@@ -1306,7 +1314,9 @@ async def get_cron_history(
 async def get_activity_feed(
     bot_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
-    activity_type: str | None = Query(None, description="Filter by activity type: message, tool_call, channel, session, error"),
+    activity_type: str | None = Query(
+        None, description="Filter by activity type: message, tool_call, channel, session, error"
+    ),
 ) -> list[dict[str, Any]]:
     """Get activity feed with various event types."""
     from datetime import datetime
@@ -1352,14 +1362,16 @@ async def get_activity_feed(
             title = "Error occurred"
             description = data.get("error", "Unknown error")[:100]
 
-        result.append({
-            "id": entry.get("id", ""),
-            "type": entry_type,
-            "title": title,
-            "description": description,
-            "timestamp": ts_str,
-            "metadata": data,
-        })
+        result.append(
+            {
+                "id": entry.get("id", ""),
+                "type": entry_type,
+                "title": title,
+                "description": description,
+                "timestamp": ts_str,
+                "metadata": data,
+            }
+        )
 
     return result
 
@@ -1381,8 +1393,8 @@ async def get_alerts(
         return []
 
     from console.server.extension.alerts import get_alerts as _get_alerts
-    from console.server.extension.usage import get_usage_today
     from console.server.extension.alerts import refresh_alerts
+    from console.server.extension.usage import get_usage_today
 
     status = await state.get_status()
     usage_today = get_usage_today(bid)
@@ -1391,15 +1403,17 @@ async def get_alerts(
         try:
             jobs = state.cron_service.list_jobs(include_disabled=True)
             for j in jobs:
-                cron_jobs.append({
-                    "id": j.id,
-                    "name": j.name,
-                    "enabled": j.enabled,
-                    "state": {
-                        "next_run_at_ms": j.state.next_run_at_ms,
-                        "last_run_at_ms": j.state.last_run_at_ms,
-                    },
-                })
+                cron_jobs.append(
+                    {
+                        "id": j.id,
+                        "name": j.name,
+                        "enabled": j.enabled,
+                        "state": {
+                            "next_run_at_ms": j.state.next_run_at_ms,
+                            "last_run_at_ms": j.state.last_run_at_ms,
+                        },
+                    }
+                )
         except Exception:
             pass
     refresh_alerts(bid, status, cron_jobs, usage_today)

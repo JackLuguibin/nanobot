@@ -213,10 +213,7 @@ class ZeroMQBus:
                     await result
 
                 # 如果是请求消息，发送响应
-                if (
-                    msg_obj.msg_type == "delegate"
-                    and msg_obj.receiver_id == agent_id
-                ):
+                if msg_obj.msg_type == "delegate" and msg_obj.receiver_id == agent_id:
                     # 这里可以添加处理完成后发送响应的逻辑
                     pass
 

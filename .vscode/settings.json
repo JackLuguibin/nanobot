@@ -1,10 +1,17 @@
 {
-  // Python 保存时自动格式化
+  // 禁用 Python 扩展自带的格式化，避免与 Ruff 冲突
+  "python.formatting.provider": "none",
+  // Python 保存时自动格式化 + 自动修复 lint
   "[python]": {
     "editor.formatOnSave": true,
-    "editor.defaultFormatter": "charliermarsh.ruff"
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": {
+      "source.fixAll": "explicit",
+      "source.organizeImports": "explicit"
+    }
   },
-  // Ruff 扩展作为默认格式化器时，会使用 pyproject.toml 中的配置
   "ruff.organizeImports": true,
-  "ruff.fixAll": true
+  "ruff.fixAll": true,
+  // 使用项目 .venv 中的 ruff，确保与 pyproject.toml 配置一致
+  "ruff.path": ["${workspaceFolder}/.venv/Scripts/ruff.exe", "${workspaceFolder}/.venv/bin/ruff"]
 }

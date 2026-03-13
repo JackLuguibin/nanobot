@@ -62,14 +62,18 @@ def _get_alert_config(bot_id: str) -> dict[str, Any]:
         from console.server.bot_registry import get_registry
 
         registry = get_registry()
-        bot = registry.get_bot(bot_id) if bot_id else registry.get_bot(registry.default_bot_id or "")
+        bot = (
+            registry.get_bot(bot_id) if bot_id else registry.get_bot(registry.default_bot_id or "")
+        )
         if bot and bot.config_path:
             path = Path(bot.config_path)
             if path.exists():
                 data = json.loads(path.read_text(encoding="utf-8"))
                 console_cfg = data.get("console", {}) or data.get("alerts", {})
                 if isinstance(console_cfg, dict):
-                    cfg["cost_daily_limit"] = float(console_cfg.get("cost_daily_limit", cfg["cost_daily_limit"]))
+                    cfg["cost_daily_limit"] = float(
+                        console_cfg.get("cost_daily_limit", cfg["cost_daily_limit"])
+                    )
                     cfg["cron_overdue_minutes"] = int(
                         console_cfg.get("cron_overdue_minutes", cfg["cron_overdue_minutes"])
                     )
@@ -103,17 +107,21 @@ def _add_alert(
             and (now_ms - a.get("created_at_ms", 0)) < 86400 * 1000
         ):
             return
-    alerts.append({
-        "id": new_id,
-        "type": alert_type,
-        "severity": severity,
-        "message": message,
-        "bot_id": bot_id,
-        "created_at_ms": now_ms,
-        "dismissed": False,
-        "metadata": metadata or {},
-    })
-    alerts.sort(key=lambda x: (_SEVERITY_ORDER.get(x.get("severity", ""), 99), -x.get("created_at_ms", 0)))
+    alerts.append(
+        {
+            "id": new_id,
+            "type": alert_type,
+            "severity": severity,
+            "message": message,
+            "bot_id": bot_id,
+            "created_at_ms": now_ms,
+            "dismissed": False,
+            "metadata": metadata or {},
+        }
+    )
+    alerts.sort(
+        key=lambda x: (_SEVERITY_ORDER.get(x.get("severity", ""), 99), -x.get("created_at_ms", 0))
+    )
     _save_alerts(bot_id, alerts)
 
 
@@ -122,7 +130,9 @@ def get_alerts(bot_id: str, include_dismissed: bool = False) -> list[dict[str, A
     alerts = _load_alerts(bot_id)
     if not include_dismissed:
         alerts = [a for a in alerts if not a.get("dismissed")]
-    alerts.sort(key=lambda x: (_SEVERITY_ORDER.get(x.get("severity", ""), 99), -x.get("created_at_ms", 0)))
+    alerts.sort(
+        key=lambda x: (_SEVERITY_ORDER.get(x.get("severity", ""), 99), -x.get("created_at_ms", 0))
+    )
     return alerts
 
 
@@ -137,7 +147,9 @@ def dismiss_alert(bot_id: str, alert_id: str) -> bool:
     return False
 
 
-def refresh_alerts(bot_id: str, status: dict[str, Any], cron_jobs: list[dict], usage_today: dict[str, Any]) -> None:
+def refresh_alerts(
+    bot_id: str, status: dict[str, Any], cron_jobs: list[dict], usage_today: dict[str, Any]
+) -> None:
     """根据当前状态刷新告警（成本、Cron 逾期、MCP、通道）。"""
     cfg = _get_alert_config(bot_id)
     cost_limit = cfg.get("cost_daily_limit", 10.0)
@@ -203,9 +215,8 @@ def refresh_alerts(bot_id: str, status: dict[str, Any], cron_jobs: list[dict], u
 
     # Health Audit 严重问题
     try:
-        from console.server.extension.health import run_health_audit
-
         from console.server.bot_registry import get_registry
+        from console.server.extension.health import run_health_audit
 
         bot = get_registry().get_bot(bot_id)
         if bot:

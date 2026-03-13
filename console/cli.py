@@ -55,7 +55,9 @@ def console_start(
     port: int = typer.Option(18791, "--port", "-p", help="Console server port"),
     host: str = typer.Option("0.0.0.0", "--host", "-h", help="Console server host"),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open browser after starting"),
-    with_gateway: bool = typer.Option(False, "--with-gateway/--gateway-only", help="Also start the gateway"),
+    with_gateway: bool = typer.Option(
+        False, "--with-gateway/--gateway-only", help="Also start the gateway"
+    ),
     gateway_port: int = typer.Option(18790, "--gateway-port", help="Gateway port"),
 ):
     """Start the nanobot web console (and optionally the gateway)."""
@@ -71,7 +73,9 @@ def console_start(
 def console_dev(
     port: int = typer.Option(18791, "--port", "-p", help="Console server port"),
     gateway_port: int = typer.Option(18790, "--gateway-port", "-g", help="Gateway port"),
-    frontend_only: bool = typer.Option(False, "--frontend-only", help="Only start frontend dev server"),
+    frontend_only: bool = typer.Option(
+        False, "--frontend-only", help="Only start frontend dev server"
+    ),
 ):
     """Start the nanobot console in development mode (full stack)."""
     if frontend_only:
@@ -99,7 +103,10 @@ def console_skills(
     registry_url: str = typer.Option("", "--registry", "-r", help="Registry JSON URL"),
 ):
     """Search or install skills from registry."""
-    from console.server.extension.skills_registry import search_registry, install_skill_from_registry
+    from console.server.extension.skills_registry import (
+        install_skill_from_registry,
+        search_registry,
+    )
     from nanobot.config.loader import get_config_path, load_config
 
     config_path = get_config_path()
@@ -135,7 +142,9 @@ def console_run(
     gateway_port: int = typer.Option(18790, "--gateway-port", "-g", help="Gateway port"),
     console_port: int = typer.Option(18791, "--console-port", "-c", help="Console server port"),
     open_browser: bool = typer.Option(True, "--open/--no-open", help="Open browser after starting"),
-    frontend: bool = typer.Option(False, "--frontend/--no-frontend", help="Start frontend dev server"),
+    frontend: bool = typer.Option(
+        False, "--frontend/--no-frontend", help="Start frontend dev server"
+    ),
 ):
     """Start both gateway and console server."""
     run_full_stack(

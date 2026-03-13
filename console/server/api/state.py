@@ -360,9 +360,7 @@ class BotState:
                     "name": name,
                     "enabled": True,
                     "status": (
-                        "online"
-                        if hasattr(ch, "_connected") and ch._connected
-                        else "offline"
+                        "online" if hasattr(ch, "_connected") and ch._connected else "offline"
                     ),
                     "stats": {},
                 }

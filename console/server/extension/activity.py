@@ -78,7 +78,6 @@ def get_activity(
 
 def wrap_tool_registry_for_logging(registry, bot_id: str):
     """包装 ToolRegistry，在 execute 时记录到 state 和 activity。"""
-    import asyncio
 
     from console.server.api.state import get_state
 

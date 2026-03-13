@@ -81,7 +81,9 @@ def _get_model_prices(bot_id: str | None = None) -> dict[str, tuple[float, float
     return prices
 
 
-def _calc_cost(by_model: dict[str, dict[str, int]], prices: dict[str, tuple[float, float]]) -> dict[str, Any]:
+def _calc_cost(
+    by_model: dict[str, dict[str, int]], prices: dict[str, tuple[float, float]]
+) -> dict[str, Any]:
     """根据 token 用量和单价计算成本。返回 { total_usd, by_model: { model: usd } }"""
     total = 0.0
     by_model_cost: dict[str, float] = {}
@@ -90,7 +92,9 @@ def _calc_cost(by_model: dict[str, dict[str, int]], prices: dict[str, tuple[floa
         completion_tokens = usage.get("completion_tokens", 0) or 0
         # 模型名可能带后缀，尝试匹配前缀
         price_input, price_output = prices.get(model) or _find_model_price(model, prices)
-        cost = (prompt_tokens / 1_000_000) * price_input + (completion_tokens / 1_000_000) * price_output
+        cost = (prompt_tokens / 1_000_000) * price_input + (
+            completion_tokens / 1_000_000
+        ) * price_output
         by_model_cost[model] = round(cost, 6)
         total += cost
     return {"total_usd": round(total, 6), "by_model": by_model_cost}
@@ -261,15 +265,17 @@ def get_usage_history(bot_id: str, days: int = 14) -> list[dict[str, Any]]:
         by_model = dict(data.get(day_str, {}))
         total = _aggregate_by_model(by_model)
         cost_info = _calc_cost(by_model, prices)
-        result.append({
-            "date": day_str,
-            "total_tokens": total.get("total_tokens", 0),
-            "prompt_tokens": total.get("prompt_tokens", 0),
-            "completion_tokens": total.get("completion_tokens", 0),
-            "by_model": by_model,
-            "cost_usd": cost_info["total_usd"],
-            "cost_by_model": cost_info["by_model"],
-        })
+        result.append(
+            {
+                "date": day_str,
+                "total_tokens": total.get("total_tokens", 0),
+                "prompt_tokens": total.get("prompt_tokens", 0),
+                "completion_tokens": total.get("completion_tokens", 0),
+                "by_model": by_model,
+                "cost_usd": cost_info["total_usd"],
+                "cost_by_model": cost_info["by_model"],
+            }
+        )
     return result
 
 

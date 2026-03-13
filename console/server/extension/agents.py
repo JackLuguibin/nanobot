@@ -49,7 +49,12 @@ class AgentConfig:
 class AgentManager:
     """管理单个Bot内的多个Agent，提供ZeroMQ通信支持"""
 
-    def __init__(self, bot_id: str, workspace: Path, default_model: str = "anthropic/claude-sonnet-4-20250514"):
+    def __init__(
+        self,
+        bot_id: str,
+        workspace: Path,
+        default_model: str = "anthropic/claude-sonnet-4-20250514",
+    ):
         self.bot_id = bot_id
         self.workspace = workspace
         self.agents_dir = workspace / "agents"
@@ -68,7 +73,9 @@ class AgentManager:
         await self._load_agents()
         self._running = True
         self._process_task = asyncio.create_task(self._process_messages())
-        logger.info("AgentManager initialized for bot '{}' with {} agents", self.bot_id, len(self._agents))
+        logger.info(
+            "AgentManager initialized for bot '{}' with {} agents", self.bot_id, len(self._agents)
+        )
 
     async def shutdown(self) -> None:
         """关闭Agent系统"""
@@ -108,7 +115,12 @@ class AgentManager:
         """创建Agent消息处理器"""
 
         async def handle_message(msg: AgentMessage) -> None:
-            logger.info("Agent '{}' received message: type={}, from={}", agent_id, msg.msg_type, msg.sender_id)
+            logger.info(
+                "Agent '{}' received message: type={}, from={}",
+                agent_id,
+                msg.msg_type,
+                msg.sender_id,
+            )
             await self._message_queue.put((agent_id, msg))
 
         return handle_message
@@ -198,7 +210,9 @@ class AgentManager:
         if old_enabled != agent.enabled or old_topics != agent.topics:
             await self._zmq_bus.unsubscribe(agent_id)
             if agent.enabled and agent.topics:
-                await self._zmq_bus.subscribe(agent_id, agent.topics, self._create_handler(agent_id))
+                await self._zmq_bus.subscribe(
+                    agent_id, agent.topics, self._create_handler(agent_id)
+                )
 
         logger.info("Updated agent '{}'", agent_id)
         return agent
@@ -248,7 +262,9 @@ class AgentManager:
             wait_response,
         )
 
-        logger.info("Task delegated from '{}' to '{}': {}", from_agent_id, to_agent_id, correlation_id)
+        logger.info(
+            "Task delegated from '{}' to '{}': {}", from_agent_id, to_agent_id, correlation_id
+        )
         return correlation_id, response
 
     async def broadcast_event(
@@ -276,7 +292,9 @@ class AgentManager:
 
     # --- Agent Routing ---
 
-    async def select_agent(self, message: str, session_history: list[dict] | None = None) -> AgentConfig | None:
+    async def select_agent(
+        self, message: str, session_history: list[dict] | None = None
+    ) -> AgentConfig | None:
         """根据消息内容智能选择最合适的Agent"""
         enabled_agents = [a for a in self._agents.values() if a.enabled]
 

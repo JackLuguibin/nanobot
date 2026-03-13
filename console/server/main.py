@@ -13,10 +13,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
-from console.server.api import routes
-from console.server.api import routes_agents
+from console.server.api import routes, routes_agents
 from console.server.api.state import BotState, get_state_manager
-from console.server.extension.agents import AgentManager
 from nanobot import __version__
 
 
@@ -177,14 +175,15 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
 
         # Patch SubagentManager for event callbacks
         from console.server.extension.subagent_events import patch_subagent_manager
+
         patch_subagent_manager(agent_loop)
 
         # Set cron callback to run jobs through the agent
+        import time
+
+        from console.server.extension.cron_history import append_cron_run
         from nanobot.agent.tools.cron import CronTool
         from nanobot.cron.types import CronJob
-
-        import time
-        from console.server.extension.cron_history import append_cron_run
 
         async def on_cron_job(job: CronJob) -> str | None:
             reminder_note = (
@@ -290,7 +289,9 @@ async def initialize_bot_state(app: FastAPI) -> None:
                     state._agent_manager = agent_manager
                     logger.info("AgentManager initialized for bot '{}'", bot_info.id)
                 except Exception as e:
-                    logger.warning("Failed to initialize AgentManager for bot '{}': {}", bot_info.id, e)
+                    logger.warning(
+                        "Failed to initialize AgentManager for bot '{}': {}", bot_info.id, e
+                    )
 
             manager.set_state(bot_info.id, state)
             if state.cron_service and state.agent_loop:

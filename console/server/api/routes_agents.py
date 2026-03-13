@@ -2,16 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
-import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
 from loguru import logger
 from pydantic import BaseModel
 
+from console.server.api.state import get_state_manager
 from console.server.extension.agents import AgentConfig, AgentManager
-from console.server.api.state import get_state, get_state_manager
 
 router = APIRouter(prefix="/api/bots/{bot_id}/agents")
 
@@ -23,7 +21,9 @@ def _resolve_agent_manager(bot_id: str) -> AgentManager:
     logger.info(f"_resolve_agent_manager called with bot_id={bot_id}, state={state}")
     if not hasattr(state, "_agent_manager") or state._agent_manager is None:
         logger.warning(f"Agent system not initialized for bot '{bot_id}', state={state}")
-        raise HTTPException(status_code=404, detail=f"Agent system not initialized for bot '{bot_id}'")
+        raise HTTPException(
+            status_code=404, detail=f"Agent system not initialized for bot '{bot_id}'"
+        )
     return state._agent_manager
 
 
@@ -197,7 +197,9 @@ class DelegateTaskResponse(BaseModel):
 
 
 @router.post("/{agent_id}/delegate")
-async def delegate_task(bot_id: str, agent_id: str, request: DelegateTaskRequest) -> DelegateTaskResponse:
+async def delegate_task(
+    bot_id: str, agent_id: str, request: DelegateTaskRequest
+) -> DelegateTaskResponse:
     """将任务委托给另一个Agent"""
     agent_manager = _resolve_agent_manager(bot_id)
 
@@ -226,7 +228,9 @@ class BroadcastEventRequest(BaseModel):
 
 
 @router.post("/{agent_id}/broadcast")
-async def broadcast_event(bot_id: str, agent_id: str, request: BroadcastEventRequest) -> dict[str, str]:
+async def broadcast_event(
+    bot_id: str, agent_id: str, request: BroadcastEventRequest
+) -> dict[str, str]:
     """广播事件给所有Agent"""
     agent_manager = _resolve_agent_manager(bot_id)
     await agent_manager.broadcast_event(

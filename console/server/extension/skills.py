@@ -44,13 +44,11 @@ class PatchedContextBuilder(ContextBuilder):
             parts.append(f"# Memory\n\n{memory}")
 
         all_skills = self.skills.list_skills(filter_unavailable=False)
-        enabled_skills = [s for s in all_skills if _is_skill_enabled(s["name"], self._skills_config)]
-
-        always_skill_names = [
-            s["name"]
-            for s in enabled_skills
-            if self._is_always_skill(s["name"])
+        enabled_skills = [
+            s for s in all_skills if _is_skill_enabled(s["name"], self._skills_config)
         ]
+
+        always_skill_names = [s["name"] for s in enabled_skills if self._is_always_skill(s["name"])]
         if always_skill_names:
             always_content = self.skills.load_skills_for_context(always_skill_names)
             if always_content:
@@ -119,13 +117,15 @@ def list_skills_for_bot(workspace: Path) -> list[dict[str, Any]]:
         meta = loader.get_skill_metadata(s["name"]) or {}
         skill_meta = loader._parse_nanobot_metadata(meta.get("metadata", ""))
         available = loader._check_requirements(skill_meta)
-        result.append({
-            "name": s["name"],
-            "source": s["source"],
-            "description": loader._get_skill_description(s["name"]),
-            "path": s["path"],
-            "available": available,
-        })
+        result.append(
+            {
+                "name": s["name"],
+                "source": s["source"],
+                "description": loader._get_skill_description(s["name"]),
+                "path": s["path"],
+                "available": available,
+            }
+        )
     return result
 
 
@@ -171,6 +171,7 @@ def delete_workspace_skill(workspace: Path, name: str) -> bool:
     if not skill_dir.exists() or not (skill_dir / "SKILL.md").exists():
         return False
     import shutil
+
     shutil.rmtree(skill_dir)
     return True
 

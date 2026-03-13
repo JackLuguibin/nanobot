@@ -1,0 +1,10 @@
+{
+  // Python 保存时自动格式化
+  "[python]": {
+    "editor.formatOnSave": true,
+    "editor.defaultFormatter": "charliermarsh.ruff"
+  },
+  // Ruff 扩展作为默认格式化器时，会使用 pyproject.toml 中的配置
+  "ruff.organizeImports": true,
+  "ruff.fixAll": true
+}

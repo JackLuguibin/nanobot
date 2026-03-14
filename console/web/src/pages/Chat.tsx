@@ -132,6 +132,7 @@ export default function Chat() {
   const [subagentPanelOpen, setSubagentPanelOpen] = useState(true);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<TextAreaRef>(null);
   const streamingContentRef = useRef('');
 
@@ -148,13 +149,15 @@ export default function Chat() {
     enabled: !!activeSessionKey,
   });
 
-  // Clear messages when switching sessions to avoid briefly showing previous session content
+  // 仅在用户主动切换会话时清空消息；从「无会话」到「新会话」(首条消息后拿到 session_key) 时保留当前消息
   const prevActiveSessionKeyRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (prevActiveSessionKeyRef.current !== undefined && prevActiveSessionKeyRef.current !== activeSessionKey) {
+    const prev = prevActiveSessionKeyRef.current;
+    const isSwitch = prev != null && activeSessionKey != null && prev !== activeSessionKey;
+    if (isSwitch) {
       setMessages([]);
-      setShowSuggestions(!activeSessionKey);
     }
+    setShowSuggestions(!activeSessionKey);
     prevActiveSessionKeyRef.current = activeSessionKey;
   }, [activeSessionKey]);
 
@@ -183,8 +186,16 @@ export default function Chat() {
     }
   }, [activeSessionKey, sessionMessageCount, queryClient]);
 
+  // 仅有一条消息时保持滚动在顶部，避免第一条用户消息被滚出视口；多条消息时滚到底部
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    const container = messagesContainerRef.current;
+    const endEl = messagesEndRef.current;
+    if (!container) return;
+    if (messages.length <= 1) {
+      container.scrollTop = 0;
+      return;
+    }
+    endEl?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
   const handleStreamChunk = useCallback(
@@ -370,7 +381,7 @@ export default function Chat() {
   };
 
   return (
-    <div className="flex h-full overflow-x-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative">
+    <div className="flex flex-1 min-h-0 overflow-hidden overflow-x-hidden bg-gradient-to-br from-gray-50 via-white to-gray-100 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900 relative">
       {/* Mobile Sessions Toggle Button */}
       <button
         onClick={() => setSessionsSidebarOpen(!sessionsSidebarOpen)}
@@ -430,8 +441,8 @@ export default function Chat() {
       )}
 
       {/* Chat Area */}
-      <div className="flex-1 flex min-w-0">
-        <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex min-w-0 min-h-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
         {/* Header */}
         <div className="h-12 px-6 flex items-center justify-between border-b border-gray-200/50 dark:border-gray-700/50 bg-white/50 dark:bg-gray-800/50 backdrop-blur-sm">
           <div className="flex items-center gap-3">
@@ -465,7 +476,10 @@ export default function Chat() {
         </div>
 
         {/* Messages / Hero */}
-        <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-6 py-2 md:py-3">
+        <div
+          ref={messagesContainerRef}
+          className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-6 py-2 md:py-3"
+        >
           {messages.length === 0 && showSuggestions ? (
             <div className="min-h-full flex flex-col items-center justify-start pt-2 md:pt-4 text-center text-gray-600 dark:text-gray-300">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 dark:from-primary-900/30 dark:to-blue-900/20 flex items-center justify-center mb-6 shadow-xl shadow-primary-500/10">

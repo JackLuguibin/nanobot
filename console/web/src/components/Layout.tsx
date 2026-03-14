@@ -246,7 +246,11 @@ export default function Layout({ children }: LayoutProps) {
           />
         </header>
 
-        <div className="flex-1 min-h-0 overflow-y-auto pt-2 flex flex-col">
+        <div
+          className={`flex-1 min-h-0 pt-2 flex flex-col ${
+            location.pathname.startsWith('/chat') ? 'overflow-hidden' : 'overflow-y-auto'
+          }`}
+        >
           {children}
         </div>
       </main>

@@ -59,13 +59,29 @@ def setup_cors(app: FastAPI) -> None:
 
 def _make_provider(config) -> Any:
     """Create the appropriate LLM provider from config."""
+    import os
+
+    from nanobot.config.schema import ProviderConfig
     from nanobot.providers.custom_provider import CustomProvider
     from nanobot.providers.litellm_provider import LiteLLMProvider
     from nanobot.providers.openai_codex_provider import OpenAICodexProvider
+    from nanobot.providers.registry import find_by_name
 
     model = config.agents.defaults.model
     provider_name = config.get_provider_name(model)
     p = config.get_provider(model)
+
+    # 若配置中 api_key 为空，尝试从环境变量补全（.env 已由 load_dotenv 加载）
+    if p and not (p.api_key and p.api_key.strip()) and provider_name:
+        spec = find_by_name(provider_name)
+        if spec and getattr(spec, "env_key", None):
+            from_env = os.environ.get(spec.env_key, "").strip()
+            if from_env:
+                p = ProviderConfig(
+                    api_key=from_env,
+                    api_base=p.api_base,
+                    extra_headers=p.extra_headers,
+                )
 
     if provider_name == "openai_codex" or model.startswith("openai-codex/"):
         return OpenAICodexProvider(default_model=model)
@@ -153,12 +169,9 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
                 provider=provider,
                 workspace=config.workspace_path,
                 model=config.agents.defaults.model,
-                temperature=config.agents.defaults.temperature,
-                max_tokens=config.agents.defaults.max_tokens,
                 max_iterations=config.agents.defaults.max_tool_iterations,
-                memory_window=config.agents.defaults.memory_window,
-                reasoning_effort=config.agents.defaults.reasoning_effort,
-                brave_api_key=config.tools.web.search.api_key or None,
+                context_window_tokens=config.agents.defaults.context_window_tokens,
+                web_search_config=config.tools.web.search,
                 web_proxy=config.tools.web.proxy or None,
                 exec_config=config.tools.exec,
                 cron_service=cron,
@@ -252,6 +265,7 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
 async def initialize_bot_state(app: FastAPI) -> None:
     """Initialize bot states from registry (multi-bot) or legacy config (single-bot)."""
     from console.server.bot_registry import get_registry
+    from console.server.extension.config_loader import load_bot_config
     from nanobot.config.loader import get_config_path, load_config
 
     registry = get_registry()
@@ -281,9 +295,31 @@ async def initialize_bot_state(app: FastAPI) -> None:
     default_id = registry.default_bot_id
 
     for bot_info in bots:
+        config_path = Path(bot_info.config_path)
+        if not config_path.exists():
+            logger.error(
+                "Bot '{}' config file not found: {} — check registry or re-run migration",
+                bot_info.id,
+                config_path,
+            )
+            continue
+
         try:
-            config = load_config(Path(bot_info.config_path))
-            state = _initialize_bot(bot_info.id, config, Path(bot_info.config_path))
+            config = load_bot_config(config_path)
+        except FileNotFoundError:
+            # 已在上面检查并打日志
+            continue
+        except Exception as e:
+            logger.error(
+                "Bot '{}' config validation failed ({}): {} — check config format/schema",
+                bot_info.id,
+                config_path,
+                e,
+            )
+            continue
+
+        try:
+            state = _initialize_bot(bot_info.id, config, config_path)
 
             # Initialize AgentManager for multi-agent support
             if state.workspace:

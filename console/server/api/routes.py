@@ -416,6 +416,16 @@ async def delete_session(key: str, bot_id: str | None = Query(None)) -> dict[str
 # ====================
 
 
+def _agent_unavailable_detail(state) -> str:
+    """返回无法使用 Agent 时的具体原因，便于前端展示。"""
+    if state.bot_id == "_empty":
+        return "No bot available. Please create or select a bot first."
+    return (
+        "Agent not running. Please configure an API key in Console Settings or in the config file "
+        "(e.g. providers.openai.apiKey), or set the key in .env next to your config."
+    )
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def send_chat_message(request: ChatRequest) -> ChatResponse:
     """Send a chat message and get a response."""
@@ -423,9 +433,7 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
     agent_loop = state.agent_loop
 
     if agent_loop is None:
-        raise HTTPException(
-            status_code=503, detail="Agent not running. Please configure an API key in your config."
-        )
+        raise HTTPException(status_code=503, detail=_agent_unavailable_detail(state))
 
     session_key = request.session_key
     if session_key is None:
@@ -467,9 +475,7 @@ async def send_chat_message_stream(request: ChatRequest):
     agent_loop = state.agent_loop
 
     if agent_loop is None:
-        raise HTTPException(
-            status_code=503, detail="Agent not running. Please configure an API key in your config."
-        )
+        raise HTTPException(status_code=503, detail=_agent_unavailable_detail(state))
 
     session_key = request.session_key
     if session_key is None:

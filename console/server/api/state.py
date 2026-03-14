@@ -313,22 +313,43 @@ class BotState:
         }
 
     async def delete_session(self, key: str) -> bool:
-        """Delete a session."""
+        """Delete a session (from cache and from disk)."""
         if not self._session_manager:
             return False
 
-        if hasattr(self._session_manager, "_cache") and key in self._session_manager._cache:
-            del self._session_manager._cache[key]
-            return True
+        deleted = False
 
-        if hasattr(self._session_manager, "invalidate"):
+        # Remove from disk so list_sessions() no longer returns it (nanobot only invalidates cache)
+        if hasattr(self._session_manager, "_get_session_path"):
             try:
-                self._session_manager.invalidate(key)
-                return True
+                path = self._session_manager._get_session_path(key)
+                if path.exists():
+                    path.unlink(missing_ok=True)
+                    deleted = True
+            except Exception:
+                pass
+        # Legacy path (nanobot may have sessions in legacy dir)
+        if hasattr(self._session_manager, "_get_legacy_session_path"):
+            try:
+                legacy_path = self._session_manager._get_legacy_session_path(key)
+                if legacy_path.exists():
+                    legacy_path.unlink(missing_ok=True)
+                    deleted = True
             except Exception:
                 pass
 
-        return False
+        # Remove from in-memory cache
+        if hasattr(self._session_manager, "_cache") and key in self._session_manager._cache:
+            del self._session_manager._cache[key]
+            deleted = True
+        elif hasattr(self._session_manager, "invalidate"):
+            try:
+                self._session_manager.invalidate(key)
+                deleted = True
+            except Exception:
+                pass
+
+        return deleted
 
     # Known channel types from ChannelsConfig (excluding send_progress, send_tool_hints)
     CHANNEL_NAMES = (

@@ -1,16 +1,17 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
 import { useAppStore } from '../store';
 import * as api from '../api/client';
-import { Button, Tag, Tooltip } from 'antd';
+import { Button, Tag, Tooltip, Popconfirm } from 'antd';
 import {
   PlusOutlined,
   LoadingOutlined,
   CopyOutlined,
   CheckOutlined,
   CloseOutlined,
+  DeleteOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
 } from '@ant-design/icons';
@@ -141,6 +142,26 @@ export default function Chat() {
   const { data: sessions } = useQuery({
     queryKey: ['sessions', currentBotId],
     queryFn: () => api.listSessions(currentBotId),
+  });
+
+  const deleteSessionMutation = useMutation({
+    mutationFn: (key: string) => api.deleteSession(key, currentBotId),
+    onSuccess: (_, key) => {
+      queryClient.invalidateQueries({ queryKey: ['sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['session', key] });
+      if (activeSessionKey === key) {
+        setCurrentSessionKey(null);
+        setMessages([]);
+        setShowSuggestions(true);
+        setSubagentTasks([]);
+        navigate('/chat');
+        setSessionsSidebarOpen(false);
+      }
+      addToast({ type: 'success', message: '会话已删除' });
+    },
+    onError: () => {
+      addToast({ type: 'error', message: '删除会话失败' });
+    },
   });
 
   const { data: sessionData } = useQuery({
@@ -402,22 +423,45 @@ export default function Chat() {
       >
         <div className="flex-1 overflow-y-auto no-scrollbar p-3 space-y-2">
           {sessions?.map((session) => (
-            <button
+            <div
               key={session.key}
-              onClick={() => handleSelectSession(session.key)}
-              className={`w-full text-left px-4 py-3 rounded-xl transition-all ${
+              className={`flex items-stretch rounded-xl transition-all ${
                 activeSessionKey === session.key
                   ? 'bg-gradient-to-r from-primary-50 to-blue-50 dark:from-primary-900/30 dark:to-blue-900/20 text-primary-700 dark:text-primary-300'
                   : 'hover:bg-gray-100 dark:hover:bg-gray-700/50'
               }`}
             >
-              <span className="text-sm font-medium truncate block">
-                {session.title || session.key}
-              </span>
-              <span className="text-xs text-gray-500 mt-1 block">
-                {session.message_count} messages
-              </span>
-            </button>
+              <button
+                type="button"
+                onClick={() => handleSelectSession(session.key)}
+                className="flex-1 min-w-0 text-left px-4 py-3 rounded-l-xl"
+              >
+                <span className="text-sm font-medium truncate block">
+                  {session.title || session.key}
+                </span>
+                <span className="text-xs text-gray-500 mt-1 block">
+                  {session.message_count} messages
+                </span>
+              </button>
+              <Popconfirm
+                title="删除会话"
+                description={`确定删除「${session.title || session.key}」？`}
+                onConfirm={() => deleteSessionMutation.mutate(session.key)}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button
+                  type="text"
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  className="!px-2 self-center shrink-0 opacity-70 hover:!opacity-100"
+                  onClick={(e) => e.stopPropagation()}
+                  title="删除会话"
+                />
+              </Popconfirm>
+            </div>
           ))}
         </div>
       </div>

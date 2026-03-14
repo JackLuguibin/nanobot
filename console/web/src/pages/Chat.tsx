@@ -451,15 +451,14 @@ export default function Chat() {
                 cancelText="取消"
                 okButtonProps={{ danger: true }}
               >
-                <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  className="!px-2 self-center shrink-0 opacity-70 hover:!opacity-100"
+                <button
+                  type="button"
                   onClick={(e) => e.stopPropagation()}
                   title="删除会话"
-                />
+                  className="self-center shrink-0 w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-red-500 hover:bg-red-50 dark:text-gray-500 dark:hover:text-red-400 dark:hover:bg-red-500/10 transition-colors duration-150 mr-1"
+                >
+                  <DeleteOutlined className="text-sm" />
+                </button>
               </Popconfirm>
             </div>
           ))}

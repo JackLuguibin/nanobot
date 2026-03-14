@@ -104,6 +104,9 @@ interface Message {
   tool_call_id?: string;
   tool_name?: string;
   isStreaming?: boolean;
+  /** 发送时间，ISO 字符串，用于展示 */
+  created_at?: string;
+  timestamp?: string;
 }
 
 interface ToolCall {
@@ -272,6 +275,7 @@ export default function Chat() {
             id: `msg-${Date.now()}-${Math.random()}`,
             role: 'assistant',
             content: assistantContent,
+            created_at: new Date().toISOString(),
           },
         ]);
       } else if (chunk.type === 'subagent_done' && chunk.subagent_id) {
@@ -302,6 +306,7 @@ export default function Chat() {
             id: `msg-${Date.now()}`,
             role: 'assistant',
             content: finalContent,
+            created_at: new Date().toISOString(),
           },
         ]);
         setToolCalls([]);
@@ -320,7 +325,12 @@ export default function Chat() {
 
     setMessages((prev) => [
       ...prev,
-      { id: `user-${Date.now()}`, role: 'user', content: userMessage },
+      {
+        id: `user-${Date.now()}`,
+        role: 'user',
+        content: userMessage,
+        created_at: new Date().toISOString(),
+      },
     ]);
 
     setIsStreaming(true);
@@ -399,6 +409,28 @@ export default function Chat() {
     if (status === 'running') return 'processing';
     if (status === 'success') return 'success';
     return 'error';
+  };
+
+  /** 格式化消息时间：年月日 + 时:分:秒 */
+  const formatMessageTime = (isoStr: string | undefined): string => {
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr);
+      const dateStr = d.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      const timeStr = d.toLocaleTimeString('zh-CN', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      });
+      return `${dateStr} ${timeStr}`;
+    } catch {
+      return '';
+    }
   };
 
   return (
@@ -603,6 +635,15 @@ export default function Chat() {
                     <div className={`prose prose-sm dark:prose-invert max-w-none pr-8 ${msg.role === 'user' ? 'prose-invert' : ''}`}>
                       <ReactMarkdown>{msg.content}</ReactMarkdown>
                     </div>
+                    {(msg.created_at ?? msg.timestamp) && (
+                      <div
+                        className={`mt-2 text-xs ${
+                          msg.role === 'user' ? 'text-white/70' : 'text-gray-400 dark:text-gray-500'
+                        }`}
+                      >
+                        {formatMessageTime(msg.created_at ?? msg.timestamp)}
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}

@@ -264,6 +264,26 @@ class BotState:
         sessions.sort(key=lambda s: s.get("updated_at") or "", reverse=True)
         return sessions
 
+    def _get_session_messages_for_api(self, session: Any) -> list[dict[str, Any]]:
+        """与 nanobot get_history 相同的切片与裁剪逻辑，但保留 timestamp/created_at 供前端展示。"""
+        messages = getattr(session, "messages", [])
+        last_consolidated = getattr(session, "last_consolidated", 0)
+        max_messages = 500
+        unconsolidated = messages[last_consolidated:]
+        sliced = unconsolidated[-max_messages:]
+        for i, m in enumerate(sliced):
+            if m.get("role") == "user":
+                sliced = sliced[i:]
+                break
+        out: list[dict[str, Any]] = []
+        for m in sliced:
+            entry: dict[str, Any] = {"role": m["role"], "content": m.get("content", "")}
+            for k in ("tool_calls", "tool_call_id", "name", "timestamp", "created_at"):
+                if k in m:
+                    entry[k] = m[k]
+            out.append(entry)
+        return out
+
     async def get_session(self, key: str) -> dict[str, Any] | None:
         """Get a specific session by key."""
         if not self._session_manager:
@@ -272,23 +292,23 @@ class BotState:
         if hasattr(self._session_manager, "_cache"):
             session = self._session_manager._cache.get(key)
             if session:
-                history = session.get_history()
+                messages = self._get_session_messages_for_api(session)
                 return {
                     "key": key,
                     "title": key.split(":")[0] if ":" in key else key,
-                    "messages": history,
-                    "message_count": len(history),
+                    "messages": messages,
+                    "message_count": len(messages),
                 }
 
         if hasattr(self._session_manager, "get_or_create"):
             try:
                 session = self._session_manager.get_or_create(key)
-                history = session.get_history()
+                messages = self._get_session_messages_for_api(session)
                 return {
                     "key": key,
                     "title": key.split(":")[0] if ":" in key else key,
-                    "messages": history,
-                    "message_count": len(history),
+                    "messages": messages,
+                    "message_count": len(messages),
                 }
             except Exception:
                 pass

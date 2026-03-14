@@ -8,12 +8,18 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.exceptions import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from console.server.api import routes, routes_agents
+from console.server.api.response import (
+    SuccessEnvelopeMiddleware,
+    generic_exception_handler,
+    http_exception_handler,
+)
 from console.server.api.state import BotState, get_state_manager
 from nanobot import __version__
 
@@ -333,6 +339,13 @@ def create_app() -> FastAPI:
     )
 
     setup_cors(app)
+
+    # 统一错误响应格式：code + message，供前端展示报错原因
+    app.add_exception_handler(HTTPException, http_exception_handler)
+    app.add_exception_handler(Exception, generic_exception_handler)
+
+    # 成功响应包装为 { code: 0, message: "success", data }
+    app.add_middleware(SuccessEnvelopeMiddleware)
 
     app.include_router(routes.router)
     app.include_router(routes_agents.router)

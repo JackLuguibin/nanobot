@@ -36,6 +36,19 @@ function appendBotQuery(url: string, botId?: string | null): string {
   return `${url}${sep}bot_id=${encodeURIComponent(botId)}`;
 }
 
+/** 从错误响应 body 中取出可展示的报错原因 */
+function getErrorMessage(body: unknown, fallback: string): string {
+  if (body && typeof body === 'object' && 'message' in body && typeof (body as { message: unknown }).message === 'string') {
+    return (body as { message: string }).message;
+  }
+  if (body && typeof body === 'object' && 'detail' in body) {
+    const d = (body as { detail: unknown }).detail;
+    if (typeof d === 'string') return d;
+    if (Array.isArray(d) && d.length) return d.map((x) => String(x)).join('; ');
+  }
+  return fallback;
+}
+
 async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
@@ -45,11 +58,29 @@ async function fetchJson<T>(url: string, options?: RequestInit): Promise<T> {
     },
   });
 
+  const contentType = response.headers.get('content-type') ?? '';
+  const isJson = contentType.includes('application/json');
+
   if (!response.ok) {
-    throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    let message = `${response.status} ${response.statusText}`;
+    if (isJson) {
+      try {
+        const body = await response.json();
+        message = getErrorMessage(body, message);
+      } catch {
+        // keep default message
+      }
+    }
+    throw new Error(message);
   }
 
-  return response.json();
+  const body = await response.json();
+
+  // 统一成功信封：{ code: 0, message: "success", data } -> 返回 data
+  if (body && typeof body === 'object' && 'code' in body && body.code === 0 && 'data' in body) {
+    return body.data as T;
+  }
+  return body as T;
 }
 
 // ====================
@@ -536,7 +567,17 @@ export function createChatStream(
   })
     .then(async (response) => {
       if (!response.ok) {
-        throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        let message = `${response.status} ${response.statusText}`;
+        const ct = response.headers.get('content-type') ?? '';
+        if (ct.includes('application/json')) {
+          try {
+            const body = await response.json();
+            message = getErrorMessage(body, message);
+          } catch {
+            // keep default
+          }
+        }
+        throw new Error(message);
       }
 
       const reader = response.body?.getReader();

@@ -62,6 +62,9 @@ export default function Dashboard() {
     refetchInterval: false,
   });
 
+  // 用当前 bot 的 API 数据作为展示源，避免与 store 中其他 bot 或旧数据混用
+  const displayStatus = data ?? status;
+
   useEffect(() => {
     if (data) {
       setStatus(data);
@@ -133,7 +136,7 @@ export default function Dashboard() {
           <p className="text-sm text-gray-500 mt-1">Monitor your Nanobot assistant</p>
         </div>
         <Space>
-          {status?.running && (
+          {displayStatus?.running && (
             <Button
               danger
               icon={<PoweroffOutlined />}
@@ -160,15 +163,17 @@ export default function Dashboard() {
         </Space>
       </div>
 
-      {/* Stat Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-        <Card hoverable>
+      {/* Stat Cards：统一高度与数值区对齐；小屏 2 列、中屏 3 列、大屏 6 列，避免窄屏横向溢出 */}
+      <div
+        className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 sm:gap-4 min-w-0 [&_.ant-statistic-title]:min-h-[20px] [&_.ant-statistic-title]:text-xs [&_.ant-statistic-content]:min-h-[40px] [&_.ant-statistic-content]:flex [&_.ant-statistic-content]:items-end [&_.ant-statistic-content-value]:text-lg [&_.ant-statistic-content-value]:xl:text-2xl"
+      >
+        <Card hoverable className="h-full min-w-0 [&_.ant-card-body]:flex [&_.ant-card-body]:flex-col [&_.ant-card-body]:h-full [&_.ant-card-body]:min-w-0">
           <Statistic
             title="Status"
-            value={status?.running ? 'Running' : 'Stopped'}
-            valueStyle={{ color: status?.running ? '#16a34a' : '#9ca3af' }}
+            value={displayStatus?.running ? 'Running' : 'Stopped'}
+            valueStyle={{ color: displayStatus?.running ? '#16a34a' : '#9ca3af' }}
             prefix={
-              status?.running ? (
+              displayStatus?.running ? (
                 <Badge status="processing" color="#22c55e" />
               ) : (
                 <Badge status="default" />
@@ -176,44 +181,44 @@ export default function Dashboard() {
             }
           />
         </Card>
-        <Card hoverable>
+        <Card hoverable className="h-full min-w-0 [&_.ant-card-body]:flex [&_.ant-card-body]:flex-col [&_.ant-card-body]:h-full [&_.ant-card-body]:min-w-0">
           <Statistic
             title="Uptime"
-            value={status?.running && status?.uptime_seconds ? formatUptime(status.uptime_seconds) : '-'}
+            value={displayStatus?.running && displayStatus?.uptime_seconds ? formatUptime(displayStatus.uptime_seconds) : '-'}
             prefix={<ClockCircleOutlined className="text-blue-500" />}
           />
         </Card>
-        <Card hoverable>
+        <Card hoverable className="h-full min-w-0 [&_.ant-card-body]:flex [&_.ant-card-body]:flex-col [&_.ant-card-body]:h-full [&_.ant-card-body]:min-w-0">
           <Statistic
             title="Active Sessions"
-            value={status?.active_sessions ?? 0}
+            value={displayStatus?.active_sessions ?? 0}
             prefix={<TeamOutlined className="text-purple-500" />}
           />
         </Card>
-        <Card hoverable>
+        <Card hoverable className="h-full min-w-0 [&_.ant-card-body]:flex [&_.ant-card-body]:flex-col [&_.ant-card-body]:h-full [&_.ant-card-body]:min-w-0">
           <Statistic
             title="Messages Today"
-            value={status?.messages_today ?? 0}
+            value={displayStatus?.messages_today ?? 0}
             prefix={<MessageOutlined className="text-orange-500" />}
           />
         </Card>
-        <Card hoverable>
+        <Card hoverable className="h-full min-w-0 [&_.ant-card-body]:flex [&_.ant-card-body]:flex-col [&_.ant-card-body]:h-full [&_.ant-card-body]:min-w-0">
           <Statistic
             title="Tokens Today"
             value={
-              status?.token_usage?.total_tokens != null
-                ? formatTokenCount(status.token_usage.total_tokens)
+              displayStatus?.token_usage?.total_tokens != null
+                ? formatTokenCount(displayStatus.token_usage.total_tokens)
                 : '-'
             }
             prefix={<ThunderboltOutlined className="text-amber-500" />}
           />
         </Card>
-        <Card hoverable>
+        <Card hoverable className="h-full min-w-0 [&_.ant-card-body]:flex [&_.ant-card-body]:flex-col [&_.ant-card-body]:h-full [&_.ant-card-body]:min-w-0">
           <Statistic
             title="Cost Today"
             value={
-              status?.token_usage?.cost_usd != null && status.token_usage.cost_usd > 0
-                ? formatCost(status.token_usage.cost_usd)
+              displayStatus?.token_usage?.cost_usd != null && displayStatus.token_usage.cost_usd > 0
+                ? formatCost(displayStatus.token_usage.cost_usd)
                 : '-'
             }
             prefix={<DollarOutlined className="text-green-500" />}
@@ -222,7 +227,7 @@ export default function Dashboard() {
       </div>
 
       {/* Model Info & Token Usage */}
-      {status?.model && (
+      {displayStatus?.model && (
         <Card size="small">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div className="flex items-center gap-3">
@@ -233,41 +238,41 @@ export default function Dashboard() {
                 <Text type="secondary" className="text-xs">
                   Current Model
                 </Text>
-                <p className="font-semibold text-base">{status.model}</p>
+                <p className="font-semibold text-base">{displayStatus.model}</p>
               </div>
             </div>
-            {status?.token_usage && ((status?.token_usage?.total_tokens ?? 0) + (status?.token_usage?.prompt_tokens ?? 0) + (status?.token_usage?.completion_tokens ?? 0)) > 0 && (
+            {displayStatus?.token_usage && ((displayStatus?.token_usage?.total_tokens ?? 0) + (displayStatus?.token_usage?.prompt_tokens ?? 0) + (displayStatus?.token_usage?.completion_tokens ?? 0)) > 0 && (
               <div className="flex flex-col gap-2 text-sm">
                 <div className="flex items-center gap-4">
                   <div>
                     <Text type="secondary" className="text-xs block">今日 Token 使用</Text>
                     <span className="font-medium">
-                      {formatTokenCount(status?.token_usage?.total_tokens ?? 0)}
+                      {formatTokenCount(displayStatus?.token_usage?.total_tokens ?? 0)}
                     </span>
                     <Text type="secondary" className="text-xs ml-1">total</Text>
                   </div>
                   <div>
                     <Text type="secondary" className="text-xs block">输入</Text>
                     <span className="font-medium">
-                      {formatTokenCount(status?.token_usage?.prompt_tokens ?? 0)}
+                      {formatTokenCount(displayStatus?.token_usage?.prompt_tokens ?? 0)}
                     </span>
                   </div>
                   <div>
                     <Text type="secondary" className="text-xs block">输出</Text>
                     <span className="font-medium">
-                      {formatTokenCount(status?.token_usage?.completion_tokens ?? 0)}
+                      {formatTokenCount(displayStatus?.token_usage?.completion_tokens ?? 0)}
                     </span>
                   </div>
                 </div>
-                {status?.token_usage?.by_model && Object.keys(status.token_usage.by_model).length > 0 && (
+                {displayStatus?.token_usage?.by_model && Object.keys(displayStatus.token_usage.by_model).length > 0 && (
                   <div className="flex flex-wrap gap-2">
-                    {Object.entries(status.token_usage.by_model).map(([model, u]) => (
+                    {Object.entries(displayStatus.token_usage.by_model).map(([model, u]) => (
                       <Tag key={model} className="m-0">
                         {model}: {formatTokenCount(u.total_tokens ?? 0)}
-                        {status?.token_usage?.cost_by_model?.[model] != null &&
-                          status.token_usage.cost_by_model[model] > 0 && (
+                        {displayStatus?.token_usage?.cost_by_model?.[model] != null &&
+                          displayStatus.token_usage.cost_by_model[model] > 0 && (
                             <span className="ml-1 text-green-600 dark:text-green-400">
-                              ({formatCost(status.token_usage.cost_by_model[model])})
+                              ({formatCost(displayStatus.token_usage.cost_by_model[model])})
                             </span>
                           )}
                       </Tag>
@@ -364,9 +369,9 @@ export default function Dashboard() {
           )}
         </Card>
 
-        {status?.token_usage?.cost_by_model &&
-          Object.keys(status.token_usage.cost_by_model).length > 0 &&
-          Object.values(status.token_usage.cost_by_model).some((v) => v > 0) && (
+        {displayStatus?.token_usage?.cost_by_model &&
+          Object.keys(displayStatus.token_usage.cost_by_model).length > 0 &&
+          Object.values(displayStatus.token_usage.cost_by_model).some((v) => v > 0) && (
             <Card
               title={
                 <span className="flex items-center gap-2">
@@ -378,7 +383,7 @@ export default function Dashboard() {
               <div className="flex flex-wrap items-center gap-6">
                 <div style={{ width: 200, height: 200 }}>
                   <Pie
-                    data={Object.entries(status.token_usage.cost_by_model)
+                    data={Object.entries(displayStatus.token_usage.cost_by_model)
                       .filter(([, v]) => v > 0)
                       .map(([model, usd]) => ({ type: model, value: usd }))}
                     angleField="value"
@@ -390,7 +395,7 @@ export default function Dashboard() {
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  {Object.entries(status.token_usage.cost_by_model)
+                  {Object.entries(displayStatus.token_usage.cost_by_model)
                     .filter(([, v]) => v > 0)
                     .map(([model, usd]) => (
                       <div key={model} className="flex items-center justify-between gap-4">

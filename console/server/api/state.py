@@ -121,11 +121,9 @@ class BotState:
 
     @property
     def is_running(self) -> bool:
-        return (
-            self._agent_loop is not None
-            and hasattr(self._agent_loop, "is_running")
-            and self._agent_loop.is_running
-        )
+        """Console 下 bot 已初始化并能处理请求即视为 Running。
+        nanobot AgentLoop 的 run() 后台循环在 Console 中未使用，仅通过 process_direct 按需调用。"""
+        return self._agent_loop is not None
 
     @property
     def uptime_seconds(self) -> float:

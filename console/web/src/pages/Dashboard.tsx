@@ -98,19 +98,6 @@ export default function Dashboard() {
     queryFn: () => api.listCronJobs(currentBotId, true),
   });
 
-  const { data: alerts = [], refetch: refetchAlerts } = useQuery({
-    queryKey: ['alerts', currentBotId],
-    queryFn: () => api.getAlerts(currentBotId),
-    refetchInterval: 60000,
-  });
-
-  const dismissAlertMutation = useMutation({
-    mutationFn: (alertId: string) => api.dismissAlert(alertId, currentBotId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['alerts', currentBotId] });
-    },
-  });
-
   useEffect(() => {
     if (data) {
       setStatus(data);
@@ -173,33 +160,6 @@ export default function Dashboard() {
 
   return (
     <div className="p-6 space-y-6">
-      {/* Alerts Banner */}
-      {alerts.length > 0 && (
-        <div className="space-y-2">
-          {alerts.slice(0, 5).map((alert) => (
-            <Alert
-              key={alert.id}
-              type={alert.severity === 'critical' ? 'error' : alert.severity === 'warning' ? 'warning' : 'info'}
-              message={
-                <div className="flex items-center justify-between gap-4">
-                  <span>{alert.message}</span>
-                  <Button
-                    type="link"
-                    size="small"
-                    onClick={() => dismissAlertMutation.mutate(alert.id)}
-                    loading={dismissAlertMutation.isPending}
-                  >
-                    关闭
-                  </Button>
-                </div>
-              }
-              showIcon
-              closable={false}
-            />
-          ))}
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -230,7 +190,6 @@ export default function Dashboard() {
             icon={<ReloadOutlined />}
             onClick={() => {
               refetch();
-              refetchAlerts();
               queryClient.invalidateQueries({ queryKey: ['usage-history', currentBotId] });
             }}
           />

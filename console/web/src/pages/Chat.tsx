@@ -212,19 +212,11 @@ export default function Chat() {
     }
   }, [activeSessionKey, sessionMessageCount, queryClient]);
 
-  /** 聊天区只展示用户与主 Agent 消息，过滤掉子 Agent 与工具调用 */
+  /** 聊天区只展示用户与主 Agent 消息，过滤掉子 Agent 与工具调用。不排序，沿用后端返回的时序（最新在下方）。 */
   const displayMessages = useMemo(() => {
-    const filtered = messages.filter(
+    return messages.filter(
       (m) => m.source !== 'sub_agent' && m.source !== 'tool_call'
     );
-    return [...filtered].sort((a, b) => {
-      const tA = a.created_at ?? a.timestamp ?? '';
-      const tB = b.created_at ?? b.timestamp ?? '';
-      if (!tA && !tB) return 0;
-      if (!tA) return 1;
-      if (!tB) return -1;
-      return tA.localeCompare(tB);
-    });
   }, [messages]);
 
   // 仅有一条消息时保持滚动在顶部，避免第一条用户消息被滚出视口；多条消息时滚到底部

@@ -6,6 +6,8 @@ import {
   DeleteOutlined,
   StarOutlined,
   StarFilled,
+  PlayCircleOutlined,
+  PauseCircleOutlined,
 } from '@ant-design/icons';
 import { Bot, FolderOpen, Clock } from 'lucide-react';
 import { useAppStore } from '../store';
@@ -57,6 +59,28 @@ export default function Bots() {
     },
     onError: (err: Error) => {
       addToast({ type: 'error', message: `Set default failed: ${err.message}` });
+    },
+  });
+
+  const startMutation = useMutation({
+    mutationFn: (botId: string) => api.startBot(botId),
+    onSuccess: (bot) => {
+      queryClient.invalidateQueries({ queryKey: ['bots'] });
+      addToast({ type: 'success', message: `Bot "${bot.name}" started` });
+    },
+    onError: (err: Error) => {
+      addToast({ type: 'error', message: `Start failed: ${err.message}` });
+    },
+  });
+
+  const stopMutation = useMutation({
+    mutationFn: (botId: string) => api.stopBot(botId),
+    onSuccess: (bot) => {
+      queryClient.invalidateQueries({ queryKey: ['bots'] });
+      addToast({ type: 'success', message: `Bot "${bot.name}" stopped` });
+    },
+    onError: (err: Error) => {
+      addToast({ type: 'error', message: `Stop failed: ${err.message}` });
     },
   });
 
@@ -165,6 +189,33 @@ export default function Bots() {
                 </div>
 
                 <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                  {bot.running ? (
+                    <Tooltip title="Stop bot">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<PauseCircleOutlined />}
+                        loading={stopMutation.isPending && stopMutation.variables === bot.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          stopMutation.mutate(bot.id);
+                        }}
+                      />
+                    </Tooltip>
+                  ) : (
+                    <Tooltip title="Start bot">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<PlayCircleOutlined />}
+                        loading={startMutation.isPending && startMutation.variables === bot.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          startMutation.mutate(bot.id);
+                        }}
+                      />
+                    </Tooltip>
+                  )}
                   {!bot.is_default && (
                     <Tooltip title="Set as default">
                       <Button

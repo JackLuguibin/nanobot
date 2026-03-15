@@ -115,6 +115,18 @@ export async function setDefaultBot(botId: string): Promise<{ status: string }> 
   });
 }
 
+export async function startBot(botId: string): Promise<BotInfo> {
+  return fetchJson<BotInfo>(`${API_BASE}/bots/${encodeURIComponent(botId)}/start`, {
+    method: 'POST',
+  });
+}
+
+export async function stopBot(botId: string): Promise<BotInfo> {
+  return fetchJson<BotInfo>(`${API_BASE}/bots/${encodeURIComponent(botId)}/stop`, {
+    method: 'POST',
+  });
+}
+
 // ====================
 // Status API
 // ====================

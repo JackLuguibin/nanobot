@@ -155,8 +155,15 @@ def refresh_alerts(
     cost_limit = cfg.get("cost_daily_limit", 10.0)
     cron_overdue_mins = cfg.get("cron_overdue_minutes", 60)
 
-    # 成本超阈值
+    # 成本超阈值（避免 None 参与比较导致 '>' not supported）
     cost_usd = usage_today.get("cost_usd") or 0
+    if cost_limit is None:
+        cost_limit = 10.0
+    try:
+        cost_usd = float(cost_usd)
+        cost_limit = float(cost_limit)
+    except (TypeError, ValueError):
+        cost_usd, cost_limit = 0.0, 10.0
     if cost_usd > cost_limit:
         _add_alert(
             bot_id,

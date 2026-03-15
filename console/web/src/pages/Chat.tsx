@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import ReactMarkdown from 'react-markdown';
@@ -411,6 +411,18 @@ export default function Chat() {
     return 'error';
   };
 
+  /** 按 created_at / timestamp 升序排列，保证消息按时序展示（含多子 agent 时的 assistant_message） */
+  const sortedMessages = useMemo(() => {
+    return [...messages].sort((a, b) => {
+      const tA = a.created_at ?? a.timestamp ?? '';
+      const tB = b.created_at ?? b.timestamp ?? '';
+      if (!tA && !tB) return 0;
+      if (!tA) return 1;
+      if (!tB) return -1;
+      return tA.localeCompare(tB);
+    });
+  }, [messages]);
+
   /** 格式化消息时间：年月日 + 时:分:秒 */
   const formatMessageTime = (isoStr: string | undefined): string => {
     if (!isoStr) return '';
@@ -474,6 +486,11 @@ export default function Chat() {
                 <span className="text-xs text-gray-500 mt-1 block">
                   {session.message_count} messages
                 </span>
+                {session.created_at && (
+                  <span className="text-xs text-gray-400 dark:text-gray-500 mt-0.5 block">
+                    {formatMessageTime(session.created_at)}
+                  </span>
+                )}
               </button>
               <Popconfirm
                 title="删除会话"
@@ -590,7 +607,7 @@ export default function Chat() {
             </div>
           ) : (
             <div className="space-y-4 max-w-3xl mx-auto">
-              {messages.map((msg) => (
+              {sortedMessages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`flex gap-3 overflow-visible ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}

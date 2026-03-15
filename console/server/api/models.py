@@ -127,12 +127,24 @@ class ConfigUpdateRequest(BaseModel):
     data: dict[str, Any]
 
 
+class TokenUsageResponse(BaseModel):
+    """当日 token 使用量与成本，与 extension.usage.get_usage_today 返回结构一致。"""
+
+    total_tokens: int = 0
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    by_model: dict[str, dict[str, int]] = Field(default_factory=dict)
+    cost_usd: float = 0.0
+    cost_by_model: dict[str, float] = Field(default_factory=dict)
+
+
 class StatusResponse(BaseModel):
     running: bool
     uptime_seconds: float
     model: str | None
     active_sessions: int
     messages_today: int
+    token_usage: TokenUsageResponse = Field(default_factory=TokenUsageResponse)
     channels: list[ChannelStatus]
     mcp_servers: list[MCPStatus]
 

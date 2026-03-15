@@ -475,6 +475,32 @@ export async function getCronHistory(
 }
 
 // ====================
+// Plans API
+// ====================
+
+export async function getPlans(botId?: string | null): Promise<import('./types_plans').PlanBoard> {
+  return fetchJson<import('./types_plans').PlanBoard>(`${API_BASE}/plans${botQuery(botId)}`);
+}
+
+export async function savePlans(
+  data: import('./types_plans').PlanBoard,
+  botId?: string | null
+): Promise<import('./types_plans').PlanBoard> {
+  return fetchJson<import('./types_plans').PlanBoard>(
+    `${API_BASE}/plans${botQuery(botId)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({
+        id: data.id,
+        name: data.name,
+        columns: data.columns,
+        tasks: data.tasks,
+      }),
+    }
+  );
+}
+
+// ====================
 // Control API
 // ====================
 

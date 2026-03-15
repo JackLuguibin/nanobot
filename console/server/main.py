@@ -192,6 +192,15 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
             skills_config=skills_config,
         )
 
+        # Patch Plans skill：确保 workspace 中存在 Plans skill
+        from console.server.extension.plans_skill import patch_plans_skill
+
+        if agent_loop.workspace:
+            try:
+                patch_plans_skill(agent_loop.workspace)
+            except Exception:
+                pass  # 静默失败
+
         # Patch SubagentManager for event callbacks
         from console.server.extension.subagent_events import patch_subagent_manager
 
@@ -239,6 +248,14 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
                     cron_tool.reset_cron_context(cron_token)
 
         cron.on_job = on_cron_job
+
+        # 注册 Plans CLI 工具
+        try:
+            from console.server.extension.plans_tool import PlansTool
+
+            agent_loop.tools.register(PlansTool())
+        except Exception:
+            pass  # 静默失败
 
         # Wrap tool registry to log tool calls to state and activity
         from console.server.extension.activity import wrap_tool_registry_for_logging

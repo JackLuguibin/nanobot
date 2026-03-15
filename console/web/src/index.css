@@ -121,3 +121,49 @@ button, input, select, textarea {
 .ant-menu-item:not(.ant-menu-item-selected):hover {
   border-radius: 10px !important;
 }
+
+/* 甘特图全屏弹窗：占满视口宽度，内容可横向滚动 */
+.plans-gantt-fullscreen-modal.ant-modal-wrap {
+  padding-left: 16px;
+  padding-right: 16px;
+  box-sizing: border-box;
+}
+
+.plans-gantt-fullscreen-modal .ant-modal {
+  max-width: calc(100vw - 32px) !important;
+  width: 100% !important;
+  padding-bottom: 0;
+}
+
+.plans-gantt-fullscreen-modal .ant-modal .ant-modal-content {
+  max-width: 100%;
+}
+
+/* 紧凑弹窗样式 */
+.compact-modal .ant-modal-body {
+  padding: 16px;
+}
+
+.compact-form .ant-form-item {
+  margin-bottom: 0;
+}
+
+.compact-form .ant-form-item-label > label {
+  font-size: 12px;
+  padding: 0 0 4px 0;
+}
+
+.compact-form .ant-form-item-label {
+  padding: 0;
+}
+
+.compact-form .ant-select,
+.compact-form .ant-input,
+.compact-form .ant-input-number,
+.compact-form .ant-picker {
+  font-size: 13px;
+}
+
+.compact-form .ant-slider {
+  margin: 4px 0;
+}

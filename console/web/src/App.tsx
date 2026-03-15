@@ -14,6 +14,7 @@ import Skills from './pages/Skills';
 import Logs from './pages/Logs';
 import Bots from './pages/Bots';
 import Agents from './pages/Agents';
+import Plans from './pages/Plans';
 import Memory from './pages/Memory';
 import BotProfile from './pages/BotProfile';
 import Cron from './pages/Cron';
@@ -44,6 +45,7 @@ function AppRoutes() {
           <Route path="/mcp" element={<MCPServers />} />
           <Route path="/bots" element={<Bots />} />
           <Route path="/agents" element={<Agents />} />
+          <Route path="/plans" element={<Plans />} />
           <Route path="/skills" element={<Skills />} />
           <Route path="/memory" element={<Memory />} />
           <Route path="/bot-profile" element={<BotProfile />} />

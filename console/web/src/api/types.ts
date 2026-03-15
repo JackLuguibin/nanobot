@@ -1,11 +1,16 @@
 // Type definitions for the API
 
+/** 消息来源：用户、主 Agent、子 Agent、工具调用。聊天区仅展示 user 与 main_agent。 */
+export type MessageSource = 'user' | 'main_agent' | 'sub_agent' | 'tool_call';
+
 export interface Message {
   role: 'user' | 'assistant' | 'system' | 'tool';
   content: string;
   tool_call_id?: string;
   tool_name?: string;
   timestamp?: string;
+  /** 区分用户/主Agent/子Agent/工具调用；缺失时按 role 推断（兼容旧数据） */
+  source?: MessageSource;
 }
 
 export interface ChatRequest {
@@ -214,6 +219,8 @@ export interface StreamChunk {
   tool_result?: string;
   error?: string;
   done?: boolean;
+  /** 消息来源，用于 chat_done / assistant_message */
+  source?: MessageSource;
   // Subagent event fields
   subagent_id?: string;
   label?: string;

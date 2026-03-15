@@ -278,7 +278,7 @@ class BotState:
         out: list[dict[str, Any]] = []
         for m in sliced:
             entry: dict[str, Any] = {"role": m["role"], "content": m.get("content", "")}
-            for k in ("tool_calls", "tool_call_id", "name", "timestamp", "created_at"):
+            for k in ("tool_calls", "tool_call_id", "name", "timestamp", "created_at", "source"):
                 if k in m:
                     entry[k] = m[k]
             out.append(entry)

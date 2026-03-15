@@ -107,6 +107,8 @@ interface Message {
   /** 发送时间，ISO 字符串，用于展示 */
   created_at?: string;
   timestamp?: string;
+  /** 消息来源：user / main_agent / sub_agent / tool_call；聊天区仅展示 user 与 main_agent */
+  source?: 'user' | 'main_agent' | 'sub_agent' | 'tool_call';
 }
 
 interface ToolCall {
@@ -210,17 +212,32 @@ export default function Chat() {
     }
   }, [activeSessionKey, sessionMessageCount, queryClient]);
 
+  /** 聊天区只展示用户与主 Agent 消息，过滤掉子 Agent 与工具调用 */
+  const displayMessages = useMemo(() => {
+    const filtered = messages.filter(
+      (m) => m.source !== 'sub_agent' && m.source !== 'tool_call'
+    );
+    return [...filtered].sort((a, b) => {
+      const tA = a.created_at ?? a.timestamp ?? '';
+      const tB = b.created_at ?? b.timestamp ?? '';
+      if (!tA && !tB) return 0;
+      if (!tA) return 1;
+      if (!tB) return -1;
+      return tA.localeCompare(tB);
+    });
+  }, [messages]);
+
   // 仅有一条消息时保持滚动在顶部，避免第一条用户消息被滚出视口；多条消息时滚到底部
   useEffect(() => {
     const container = messagesContainerRef.current;
     const endEl = messagesEndRef.current;
     if (!container) return;
-    if (messages.length <= 1) {
+    if (displayMessages.length <= 1) {
       container.scrollTop = 0;
       return;
     }
     endEl?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
+  }, [displayMessages.length, streamingContent]);
 
   const handleStreamChunk = useCallback(
     (chunk: StreamChunk) => {
@@ -276,6 +293,7 @@ export default function Chat() {
             role: 'assistant',
             content: assistantContent,
             created_at: new Date().toISOString(),
+            source: chunk.source ?? 'main_agent',
           },
         ]);
       } else if (chunk.type === 'subagent_done' && chunk.subagent_id) {
@@ -307,6 +325,7 @@ export default function Chat() {
             role: 'assistant',
             content: finalContent,
             created_at: new Date().toISOString(),
+            source: chunk.source ?? 'main_agent',
           },
         ]);
         setToolCalls([]);
@@ -330,6 +349,7 @@ export default function Chat() {
         role: 'user',
         content: userMessage,
         created_at: new Date().toISOString(),
+        source: 'user',
       },
     ]);
 
@@ -410,18 +430,6 @@ export default function Chat() {
     if (status === 'success') return 'success';
     return 'error';
   };
-
-  /** 按 created_at / timestamp 升序排列，保证消息按时序展示（含多子 agent 时的 assistant_message） */
-  const sortedMessages = useMemo(() => {
-    return [...messages].sort((a, b) => {
-      const tA = a.created_at ?? a.timestamp ?? '';
-      const tB = b.created_at ?? b.timestamp ?? '';
-      if (!tA && !tB) return 0;
-      if (!tA) return 1;
-      if (!tB) return -1;
-      return tA.localeCompare(tB);
-    });
-  }, [messages]);
 
   /** 格式化消息时间：年月日 + 时:分:秒 */
   const formatMessageTime = (isoStr: string | undefined): string => {
@@ -572,7 +580,7 @@ export default function Chat() {
           ref={messagesContainerRef}
           className="flex-1 min-h-0 overflow-y-auto no-scrollbar px-4 md:px-6 py-2 md:py-3"
         >
-          {messages.length === 0 && showSuggestions ? (
+          {displayMessages.length === 0 && showSuggestions ? (
             <div className="min-h-full flex flex-col items-center justify-start pt-2 md:pt-4 text-center text-gray-600 dark:text-gray-300">
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-primary-100 to-blue-100 dark:from-primary-900/30 dark:to-blue-900/20 flex items-center justify-center mb-6 shadow-xl shadow-primary-500/10">
                 <Bot className="w-10 h-10 text-primary-600" />
@@ -607,7 +615,7 @@ export default function Chat() {
             </div>
           ) : (
             <div className="space-y-4 max-w-3xl mx-auto">
-              {sortedMessages.map((msg) => (
+              {displayMessages.map((msg) => (
                 <div
                   key={msg.id}
                   className={`flex gap-3 overflow-visible ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}

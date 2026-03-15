@@ -197,6 +197,11 @@ def _initialize_bot(bot_id: str, config, config_path: Path) -> BotState:
 
         patch_subagent_manager(agent_loop)
 
+        # Patch _save_turn to add message source (user / main_agent / sub_agent / tool_call)
+        from console.server.extension.message_source import patch_agent_loop_message_source
+
+        patch_agent_loop_message_source(agent_loop)
+
         # Set cron callback to run jobs through the agent
         import time
 

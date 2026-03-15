@@ -441,10 +441,12 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
         session_key = session["key"]
 
     try:
+        from console.server.extension.message_source import SOURCE_MAIN_AGENT, set_message_source_context
 
         async def silent_progress(content: str) -> None:
             pass
 
+        set_message_source_context(SOURCE_MAIN_AGENT)
         response = await agent_loop.process_direct(
             content=request.message,
             session_key=session_key,
@@ -469,6 +471,11 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
 @router.post("/chat/stream")
 async def send_chat_message_stream(request: ChatRequest):
     """Send a chat message with streaming response (SSE)."""
+    from console.server.extension.message_source import (
+        SOURCE_MAIN_AGENT,
+        SOURCE_SUB_AGENT,
+        set_message_source_context,
+    )
     from console.server.extension.subagent_events import set_subagent_callback
 
     state = _resolve_state(request.bot_id)
@@ -537,6 +544,7 @@ Result:
 Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not mention technical details like "subagent" or task IDs."""
 
                 try:
+                    set_message_source_context(SOURCE_SUB_AGENT)
                     follow_up_response = await agent_loop.process_direct(
                         content=summarize_content,
                         session_key=session_key,
@@ -547,7 +555,7 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
 
                     if follow_up_response:
                         await queue.put(
-                            f"data: {json.dumps({'type': 'assistant_message', 'content': follow_up_response})}\n\n"
+                            f"data: {json.dumps({'type': 'assistant_message', 'content': follow_up_response, 'source': 'sub_agent'})}\n\n"
                         )
                 except Exception as e:
                     logger.warning("Failed to process subagent result: {}", e)
@@ -559,6 +567,7 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
             async def run_agent() -> None:
                 nonlocal agent_finished
                 try:
+                    set_message_source_context(SOURCE_MAIN_AGENT)
                     response_text = await agent_loop.process_direct(
                         content=request.message,
                         session_key=session_key,
@@ -599,7 +608,7 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
                 logger.warning("Failed to broadcast status update: {}", e)
 
             response_text = response_holder[0] if response_holder else ""
-            yield f"data: {json.dumps({'type': 'chat_done', 'done': True, 'content': response_text})}\n\n"
+            yield f"data: {json.dumps({'type': 'chat_done', 'done': True, 'content': response_text, 'source': 'main_agent'})}\n\n"
 
         except Exception as e:
             logger.error("Error in streaming chat: {}", e)

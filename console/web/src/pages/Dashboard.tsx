@@ -299,101 +299,112 @@ export default function Dashboard() {
         </Card>
       )}
 
-      {/* Token Usage Chart - 输入/输出柱状图 + 趋势线 */}
-      <Card
-        title={
-          <span className="flex items-center gap-2">
-            <BarChartOutlined className="text-amber-500" /> 每日 Token 使用量
-          </span>
-        }
-        size="small"
-      >
-        {usageLoading ? (
-          <div className="flex items-center justify-center h-[280px]">
-            <Spin />
-          </div>
-        ) : usageHistory && usageHistory.length > 0 ? (
-          <div className="h-[280px] w-full" style={{ minHeight: 240 }}>
-            <Column
-              data={toColumnData(usageHistory)}
-              xField="date"
-              yField="value"
-              seriesField="type"
-              group
-              style={{
-                fill: (d: { type: string }) =>
-                  d.type === '输入' ? '#3b82f6' : d.type === '输出' ? '#22c55e' : '#94a3b8',
-              }}
-              label={{
-                text: 'value',
-                position: 'top',
-                style: { dy: -16 },
-                formatter: (v: unknown) => {
-                  const n = Number(v);
-                  return n > 0 ? formatTokenCount(n) : '';
-                },
-              }}
-              xAxis={{
-                label: {
-                  formatter: (v: string) => (typeof v === 'string' ? v.slice(5) : String(v)),
-                },
-              }}
-              yAxis={{
-                label: {
-                  formatter: (v: string) => formatTokenCount(Number(v)),
-                },
-              }}
-              legend={{ position: 'top' }}
-            />
-          </div>
-        ) : (
-          <Text type="secondary" className="block text-center py-12">
-            暂无使用数据，与模型对话后会自动记录
-          </Text>
-        )}
-      </Card>
-
-      {/* 按模型成本分布 */}
-      {status?.token_usage?.cost_by_model &&
-        Object.keys(status.token_usage.cost_by_model).length > 0 &&
-        Object.values(status.token_usage.cost_by_model).some((v) => v > 0) && (
-          <Card
-            title={
-              <span className="flex items-center gap-2">
-                <DollarOutlined className="text-green-500" /> 按模型成本分布
-              </span>
-            }
-            size="small"
-          >
-            <div className="flex flex-wrap items-center gap-6">
-              <div style={{ width: 200, height: 200 }}>
-                <Pie
-                  data={Object.entries(status.token_usage.cost_by_model)
-                    .filter(([, v]) => v > 0)
-                    .map(([model, usd]) => ({ type: model, value: usd }))}
-                  angleField="value"
-                  colorField="type"
-                  radius={0.8}
-                  innerRadius={0.4}
-                  label={{ type: 'inner', formatter: (v: { value: number }) => formatCost(v.value) }}
-                  legend={false}
-                />
-              </div>
-              <div className="flex flex-col gap-2">
-                {Object.entries(status.token_usage.cost_by_model)
-                  .filter(([, v]) => v > 0)
-                  .map(([model, usd]) => (
-                    <div key={model} className="flex items-center justify-between gap-4">
-                      <span className="font-medium truncate max-w-[120px]">{model}</span>
-                      <span className="text-green-600 dark:text-green-400 font-mono">
-                        {formatCost(usd)}
-                      </span>
-                    </div>
-                  ))}
-              </div>
+      {/* 每日 Token 使用量 + 按模型成本分布：水平并排 */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Card
+          title={
+            <span className="flex items-center gap-2">
+              <BarChartOutlined className="text-amber-500" /> 每日 Token 使用量
+            </span>
+          }
+          size="small"
+        >
+          {usageLoading ? (
+            <div className="flex items-center justify-center h-[280px]">
+              <Spin />
             </div>
-          </Card>
-        )}
+          ) : usageHistory && usageHistory.length > 0 ? (
+            <div className="h-[280px] w-full" style={{ minHeight: 240 }}>
+              <Column
+                data={toColumnData(usageHistory)}
+                xField="date"
+                yField="value"
+                seriesField="type"
+                group
+                paddingBottom={56}
+                scale={{
+                  x: { padding: 0.5 },
+                }}
+                style={{
+                  fill: (d: { type: string }) =>
+                    d.type === '输入' ? '#3b82f6' : d.type === '输出' ? '#22c55e' : '#94a3b8',
+                }}
+                label={{
+                  text: 'value',
+                  position: 'top',
+                  style: { dy: -16 },
+                  formatter: (v: unknown) => {
+                    const n = Number(v);
+                    return n > 0 ? formatTokenCount(n) : '';
+                  },
+                }}
+                axis={{
+                  x: {
+                    label: {
+                      formatter: (v: string) => (typeof v === 'string' ? v.slice(5) : String(v)),
+                    },
+                    labelTextAlign: 'center',
+                    labelTextBaseline: 'middle',
+                    labelTransform: 'rotate(-30deg)',
+                    labelSpacing: 12,
+                  },
+                  y: {
+                    label: {
+                      formatter: (v: string) => formatTokenCount(Number(v)),
+                    },
+                  },
+                }}
+                legend={{ position: 'top' }}
+              />
+            </div>
+          ) : (
+            <Text type="secondary" className="block text-center py-12">
+              暂无使用数据，与模型对话后会自动记录
+            </Text>
+          )}
+        </Card>
+
+        {status?.token_usage?.cost_by_model &&
+          Object.keys(status.token_usage.cost_by_model).length > 0 &&
+          Object.values(status.token_usage.cost_by_model).some((v) => v > 0) && (
+            <Card
+              title={
+                <span className="flex items-center gap-2">
+                  <DollarOutlined className="text-green-500" /> 按模型成本分布
+                </span>
+              }
+              size="small"
+            >
+              <div className="flex flex-wrap items-center gap-6">
+                <div style={{ width: 200, height: 200 }}>
+                  <Pie
+                    data={Object.entries(status.token_usage.cost_by_model)
+                      .filter(([, v]) => v > 0)
+                      .map(([model, usd]) => ({ type: model, value: usd }))}
+                    angleField="value"
+                    colorField="type"
+                    radius={0.8}
+                    innerRadius={0.4}
+                    label={{ type: 'inner', formatter: (v: { value: number }) => formatCost(v.value) }}
+                    legend={false}
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  {Object.entries(status.token_usage.cost_by_model)
+                    .filter(([, v]) => v > 0)
+                    .map(([model, usd]) => (
+                      <div key={model} className="flex items-center justify-between gap-4">
+                        <span className="font-medium truncate max-w-[120px]">{model}</span>
+                        <span className="text-green-600 dark:text-green-400 font-mono">
+                          {formatCost(usd)}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            </Card>
+          )}
+      </div>
 
     </div>
   );

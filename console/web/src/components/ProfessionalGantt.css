@@ -1,0 +1,106 @@
+/**
+ * 有限高度甘特图样式 - 参考 gantt-task-react 官方 demo
+ * https://matematuk.github.io/gantt-task-react/
+ */
+
+.professional-gantt-wrapper.gantt-limited-height {
+  border: 1px solid #e6e4e4;
+  background: #fff;
+  border-radius: 4px;
+  height: 100%;
+  min-height: 0;
+}
+
+/* 让库的根 div 填满容器 */
+.professional-gantt-wrapper.gantt-limited-height > div {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* 库内部 wrapper（TaskList + TaskGantt 的父级）填满高度 */
+.professional-gantt-wrapper.gantt-limited-height ._3eULf {
+  flex: 1 1 0;
+  min-height: 0;
+  height: 100%;
+}
+
+/* 左侧任务列表外层：固定宽度（由 --gantt-list-width 控制），不随内容撑开 */
+.professional-gantt-wrapper.gantt-limited-height ._3eULf > div:first-child {
+  width: var(--gantt-list-width) !important;
+  min-width: var(--gantt-list-width) !important;
+  max-width: var(--gantt-list-width) !important;
+  flex-shrink: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  min-height: 0 !important;
+  overflow: hidden;
+}
+
+/* 右侧图表外层（ganttVerticalContainer）填满 */
+.professional-gantt-wrapper.gantt-limited-height ._CZjuD {
+  flex: 1 1 0 !important;
+  min-height: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100% !important;
+}
+
+/* TaskList 与 TaskGantt 内部高度容器：覆盖库的固定 height，改为填满父级 */
+.professional-gantt-wrapper.gantt-limited-height ._2B2zv {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 0 !important;
+}
+
+/* 水平滚动条左边距与左侧任务列表对齐（库用 taskListWidth 设 margin，可能未及时更新，用 --gantt-list-width 覆盖） */
+.professional-gantt-wrapper.gantt-limited-height ._2k9Ys {
+  margin-left: var(--gantt-list-width) !important;
+}
+
+.dark .professional-gantt-wrapper.gantt-limited-height {
+  border-color: rgba(71, 85, 105, 0.5);
+  background: rgba(15, 23, 42, 0.5);
+}
+
+/* 左侧任务列表：行高与列对齐 */
+.professional-gantt-wrapper .gantt-task-list-table {
+  min-width: 100%;
+}
+.professional-gantt-wrapper .gantt-task-list-table > div {
+  min-height: 40px;
+  border-color: #e2e8f0;
+}
+.dark .professional-gantt-wrapper .gantt-task-list-table > div {
+  border-color: rgba(71, 85, 105, 0.4);
+}
+/* 表头与第一列对齐 */
+.professional-gantt-wrapper .gantt-list-header {
+  border-color: #e2e8f0;
+}
+.dark .professional-gantt-wrapper .gantt-list-header {
+  border-color: rgba(71, 85, 105, 0.5);
+}
+
+/* 时间轴文字 */
+.professional-gantt-wrapper svg text {
+  fill: #555 !important;
+  font-size: 11px !important;
+  font-weight: 400;
+}
+
+.dark .professional-gantt-wrapper svg text {
+  fill: #94a3b8 !important;
+}
+
+/* 任务条轻微阴影，不喧宾夺主 */
+.professional-gantt-wrapper svg rect[rx] {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.08));
+}
+
+.dark .professional-gantt-wrapper svg rect[rx] {
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
+}

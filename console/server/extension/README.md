@@ -14,6 +14,7 @@
 | `health.py` | **Health Audit**：Bootstrap 文件、MCP 配置、通道等健康检查 |
 | `activity.py` | **Activity 持久化**：tool_call 日志持久化到 activity.json |
 | `cron_history.py` | **Cron 执行历史**：记录每次 Cron 执行到 history.json |
+| `plans.py` | **Plans 看板**：Plans 看板数据持久化到 plans.json，供 Agent 下 Plans 页面使用 |
 | `message_source.py` | **消息来源**：为 session 消息增加 `source` 字段（user/main_agent/sub_agent/tool_call），供前端只展示用户与主 Agent |
 | `subagent_events.py` | **子 Agent 事件**：Patch SubagentManager，向前端 SSE 推送 subagent_start/subagent_done |
 

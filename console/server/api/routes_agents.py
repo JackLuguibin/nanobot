@@ -14,17 +14,24 @@ from console.server.extension.agents import AgentConfig, AgentManager
 router = APIRouter(prefix="/api/bots/{bot_id}/agents")
 
 
-def _resolve_agent_manager(bot_id: str) -> AgentManager:
-    """获取Bot的AgentManager实例"""
+def _get_agent_manager_optional(bot_id: str) -> AgentManager | None:
+    """获取Bot的AgentManager实例，未初始化时返回None"""
     state_manager = get_state_manager()
     state = state_manager.get_state(bot_id)
-    logger.info(f"_resolve_agent_manager called with bot_id={bot_id}, state={state}")
     if not hasattr(state, "_agent_manager") or state._agent_manager is None:
-        logger.warning(f"Agent system not initialized for bot '{bot_id}', state={state}")
+        return None
+    return state._agent_manager
+
+
+def _resolve_agent_manager(bot_id: str) -> AgentManager:
+    """获取Bot的AgentManager实例，未初始化时抛出404"""
+    manager = _get_agent_manager_optional(bot_id)
+    if manager is None:
+        logger.warning(f"Agent system not initialized for bot '{bot_id}'")
         raise HTTPException(
             status_code=404, detail=f"Agent system not initialized for bot '{bot_id}'"
         )
-    return state._agent_manager
+    return manager
 
 
 class AgentCreateRequest(BaseModel):
@@ -91,8 +98,10 @@ def _agent_to_response(agent: AgentConfig) -> AgentResponse:
 
 @router.get("")
 async def list_agents(bot_id: str) -> list[AgentResponse]:
-    """获取Bot下所有Agent列表"""
-    agent_manager = _resolve_agent_manager(bot_id)
+    """获取Bot下所有Agent列表；未初始化 agent 系统时返回空列表"""
+    agent_manager = _get_agent_manager_optional(bot_id)
+    if agent_manager is None:
+        return []
     agents = agent_manager.list_agents()
     return [_agent_to_response(a) for a in agents]
 
@@ -242,15 +251,32 @@ async def broadcast_event(
     return {"status": "broadcasted", "topic": request.topic}
 
 
+def _empty_system_status() -> dict[str, Any]:
+    """Agent 系统未初始化时的默认状态"""
+    return {
+        "total_agents": 0,
+        "enabled_agents": 0,
+        "subscribed_agents": [],
+        "zmq_initialized": False,
+        "agent_id": None,
+    }
+
+
 @router.get("/{agent_id}/status")
 async def get_agent_status(bot_id: str, agent_id: str) -> dict[str, Any]:
-    """获取Agent状态"""
-    agent_manager = _resolve_agent_manager(bot_id)
+    """获取Agent状态；未初始化 agent 系统时返回空状态"""
+    agent_manager = _get_agent_manager_optional(bot_id)
 
     # 特殊处理系统状态请求
     if agent_id == "system-status":
+        if agent_manager is None:
+            return _empty_system_status()
         return agent_manager.get_status()
 
+    if agent_manager is None:
+        raise HTTPException(
+            status_code=404, detail=f"Agent system not initialized for bot '{bot_id}'"
+        )
     agent = agent_manager.get_agent(agent_id)
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")

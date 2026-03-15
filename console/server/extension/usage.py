@@ -126,6 +126,16 @@ def _is_legacy_day_data(day_data: dict[str, Any]) -> bool:
     return bool(day_data and _TOKEN_KEYS & set(day_data.keys()))
 
 
+def _safe_int(v: Any, default: int = 0) -> int:
+    """将可能为 None 或非数值的值转为 int，避免 None 参与运算或比较。"""
+    if v is None:
+        return default
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return default
+
+
 def _normalize_usage_data(data: dict[str, Any]) -> dict[str, dict[str, dict[str, int]]]:
     """将加载的数据规范为新格式 {date: {model: {prompt_tokens, completion_tokens, total_tokens}}}。"""
     result: dict[str, dict[str, dict[str, int]]] = {}
@@ -133,23 +143,23 @@ def _normalize_usage_data(data: dict[str, Any]) -> dict[str, dict[str, dict[str,
         if not isinstance(day_data, dict):
             continue
         if _is_legacy_day_data(day_data):
-            # 旧格式：迁移到 model="unknown"
+            # 旧格式：迁移到 model="unknown"，None 规整为 0
             result[day_str] = {
                 "unknown": {
-                    "prompt_tokens": day_data.get("prompt_tokens", 0),
-                    "completion_tokens": day_data.get("completion_tokens", 0),
-                    "total_tokens": day_data.get("total_tokens", 0),
+                    "prompt_tokens": _safe_int(day_data.get("prompt_tokens"), 0),
+                    "completion_tokens": _safe_int(day_data.get("completion_tokens"), 0),
+                    "total_tokens": _safe_int(day_data.get("total_tokens"), 0),
                 }
             }
         else:
-            # 新格式：按模型
+            # 新格式：按模型，None 规整为 0
             result[day_str] = {}
             for model, usage in day_data.items():
                 if isinstance(usage, dict):
                     result[day_str][model] = {
-                        "prompt_tokens": usage.get("prompt_tokens", 0),
-                        "completion_tokens": usage.get("completion_tokens", 0),
-                        "total_tokens": usage.get("total_tokens", 0),
+                        "prompt_tokens": _safe_int(usage.get("prompt_tokens"), 0),
+                        "completion_tokens": _safe_int(usage.get("completion_tokens"), 0),
+                        "total_tokens": _safe_int(usage.get("total_tokens"), 0),
                     }
     return result
 
@@ -190,7 +200,9 @@ def _add_usage(bot_id: str, usage: dict[str, int], model: str) -> None:
     if model not in data[today]:
         data[today][model] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     for k in ("prompt_tokens", "completion_tokens", "total_tokens"):
-        data[today][model][k] = data[today][model].get(k, 0) + usage.get(k, 0)
+        prev = _safe_int(data[today][model].get(k), 0)
+        inc = _safe_int(usage.get(k), 0)
+        data[today][model][k] = prev + inc
     _save_usage_data(bot_id, data)
 
 
@@ -199,7 +211,7 @@ def _aggregate_by_model(by_model: dict[str, dict[str, int]]) -> dict[str, int]:
     total = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
     for m in by_model.values():
         for k in _TOKEN_KEYS:
-            total[k] = total.get(k, 0) + m.get(k, 0)
+            total[k] = total.get(k, 0) + _safe_int(m.get(k), 0)
     return total
 
 
@@ -279,8 +291,22 @@ def get_usage_history(bot_id: str, days: int = 14) -> list[dict[str, Any]]:
     return result
 
 
+def _usage_to_dict(usage: Any) -> dict[str, int]:
+    """将 usage 规范为 dict，兼容 LLMResponse.usage 或对象形式。"""
+    if not usage:
+        return {}
+    if isinstance(usage, dict):
+        return {k: int(usage[k]) for k in _TOKEN_KEYS if k in usage and usage[k] is not None}
+    # 兼容具名元组或 dataclass
+    return {
+        k: int(getattr(usage, k, 0) or 0)
+        for k in _TOKEN_KEYS
+        if hasattr(usage, k)
+    }
+
+
 class UsageTrackingProvider:
-    """包装任意 LLMProvider，在 chat 返回后按模型累积 usage 并持久化到该 bot 的 JSON 文件。"""
+    """包装任意 LLMProvider，在 chat/chat_with_retry 返回后按模型累积 usage 并持久化到该 bot 的 JSON 文件。"""
 
     def __init__(self, provider: "LLMProvider", bot_id: str) -> None:
         self._provider = provider
@@ -294,6 +320,7 @@ class UsageTrackingProvider:
         max_tokens: int = 4096,
         temperature: float = 0.7,
         reasoning_effort: str | None = None,
+        tool_choice: str | dict[str, Any] | None = None,
     ) -> "LLMResponse":
         response = await self._provider.chat(
             messages=messages,
@@ -302,10 +329,21 @@ class UsageTrackingProvider:
             max_tokens=max_tokens,
             temperature=temperature,
             reasoning_effort=reasoning_effort,
+            tool_choice=tool_choice,
         )
-        usage = getattr(response, "usage", None) or {}
-        model_name = model or self._provider.get_default_model()
-        _add_usage(self._bot_id, usage, model_name)
+        usage = _usage_to_dict(getattr(response, "usage", None))
+        if usage:
+            model_name = model or self._provider.get_default_model()
+            _add_usage(self._bot_id, usage, model_name)
+        return response
+
+    async def chat_with_retry(self, *args: Any, **kwargs: Any) -> "LLMResponse":
+        """调用底层 provider.chat_with_retry，返回后记录 token 使用量。用 *args/**kwargs 透传，避免把 None 当作显式参数导致底层出现 None 与 int 比较。"""
+        response = await self._provider.chat_with_retry(*args, **kwargs)
+        usage = _usage_to_dict(getattr(response, "usage", None))
+        if usage:
+            model_name = kwargs.get("model") or self._provider.get_default_model()
+            _add_usage(self._bot_id, usage, model_name)
         return response
 
     def get_default_model(self) -> str:

@@ -1,3 +1,10 @@
+---
+name: ""
+overview: ""
+todos: []
+isProject: false
+---
+
 # 多Agent设计方案 (ZeroMQ通信层)
 
 ## 需求概述
@@ -51,6 +58,8 @@ graph TB
     ZMQ -->|REQ/REP| A2
     ZMQ -->|REQ/REP| A3
 ```
+
+
 
 ---
 
@@ -328,14 +337,16 @@ class AgentManager:
 
 **文件**: `console/server/api/routes.py` (修改)
 
-| 端点 | 方法 | 功能 |
-|------|------|------|
-| `/api/bots/{bot_id}/agents` | GET | 列出所有Agent |
-| `/api/bots/{bot_id}/agents` | POST | 创建新Agent |
-| `/api/bots/{bot_id}/agents/{agent_id}` | GET | 获取Agent详情 |
-| `/api/bots/{bot_id}/agents/{agent_id}` | PUT | 更新Agent配置 |
-| `/api/bots/{bot_id}/agents/{agent_id}` | DELETE | 删除Agent |
-| `/api/bots/{bot_id}/agents/{agent_id}/delegate` | POST | 委托任务给Agent |
+
+| 端点                                              | 方法     | 功能         |
+| ----------------------------------------------- | ------ | ---------- |
+| `/api/bots/{bot_id}/agents`                     | GET    | 列出所有Agent  |
+| `/api/bots/{bot_id}/agents`                     | POST   | 创建新Agent   |
+| `/api/bots/{bot_id}/agents/{agent_id}`          | GET    | 获取Agent详情  |
+| `/api/bots/{bot_id}/agents/{agent_id}`          | PUT    | 更新Agent配置  |
+| `/api/bots/{bot_id}/agents/{agent_id}`          | DELETE | 删除Agent    |
+| `/api/bots/{bot_id}/agents/{agent_id}/delegate` | POST   | 委托任务给Agent |
+
 
 ---
 
@@ -432,36 +443,39 @@ dependencies = [
 
 ### Phase 2: API层
 
-4. 添加Agent CRUD API端点
-5. 添加任务委托API
+1. 添加Agent CRUD API端点
+2. 添加任务委托API
 
 ### Phase 3: 前端
 
-6. 创建Agents列表页面
-7. 创建Agent详情页面
-8. Chat页面Agent选择器
-9. API客户端扩展
+1. 创建Agents列表页面
+2. 创建Agent详情页面
+3. Chat页面Agent选择器
+4. API客户端扩展
 
 ### Phase 4: 协作功能
 
-10. Agent智能路由
-11. 协作工作流
-12. 监控面板
+1. Agent智能路由
+2. 协作工作流
+3. 监控面板
 
 ---
 
 ## 关键文件清单
 
-| 文件 | 操作 |
-|------|------|
-| `pyproject.toml` | 修改 - 添加pyzmq |
-| `console/server/extension/zmq_bus.py` | 新建 - ZeroMQ消息总线 |
-| `console/server/extension/agents.py` | 新建 - Agent管理器 |
-| `console/server/api/routes.py` | 修改 - Agent API |
-| `console/server/api/state.py` | 修改 - 集成AgentManager |
-| `console/server/api/websocket.py` | 修改 - Agent事件 |
-| `console/web/src/pages/Agents.tsx` | 新建 |
-| `console/web/src/pages/AgentDetail.tsx` | 新建 |
-| `console/web/src/pages/Chat.tsx` | 修改 |
-| `console/web/src/api/client.ts` | 修改 |
-| `console/web/src/store/index.ts` | 修改 |
+
+| 文件                                      | 操作                  |
+| --------------------------------------- | ------------------- |
+| `pyproject.toml`                        | 修改 - 添加pyzmq        |
+| `console/server/extension/zmq_bus.py`   | 新建 - ZeroMQ消息总线     |
+| `console/server/extension/agents.py`    | 新建 - Agent管理器       |
+| `console/server/api/routes.py`          | 修改 - Agent API      |
+| `console/server/api/state.py`           | 修改 - 集成AgentManager |
+| `console/server/api/websocket.py`       | 修改 - Agent事件        |
+| `console/web/src/pages/Agents.tsx`      | 新建                  |
+| `console/web/src/pages/AgentDetail.tsx` | 新建                  |
+| `console/web/src/pages/Chat.tsx`        | 修改                  |
+| `console/web/src/api/client.ts`         | 修改                  |
+| `console/web/src/store/index.ts`        | 修改                  |
+
+

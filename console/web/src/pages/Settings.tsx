@@ -4,6 +4,7 @@ import {
   Tabs,
   Form,
   Input,
+  AutoComplete,
   InputNumber,
   Slider,
   Switch,
@@ -15,6 +16,7 @@ import {
   Radio,
   Tag,
   Alert,
+  Collapse,
 } from 'antd';
 import {
   SaveOutlined,
@@ -33,6 +35,36 @@ import * as api from '../api/client';
 import { useAppStore } from '../store';
 
 const { Title, Text } = Typography;
+
+/** Provider names that can be configured in Settings (schema keys, lowercase). */
+const PROVIDER_NAMES = [
+  'openai',
+  'anthropic',
+  'openrouter',
+  'deepseek',
+  'ollama',
+  'custom',
+  'groq',
+  'gemini',
+  'azure_openai',
+  'vllm',
+  'dashscope',
+  'zhipu',
+  'moonshot',
+  'minimax',
+  'aihubmix',
+  'siliconflow',
+  'volcengine',
+  'volcengine_coding_plan',
+  'byteplus',
+  'byteplus_coding_plan',
+] as const;
+
+export type ProviderFormEntry = {
+  apiKey: string;
+  apiBase: string;
+  extraHeadersJson: string;
+};
 
 type SettingsTab = 'general' | 'appearance' | 'providers' | 'tools' | 'channels' | 'environment';
 
@@ -56,6 +88,11 @@ export default function Settings() {
     queryFn: () => api.getConfig(currentBotId),
   });
 
+  const { data: status } = useQuery({
+    queryKey: ['status', currentBotId],
+    queryFn: () => api.getStatus(currentBotId),
+  });
+
   const { data: envData, isLoading: envLoading } = useQuery({
     queryKey: ['env', currentBotId],
     queryFn: () => api.getEnv(currentBotId),
@@ -72,18 +109,48 @@ export default function Settings() {
     }
   }, [envData]);
 
+  const [providerForm, setProviderForm] = useState<Record<string, ProviderFormEntry>>({});
+  useEffect(() => {
+    const raw = (config as Record<string, unknown>)?.providers as Record<string, Record<string, unknown>> | undefined;
+    if (!raw) {
+      const empty: ProviderFormEntry = { apiKey: '', apiBase: '', extraHeadersJson: '' };
+      setProviderForm(Object.fromEntries(PROVIDER_NAMES.map((name) => [name, empty])));
+      return;
+    }
+    const next: Record<string, ProviderFormEntry> = {};
+    for (const name of PROVIDER_NAMES) {
+      const p = raw[name] ?? raw[name.replace(/_/g, '')] ?? {};
+      const apiKey = (p.apiKey ?? p.api_key ?? '') as string;
+      const apiBase = (p.apiBase ?? p.api_base ?? '') as string;
+      const extra = p.extraHeaders ?? p.extra_headers;
+      const extraHeadersJson =
+        typeof extra === 'object' && extra !== null
+          ? JSON.stringify(extra, null, 2)
+          : typeof extra === 'string'
+            ? extra
+            : '';
+      next[name] = { apiKey, apiBase, extraHeadersJson };
+    }
+    setProviderForm(next);
+  }, [config]);
+
   useEffect(() => {
     if (config) {
       const agents = (config as Record<string, unknown>).agents as Record<string, unknown> | undefined;
       const tools = (config as Record<string, unknown>).tools as Record<string, unknown> | undefined;
       const defaults = agents?.defaults as Record<string, unknown> | undefined;
+      // 后端返回 camelCase (model_dump by_alias)，兼容 snake_case
+      const raw = (key: string, camel: string, fallback: number | string) => {
+        const d = defaults ?? {};
+        return (d[key] ?? d[camel] ?? fallback) as number | string;
+      };
 
       form.setFieldsValue({
-        model: (defaults?.model as string) || '',
-        max_iterations: (defaults?.max_iterations as number) || 40,
-        temperature: (defaults?.temperature as number) || 0.1,
-        memory_window: (defaults?.memory_window as number) || 100,
-        reasoning_effort: (defaults?.reasoning_effort as string) || 'medium',
+        model: (defaults?.model as string) ?? '',
+        max_iterations: Number(raw('maxToolIterations', 'max_tool_iterations', 40)),
+        temperature: Number(raw('temperature', 'temperature', 0.1)),
+        memory_window: Number(raw('memoryWindow', 'memory_window', 100)),
+        reasoning_effort: (raw('reasoningEffort', 'reasoning_effort', 'medium') as string) || 'medium',
         restrict_to_workspace: (tools?.restrictToWorkspace as boolean) || false,
       });
     }
@@ -121,8 +188,8 @@ export default function Settings() {
       section: 'agents',
       data: {
         defaults: {
-          model: values.model,
-          max_iterations: values.max_iterations,
+          model: values.model?.trim() || undefined,
+          max_tool_iterations: values.max_iterations,
           temperature: values.temperature,
           memory_window: values.memory_window,
           reasoning_effort: values.reasoning_effort,
@@ -140,6 +207,17 @@ export default function Settings() {
     updateEnvMutation.mutate(vars);
   };
 
+  const setProviderField = (
+    name: string,
+    field: keyof ProviderFormEntry,
+    value: string
+  ) => {
+    setProviderForm((prev) => ({
+      ...prev,
+      [name]: { ...(prev[name] ?? { apiKey: '', apiBase: '', extraHeadersJson: '' }), [field]: value },
+    }));
+  };
+
   const handleExportConfig = () => {
     const configStr = JSON.stringify(config, null, 2);
     const blob = new Blob([configStr], { type: 'application/json' });
@@ -153,7 +231,6 @@ export default function Settings() {
   };
 
   const configRaw = config as Record<string, unknown> | undefined;
-  const providers = configRaw?.providers as Record<string, Record<string, unknown>> | undefined;
   const channels = configRaw?.channels as Record<string, Record<string, unknown>> | undefined;
   const mcpServers = (configRaw?.tools as Record<string, unknown>)?.mcpServers as
     | Record<string, unknown>
@@ -253,9 +330,23 @@ export default function Settings() {
           <Form.Item
             label="Model"
             name="model"
-            extra="e.g. anthropic/claude-opus-4-5"
+            extra="Select a suggested model or type provider/model (e.g. anthropic/claude-opus-4-5)"
           >
-            <Input placeholder="anthropic/claude-opus-4-5" size="large" />
+            <AutoComplete
+              size="large"
+              placeholder="e.g. anthropic/claude-opus-4-5, deepseek-v3.2"
+              options={[
+                ...(status?.model ? [{ value: status.model }] : []),
+                { value: 'anthropic/claude-opus-4-5' },
+                { value: 'openai/gpt-4o' },
+                { value: 'deepseek-v3.2' },
+                { value: 'deepseek/deepseek-chat' },
+                { value: 'openrouter/openai/gpt-4o' },
+              ].filter((o, i, arr) => arr.findIndex((x) => x.value === o.value) === i)}
+              filterOption={(input, option) =>
+                (option?.value ?? '').toLowerCase().includes((input || '').toLowerCase())
+              }
+            />
           </Form.Item>
 
           <Form.Item label="Reasoning Effort" name="reasoning_effort">
@@ -374,70 +465,67 @@ export default function Settings() {
         </span>
       ),
       children: (
-        <div className="space-y-6">
-          <Title level={5}>Configured Providers</Title>
-
-          {providers && Object.keys(providers).length > 0 ? (
-            <div className="space-y-3">
-              {Object.entries(providers).map(([name, providerConfig]) => (
-                <Card
-                  key={name}
-                  size="small"
-                  className="border-gray-200 dark:border-gray-700"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700">
-                        <KeyOutlined className="text-gray-500" />
-                      </div>
-                      <div>
-                        <p className="font-medium capitalize">{name}</p>
-                        <Text type="secondary" className="text-xs">
-                          {Object.keys(providerConfig).join(', ')}
-                        </Text>
-                      </div>
+        <div className="space-y-4">
+          <Title level={5} className="!mb-0">
+            API Key / API Base
+          </Title>
+          <Alert
+            message="Sensitive"
+            description="API keys are stored in your config file. Restart the bot for provider changes to take effect."
+            type="warning"
+            showIcon
+            className="mb-2"
+          />
+          <Collapse
+            defaultActiveKey={[]}
+            items={PROVIDER_NAMES.map((name) => {
+              const entry = providerForm[name] ?? { apiKey: '', apiBase: '', extraHeadersJson: '' };
+              const hasKey = Boolean(entry.apiKey?.trim());
+              return {
+                key: name,
+                label: (
+                  <span className="flex items-center gap-2">
+                    <span className="font-medium capitalize">{name.replace(/_/g, ' ')}</span>
+                    {hasKey && <Tag color="success">Configured</Tag>}
+                  </span>
+                ),
+                children: (
+                  <div className="grid grid-cols-1 gap-3 pt-1">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">API Key</label>
+                      <Input.Password
+                        placeholder="sk-..."
+                        value={entry.apiKey}
+                        onChange={(e) => setProviderField(name, 'apiKey', e.target.value)}
+                        className="font-mono"
+                      />
                     </div>
-                    <Tag color="success">Configured</Tag>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">API Base (optional)</label>
+                      <Input
+                        placeholder="https://api.example.com/v1"
+                        value={entry.apiBase}
+                        onChange={(e) => setProviderField(name, 'apiBase', e.target.value)}
+                        className="font-mono"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">
+                        Extra Headers (optional, JSON)
+                      </label>
+                      <Input.TextArea
+                        placeholder='{"X-Custom-Header": "value"}'
+                        value={entry.extraHeadersJson}
+                        onChange={(e) => setProviderField(name, 'extraHeadersJson', e.target.value)}
+                        rows={2}
+                        className="font-mono text-sm"
+                      />
+                    </div>
                   </div>
-                </Card>
-              ))}
-            </div>
-          ) : (
-            <Alert
-              message="No providers configured"
-              description="Add provider API keys to your configuration file."
-              type="info"
-              showIcon
-              icon={<KeyOutlined />}
-            />
-          )}
-
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <Title level={5} className="!text-sm !mb-3">
-              Configuration Format
-            </Title>
-            <Alert
-              message={
-                <span>
-                  Edit your config file at{' '}
-                  <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono">
-                    ~/.nanobot/config.json
-                  </code>
-                </span>
-              }
-              type="info"
-              className="mb-3"
-            />
-            <pre className="p-5 bg-gray-900 dark:bg-gray-950 rounded-xl overflow-x-auto text-sm text-gray-100 font-mono">
-              {`{
-  "providers": {
-    "openrouter": { "apiKey": "sk-or-v1-xxx" },
-    "openai": { "apiKey": "sk-xxx" },
-    "anthropic": { "apiKey": "sk-ant-xxx" }
-  }
-}`}
-            </pre>
-          </div>
+                ),
+              };
+            })}
+          />
         </div>
       ),
     },

@@ -115,6 +115,7 @@ class ToolCallLog(BaseModel):
 
 class ConfigSection(str, Enum):
     GENERAL = "general"
+    AGENTS = "agents"
     PROVIDERS = "providers"
     TOOLS = "tools"
     CHANNELS = "channels"

@@ -11,7 +11,6 @@ import {
   Spin,
   Alert,
   Space,
-  List,
   Typography,
   Modal,
 } from 'antd';
@@ -22,15 +21,10 @@ import {
   ClockCircleOutlined,
   TeamOutlined,
   MessageOutlined,
-  CheckCircleOutlined,
   DollarOutlined,
-  ApiOutlined,
   ThunderboltOutlined,
   BarChartOutlined,
-  MobileOutlined,
-  CalendarOutlined,
 } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
 import { Column, Tiny, Pie } from '@ant-design/plots';
 import type { UsageHistoryItem } from '../api/types';
 import { formatTokenCount, formatCost } from '../utils/format';
@@ -52,22 +46,6 @@ function formatUptime(seconds: number): string {
   return `${minutes}m`;
 }
 
-function formatTimeAgo(dateStr?: string): string {
-  if (!dateStr) return '-';
-  const date = new Date(dateStr);
-  const now = new Date();
-  const diff = now.getTime() - date.getTime();
-  const minutes = Math.floor(diff / 60000);
-  const hours = Math.floor(diff / 3600000);
-  const days = Math.floor(diff / 86400000);
-
-  if (minutes < 1) return 'Just now';
-  if (minutes < 60) return `${minutes}m ago`;
-  if (hours < 24) return `${hours}h ago`;
-  if (days < 7) return `${days}d ago`;
-  return date.toLocaleDateString();
-}
-
 export default function Dashboard() {
   const queryClient = useQueryClient();
   const { setStatus, setChannels, setMCPServers, status, addToast, currentBotId } = useAppStore();
@@ -78,24 +56,10 @@ export default function Dashboard() {
     refetchInterval: false,
   });
 
-  const { data: recentSessions } = useQuery({
-    queryKey: ['sessions', 'recent', currentBotId],
-    queryFn: async () => {
-      const sessions = await api.listSessions(currentBotId);
-      return sessions.slice(0, 5);
-    },
-    refetchInterval: false,
-  });
-
   const { data: usageHistory, isLoading: usageLoading } = useQuery({
     queryKey: ['usage-history', currentBotId],
     queryFn: () => api.getUsageHistory(currentBotId, 14),
     refetchInterval: false,
-  });
-
-  const { data: cronJobs = [] } = useQuery({
-    queryKey: ['cron', currentBotId],
-    queryFn: () => api.listCronJobs(currentBotId, true),
   });
 
   useEffect(() => {
@@ -431,195 +395,6 @@ export default function Dashboard() {
           </Card>
         )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Recent Sessions */}
-        <Card
-          title={
-            <span className="flex items-center gap-2">
-              <ClockCircleOutlined className="text-purple-500" /> Recent Sessions
-            </span>
-          }
-          size="small"
-          bodyStyle={{ padding: 0 }}
-        >
-          <div className="max-h-[320px] overflow-y-auto">
-            <List
-              dataSource={recentSessions || []}
-              locale={{ emptyText: 'No recent sessions' }}
-              renderItem={(session) => (
-                <List.Item className="!px-4 !py-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{session.title || session.key}</p>
-                    <Text type="secondary" className="text-xs block line-clamp-2 break-words">
-                      {session.last_message || 'No messages'}
-                    </Text>
-                  </div>
-                  <div className="text-right text-sm text-gray-500 ml-4 flex-shrink-0">
-                    <p>{session.message_count} msgs</p>
-                    <p className="text-xs">{formatTimeAgo(session.updated_at)}</p>
-                  </div>
-                </List.Item>
-              )}
-            />
-          </div>
-        </Card>
-
-        {/* System Status */}
-        <Card
-          title={
-            <span className="flex items-center gap-2">
-              <CheckCircleOutlined className="text-green-500" /> System Status
-            </span>
-          }
-          size="small"
-        >
-          <div className="space-y-3">
-            <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30">
-              <span className="flex items-center gap-2 font-medium">
-                <MobileOutlined className="text-gray-500" /> Channels
-              </span>
-              <Space>
-                <Text type="secondary" className="text-sm">
-                  {status?.channels?.filter((c) => c.status === 'online').length || 0} /{' '}
-                  {status?.channels?.length || 0}
-                </Text>
-                <Badge
-                  status={
-                    (status?.channels?.length || 0) > 0 &&
-                    status?.channels?.some((c) => c.status === 'online')
-                      ? 'success'
-                      : 'default'
-                  }
-                />
-              </Space>
-            </div>
-
-            <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30">
-              <span className="flex items-center gap-2 font-medium">
-                <ApiOutlined className="text-gray-500" /> MCP Servers
-              </span>
-              <Space>
-                <Text type="secondary" className="text-sm">
-                  {status?.mcp_servers?.filter((m) => m.status === 'connected').length || 0} /{' '}
-                  {status?.mcp_servers?.length || 0}
-                </Text>
-                <Badge
-                  status={
-                    (status?.mcp_servers?.length || 0) > 0 &&
-                    status?.mcp_servers?.some((m) => m.status === 'connected')
-                      ? 'success'
-                      : 'default'
-                  }
-                />
-              </Space>
-            </div>
-
-            <Link to="/health">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
-                <span className="flex items-center gap-2 font-medium">
-                  <CheckCircleOutlined className="text-gray-500" /> Health
-                </span>
-                <Tag color={status?.running ? 'success' : 'default'}>
-                  {status?.running ? 'Healthy' : 'Stopped'}
-                </Tag>
-              </div>
-            </Link>
-            <Link to="/cron">
-              <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors cursor-pointer">
-                <span className="flex items-center gap-2 font-medium">
-                  <CalendarOutlined className="text-amber-500" /> Cron 任务
-                </span>
-                <Space>
-                  <Text type="secondary" className="text-sm">
-                    {cronJobs.filter((j) => j.enabled).length} / {cronJobs.length}
-                  </Text>
-                  <Badge
-                    status={cronJobs.length > 0 ? 'success' : 'default'}
-                  />
-                </Space>
-              </div>
-            </Link>
-          </div>
-        </Card>
-      </div>
-
-      {/* Channels Grid */}
-      <Card
-        title={
-          <span className="flex items-center gap-2">
-            <MobileOutlined className="text-blue-500" /> Channels
-            <Tag>{status?.channels?.length || 0}</Tag>
-          </span>
-        }
-        size="small"
-      >
-        {status?.channels && status.channels.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-            {status.channels.map((channel) => (
-              <div
-                key={channel.name}
-                className="flex flex-col items-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-              >
-                <Badge
-                  status={
-                    channel.status === 'online'
-                      ? 'success'
-                      : channel.status === 'error'
-                      ? 'error'
-                      : 'default'
-                  }
-                  className="mb-2"
-                />
-                <span className="text-sm font-medium capitalize">{channel.name}</span>
-                <span className="text-xs text-gray-500 mt-0.5 capitalize">{channel.status}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Text type="secondary" className="block text-center py-8">
-            No channels configured
-          </Text>
-        )}
-      </Card>
-
-      {/* MCP Servers Grid */}
-      <Card
-        title={
-          <span className="flex items-center gap-2">
-            <ApiOutlined className="text-purple-500" /> MCP Servers
-            <Tag>{status?.mcp_servers?.length || 0}</Tag>
-          </span>
-        }
-        size="small"
-      >
-        {status?.mcp_servers && status.mcp_servers.length > 0 ? (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {status.mcp_servers.map((server) => (
-              <div
-                key={server.name}
-                className="flex flex-col items-center p-4 rounded-xl bg-gray-50 dark:bg-gray-700/30 hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
-              >
-                <Badge
-                  status={
-                    server.status === 'connected'
-                      ? 'success'
-                      : server.status === 'error'
-                      ? 'error'
-                      : 'default'
-                  }
-                  className="mb-2"
-                />
-                <span className="text-sm font-medium">{server.name}</span>
-                <span className="text-xs text-gray-500 mt-0.5">{server.server_type}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <Text type="secondary" className="block text-center py-8">
-            No MCP servers configured
-          </Text>
-        )}
-      </Card>
     </div>
   );
 }

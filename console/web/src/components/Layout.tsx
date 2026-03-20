@@ -79,7 +79,7 @@ const navSections: NavSection[] = [
     ],
   },
   {
-    title: 'Settings',
+    title: 'Management',
     items: [
       { path: '/bots', label: 'Bots', icon: Bot },
       { path: '/settings', label: 'Settings', icon: Settings },

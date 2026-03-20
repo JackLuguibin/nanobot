@@ -12,6 +12,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 _SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
 
 
@@ -23,8 +25,8 @@ def _get_alerts_file_path(bot_id: str) -> Path:
         bot = get_registry().get_bot(bot_id)
         if bot:
             return Path(bot.config_path).parent / "alerts.json"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to get alerts file path for bot '{}': {}", bot_id, e)
     return Path.home() / ".nanobot" / "bots" / bot_id / "alerts.json"
 
 
@@ -38,7 +40,8 @@ def _load_alerts(bot_id: str) -> list[dict[str, Any]]:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         return data.get("alerts", [])
-    except Exception:
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to load alerts for bot '{}': {}", bot_id, e)
         return []
 
 
@@ -77,8 +80,8 @@ def _get_alert_config(bot_id: str) -> dict[str, Any]:
                     cfg["cron_overdue_minutes"] = int(
                         console_cfg.get("cron_overdue_minutes", cfg["cron_overdue_minutes"])
                     )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to get alert config for bot '{}': {}", bot_id, e)
     env_limit = os.environ.get("NANOBOT_COST_DAILY_LIMIT")
     if env_limit is not None:
         try:
@@ -230,7 +233,8 @@ def refresh_alerts(
             workspace = Path(bot.workspace_path) if bot.workspace_path else None
             try:
                 config = json.loads(Path(bot.config_path).read_text(encoding="utf-8"))
-            except Exception:
+            except (json.JSONDecodeError, OSError) as e:
+                logger.debug("Failed to read config for bot '{}': {}", bot_id, e)
                 config = {}
             health_issues = run_health_audit(bot_id, workspace, config, status)
             for issue in health_issues:
@@ -242,5 +246,5 @@ def refresh_alerts(
                         issue.get("message", "健康检查发现严重问题"),
                         {"path": issue.get("path")},
                     )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to run health audit for bot '{}': {}", bot_id, e)

@@ -29,7 +29,7 @@ def _count_session_messages_from_path(path: Path) -> int:
     try:
         with open(path, encoding="utf-8") as f:
             return max(0, sum(1 for _ in f) - 1)
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return 0
 
 
@@ -202,8 +202,8 @@ class BotState:
             from console.server.extension.usage import get_usage_today
 
             token_usage = get_usage_today(self.bot_id)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to load usage data: {}", e)
 
         return {
             "running": self.is_running,
@@ -239,8 +239,8 @@ class BotState:
                         "created_at": s.get("created_at"),
                         "updated_at": s.get("updated_at"),
                     }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to list sessions: {}", e)
 
         if hasattr(self._session_manager, "_cache"):
             for key, session in self._session_manager._cache.items():
@@ -308,8 +308,8 @@ class BotState:
                     "messages": messages,
                     "message_count": len(messages),
                 }
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to get_or_create session '{}': {}", key, e)
 
         return None
 
@@ -344,7 +344,7 @@ class BotState:
                 if path.exists():
                     path.unlink(missing_ok=True)
                     deleted = True
-            except Exception:
+            except OSError:
                 pass
         # Legacy path (nanobot may have sessions in legacy dir)
         if hasattr(self._session_manager, "_get_legacy_session_path"):
@@ -353,7 +353,7 @@ class BotState:
                 if legacy_path.exists():
                     legacy_path.unlink(missing_ok=True)
                     deleted = True
-            except Exception:
+            except OSError:
                 pass
 
         # Remove from in-memory cache
@@ -364,8 +364,8 @@ class BotState:
             try:
                 self._session_manager.invalidate(key)
                 deleted = True
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to invalidate session '{}': {}", key, e)
 
         return deleted
 

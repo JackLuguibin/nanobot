@@ -9,6 +9,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 _BOOTSTRAP_FILES = ["SOUL.md", "USER.md", "AGENTS.md", "TOOLS.md"]
 _EMPTY_THRESHOLD = 50  # chars
 
@@ -67,8 +69,8 @@ def run_health_audit(
                             "path": fname,
                         }
                     )
-            except Exception:
-                pass
+            except (OSError, UnicodeDecodeError) as e:
+                logger.debug("Failed to read bootstrap file '{}': {}", fname, e)
 
     # 3. MCP 配置错误
     tools_config = config.get("tools") or {}

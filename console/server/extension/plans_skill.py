@@ -8,6 +8,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 
 def get_plans_skill_content() -> str:
     """获取 Plans skill 的完整内容。"""
@@ -109,7 +111,8 @@ def ensure_plans_skill(workspace: Path) -> bool:
         content = get_plans_skill_content()
         (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
         return True
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to ensure plans skill: {}", e)
         return False
 
 
@@ -120,5 +123,6 @@ def patch_plans_skill(workspace: Path) -> None:
     """
     try:
         ensure_plans_skill(workspace)
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to patch plans skill: {}", e)
         pass  # 静默失败，不影响 agent 正常运行

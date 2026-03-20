@@ -14,6 +14,8 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from loguru import logger
+
 if TYPE_CHECKING:
     from nanobot.providers.base import LLMProvider, LLMResponse
 
@@ -55,8 +57,8 @@ def _get_model_prices(bot_id: str | None = None) -> dict[str, tuple[float, float
             for k, v in custom.items():
                 if isinstance(v, (list, tuple)) and len(v) >= 2:
                     prices[k] = (float(v[0]), float(v[1]))
-        except Exception:
-            pass
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.debug("Failed to parse NANOBOT_MODEL_PRICES env var: {}", e)
 
     # Config: console.model_prices 或 providers.*.model_prices
     try:
@@ -75,8 +77,8 @@ def _get_model_prices(bot_id: str | None = None) -> dict[str, tuple[float, float
                     for k, v in custom.items():
                         if isinstance(v, (list, tuple)) and len(v) >= 2:
                             prices[k] = (float(v[0]), float(v[1]))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to get model prices from config: {}", e)
 
     return prices
 
@@ -116,8 +118,8 @@ def _get_usage_file_path(bot_id: str) -> Path:
         bot = get_registry().get_bot(bot_id)
         if bot:
             return Path(bot.config_path).parent / "usage.json"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to get usage file path for bot '{}': {}", bot_id, e)
     return Path.home() / ".nanobot" / "bots" / bot_id / "usage.json"
 
 
@@ -176,7 +178,8 @@ def _load_usage_data(bot_id: str) -> dict[str, dict[str, dict[str, int]]]:
         with open(path, encoding="utf-8") as f:
             raw = json.load(f)
         return _normalize_usage_data(raw)
-    except Exception:
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to load usage data for bot '{}': {}", bot_id, e)
         return {}
 
 

@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 _MAX_HISTORY_PER_JOB = 20
 
 
@@ -21,8 +23,8 @@ def _get_history_path(bot_id: str) -> Path:
         bot = get_registry().get_bot(bot_id)
         if bot:
             return Path(bot.config_path).parent / "cron" / "history.json"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to get cron history path for bot '{}': {}", bot_id, e)
     return Path.home() / ".nanobot" / "bots" / bot_id / "cron" / "history.json"
 
 
@@ -35,7 +37,8 @@ def _load_history(bot_id: str) -> dict[str, list[dict[str, Any]]]:
     try:
         with open(path, encoding="utf-8") as f:
             return json.load(f)
-    except Exception:
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to load cron history for bot '{}': {}", bot_id, e)
         return {}
 
 

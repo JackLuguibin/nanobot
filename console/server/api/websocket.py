@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
+from loguru import logger
 
 from console.server.api.models import WSMessage, WSMessageType
 from console.server.api.state import get_state, get_state_manager
@@ -47,7 +48,7 @@ class ConnectionManager:
         for connection in connections:
             try:
                 await connection.send_text(message_json)
-            except Exception:
+            except OSError:
                 disconnected.append(connection)
 
         # Clean up disconnected clients
@@ -66,7 +67,7 @@ class ConnectionManager:
         try:
             message_json = json.dumps(message.model_dump(), default=str)
             await websocket.send_text(message_json)
-        except Exception:
+        except OSError:
             pass
 
     async def broadcast_status_update(
@@ -188,8 +189,8 @@ async def handle_websocket(websocket: WebSocket) -> None:
                     data={"bot_id": default_bot_id, "sessions": sessions},
                 ),
             )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("WebSocket initial send failed: {}", e)
 
     try:
         # Keep the connection alive and handle incoming messages

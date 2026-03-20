@@ -121,7 +121,7 @@ async def get_bot(bot_id: str) -> BotInfoResponse:
 async def create_bot(request: BotCreateRequest) -> BotInfoResponse:
     """Create a new bot with independent config and workspace."""
     from console.server.bot_registry import get_registry
-    from console.server.main import _initialize_bot
+    from console.server.utils.bot_builder import _initialize_bot
     from nanobot.config.loader import load_config
 
     registry = get_registry()
@@ -177,8 +177,8 @@ async def delete_bot(bot_id: str) -> dict[str, str]:
         if old_state.agent_loop:
             try:
                 await old_state.stop_current_task()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to stop current task on bot '{}': {}", bot_id, e)
 
     registry.delete_bot(bot_id)
 
@@ -210,7 +210,7 @@ async def start_bot(bot_id: str) -> BotInfoResponse:
 
     from console.server.bot_registry import get_registry
     from console.server.extension.config_loader import load_bot_config
-    from console.server.main import _initialize_bot
+    from console.server.utils.bot_builder import _initialize_bot
 
     registry = get_registry()
     manager = get_state_manager()
@@ -309,8 +309,8 @@ async def stop_bot(bot_id: str) -> BotInfoResponse:
         if old_state.agent_loop:
             try:
                 await old_state.stop_current_task()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to stop current task on bot '{}': {}", bot_id, e)
     logger.info("Stopped bot '{}' ({})", bot.name, bot_id)
 
     await get_connection_manager().broadcast_bots_update()
@@ -463,8 +463,8 @@ async def get_tool_logs(
                     continue
                 logs.append(log)
                 seen_ids.add(entry.get("id"))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to convert activity entry to tool log: {}", e)
 
     if tool_name:
         logs = [log for log in logs if log.get("tool_name") == tool_name]
@@ -785,7 +785,7 @@ def _read_workspace_file(workspace: Path, filename: str) -> str:
         return ""
     try:
         return path.read_text(encoding="utf-8")
-    except Exception:
+    except (OSError, UnicodeDecodeError):
         return ""
 
 
@@ -798,7 +798,7 @@ def _resolve_workspace_path(workspace: Path, rel_path: str) -> Path | None:
         if not str(resolved).startswith(str(workspace.resolve())):
             return None
         return resolved
-    except Exception:
+    except (OSError, ValueError):
         return None
 
 
@@ -1755,8 +1755,8 @@ async def get_alerts(
                         },
                     }
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Failed to serialize cron job '{}': {}", j.id, e)
     refresh_alerts(bid, status, cron_jobs, usage_today)
     return _get_alerts(bid, include_dismissed=include_dismissed)
 

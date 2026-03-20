@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 from urllib.request import Request, urlopen
 
+from loguru import logger
+
 
 def _fetch_url(url: str) -> str:
     """Fetch URL content."""
@@ -27,7 +29,8 @@ def fetch_registry(registry_url: str | None = None) -> list[dict[str, Any]]:
     try:
         data = json.loads(_fetch_url(url))
         return data.get("skills", [])
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to fetch registry from '{}': {}", registry_url, e)
         return []
 
 
@@ -70,13 +73,15 @@ def install_skill_from_registry(
     # Fetch SKILL.md - URL might point to file or we append /SKILL.md
     try:
         content = _fetch_url(url)
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to fetch skill '{}': {}", name, e)
         # Try appending /SKILL.md if URL looks like a folder
         if not url.endswith(".md"):
             try:
                 base = url.rstrip("/")
                 content = _fetch_url(f"{base}/SKILL.md")
-            except Exception:
+            except Exception as e:
+                logger.debug("Failed to fetch SKILL.md for '{}': {}", name, e)
                 return False
         else:
             return False

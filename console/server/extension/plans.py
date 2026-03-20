@@ -9,6 +9,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from loguru import logger
+
 
 def _get_plans_path(bot_id: str) -> Path:
     """获取 plans 文件路径。"""
@@ -18,8 +20,8 @@ def _get_plans_path(bot_id: str) -> Path:
         bot = get_registry().get_bot(bot_id)
         if bot:
             return Path(bot.config_path).parent / "plans.json"
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Failed to get plans path for bot '{}': {}", bot_id, e)
     return Path.home() / ".nanobot" / "bots" / bot_id / "plans.json"
 
 
@@ -50,7 +52,8 @@ def get_plans(bot_id: str) -> dict[str, Any]:
         if "tasks" not in data:
             data["tasks"] = []
         return data
-    except Exception:
+    except (json.JSONDecodeError, OSError) as e:
+        logger.debug("Failed to load plans for bot '{}': {}", bot_id, e)
         return {
             "id": "board-default",
             "name": "默认看板",

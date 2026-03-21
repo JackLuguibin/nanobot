@@ -34,7 +34,7 @@ import { Sun, Moon, Monitor } from 'lucide-react';
 import * as api from '../api/client';
 import { useAppStore } from '../store';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 /** Provider names that can be configured in Settings (schema keys, lowercase). */
 const PROVIDER_NAMES = [
@@ -69,7 +69,11 @@ export type ProviderFormEntry = {
 type SettingsTab = 'general' | 'appearance' | 'providers' | 'tools' | 'channels' | 'environment';
 
 interface FormData {
+  workspace: string;
   model: string;
+  provider: string;
+  max_tokens: number;
+  context_window_tokens: number;
   max_iterations: number;
   temperature: number;
   memory_window: number;
@@ -146,7 +150,11 @@ export default function Settings() {
       };
 
       form.setFieldsValue({
+        workspace: (defaults?.workspace as string) ?? '~/.nanobot/workspace',
         model: (defaults?.model as string) ?? '',
+        provider: (defaults?.provider as string) ?? 'auto',
+        max_tokens: Number(raw('maxTokens', 'max_tokens', 8192)),
+        context_window_tokens: Number(raw('contextWindowTokens', 'context_window_tokens', 65536)),
         max_iterations: Number(raw('maxToolIterations', 'max_tool_iterations', 40)),
         temperature: Number(raw('temperature', 'temperature', 0.1)),
         memory_window: Number(raw('memoryWindow', 'memory_window', 100)),
@@ -188,7 +196,11 @@ export default function Settings() {
       section: 'agents',
       data: {
         defaults: {
+          workspace: values.workspace?.trim() || undefined,
           model: values.model?.trim() || undefined,
+          provider: values.provider?.trim() || undefined,
+          max_tokens: values.max_tokens,
+          context_window_tokens: values.context_window_tokens,
           max_tool_iterations: values.max_iterations,
           temperature: values.temperature,
           memory_window: values.memory_window,
@@ -245,10 +257,10 @@ export default function Settings() {
   }
 
   const envTabContent = (
-    <div className="max-w-2xl space-y-4">
-      <Title level={5} className="!mb-4">
-        Environment Variables
-      </Title>
+    <Card
+      title="Environment Variables"
+      className="max-w-2xl shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+    >
       <Alert
         message="These variables are written to .env and loaded when the bot starts."
         description="Restart the bot after saving for changes to take effect. Values are stored as plain text."
@@ -310,7 +322,7 @@ export default function Settings() {
           </div>
         </>
       )}
-    </div>
+    </Card>
   );
 
   const tabItems = [
@@ -322,84 +334,141 @@ export default function Settings() {
         </span>
       ),
       children: (
-        <Form form={form} layout="vertical">
-          <Title level={5} className="!mb-4">
-            Agent Defaults
-          </Title>
+        <Card
+          title="Agent Defaults"
+          className="shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+          styles={{ body: { paddingTop: 4 } }}
+        >
+          <Form form={form} layout="vertical" className="max-w-xl">
+            <Form.Item
+              label="Model"
+              name="model"
+              extra="Select a suggested model or type provider/model (e.g. anthropic/claude-opus-4-5)"
+            >
+              <AutoComplete
+                size="large"
+                placeholder="e.g. anthropic/claude-opus-4-5, deepseek-v3.2"
+                options={[
+                  ...(status?.model ? [{ value: status.model }] : []),
+                  { value: 'anthropic/claude-opus-4-5' },
+                  { value: 'openai/gpt-4o' },
+                  { value: 'deepseek-v3.2' },
+                  { value: 'deepseek/deepseek-chat' },
+                  { value: 'openrouter/openai/gpt-4o' },
+                ].filter((o, i, arr) => arr.findIndex((x) => x.value === o.value) === i)}
+                filterOption={(input, option) =>
+                  (option?.value ?? '').toLowerCase().includes((input || '').toLowerCase())
+                }
+              />
+            </Form.Item>
 
-          <Form.Item
-            label="Model"
-            name="model"
-            extra="Select a suggested model or type provider/model (e.g. anthropic/claude-opus-4-5)"
-          >
-            <AutoComplete
-              size="large"
-              placeholder="e.g. anthropic/claude-opus-4-5, deepseek-v3.2"
-              options={[
-                ...(status?.model ? [{ value: status.model }] : []),
-                { value: 'anthropic/claude-opus-4-5' },
-                { value: 'openai/gpt-4o' },
-                { value: 'deepseek-v3.2' },
-                { value: 'deepseek/deepseek-chat' },
-                { value: 'openrouter/openai/gpt-4o' },
-              ].filter((o, i, arr) => arr.findIndex((x) => x.value === o.value) === i)}
-              filterOption={(input, option) =>
-                (option?.value ?? '').toLowerCase().includes((input || '').toLowerCase())
+            <Form.Item
+              label="Provider"
+              name="provider"
+              extra="Select a LLM provider or leave as 'auto' for automatic detection"
+            >
+              <AutoComplete
+                size="large"
+                placeholder="e.g. auto, anthropic, openai, deepseek"
+                options={[
+                  { value: 'auto' },
+                  ...PROVIDER_NAMES.map((p) => ({ value: p })),
+                ].filter((o, i, arr) => arr.findIndex((x) => x.value === o.value) === i)}
+                filterOption={(input, option) =>
+                  (option?.value ?? '').toLowerCase().includes((input || '').toLowerCase())
+                }
+              />
+            </Form.Item>
+
+            <Form.Item label="Reasoning Effort" name="reasoning_effort">
+              <Radio.Group buttonStyle="solid" size="large">
+                <Radio.Button value="low">Low</Radio.Button>
+                <Radio.Button value="medium">Medium</Radio.Button>
+                <Radio.Button value="high">High</Radio.Button>
+              </Radio.Group>
+            </Form.Item>
+
+            <Form.Item
+              label="Workspace"
+              name="workspace"
+              extra="Directory for bot workspace files (e.g. ~/.nanobot/workspace)"
+            >
+              <Input placeholder="~/.nanobot/workspace" size="large" />
+            </Form.Item>
+
+            <Form.Item
+              label={
+                <span>
+                  Max Tokens{' '}
+                  <Text type="secondary" className="text-xs font-normal">
+                    (1 – 200000)
+                  </Text>
+                </span>
               }
-            />
-          </Form.Item>
+              name="max_tokens"
+            >
+              <InputNumber min={1} max={200000} className="w-full max-w-[200px]" size="large" />
+            </Form.Item>
 
-          <Form.Item label="Reasoning Effort" name="reasoning_effort">
-            <Radio.Group buttonStyle="solid" size="large">
-              <Radio.Button value="low">Low</Radio.Button>
-              <Radio.Button value="medium">Medium</Radio.Button>
-              <Radio.Button value="high">High</Radio.Button>
-            </Radio.Group>
-          </Form.Item>
+            <Form.Item
+              label={
+                <span>
+                  Context Window Tokens{' '}
+                  <Text type="secondary" className="text-xs font-normal">
+                    (1 – 1000000)
+                  </Text>
+                </span>
+              }
+              name="context_window_tokens"
+            >
+              <InputNumber min={1} max={1000000} className="w-full max-w-[200px]" size="large" />
+            </Form.Item>
 
-          <Form.Item
-            label={
-              <span>
-                Max Iterations{' '}
-                <Text type="secondary" className="text-xs font-normal">
-                  (1 – 100)
-                </Text>
-              </span>
-            }
-            name="max_iterations"
-          >
-            <Slider min={1} max={100} marks={{ 1: '1', 50: '50', 100: '100' }} />
-          </Form.Item>
+            <Form.Item
+              label={
+                <span>
+                  Max Iterations{' '}
+                  <Text type="secondary" className="text-xs font-normal">
+                    (1 – 100)
+                  </Text>
+                </span>
+              }
+              name="max_iterations"
+            >
+              <Slider min={1} max={100} marks={{ 1: '1', 50: '50', 100: '100' }} tooltip={{ formatter: (v) => (v !== undefined ? v : '') }} />
+            </Form.Item>
 
-          <Form.Item
-            label={
-              <span>
-                Temperature{' '}
-                <Text type="secondary" className="text-xs font-normal">
-                  (0.0 – 2.0)
-                </Text>
-              </span>
-            }
-            name="temperature"
-          >
-            <Slider
-              min={0}
-              max={2}
-              step={0.1}
-              marks={{ 0: 'Focused', 1: '1.0', 2: 'Creative' }}
-            />
-          </Form.Item>
+            <Form.Item
+              label={
+                <span>
+                  Temperature{' '}
+                  <Text type="secondary" className="text-xs font-normal">
+                    (0.0 – 2.0)
+                  </Text>
+                </span>
+              }
+              name="temperature"
+            >
+              <Slider
+                min={0}
+                max={2}
+                step={0.1}
+                marks={{ 0: '0.0', 1: '1.0', 2: '2.0' }}
+                tooltip={{ formatter: (v) => (v !== undefined ? v.toFixed(1) : '') }}
+              />
+            </Form.Item>
 
-          <Form.Item label="Memory Window" name="memory_window">
-            <InputNumber
-              min={1}
-              max={1000}
-              className="w-full"
-              addonAfter="messages"
-              size="large"
-            />
-          </Form.Item>
-        </Form>
+            <Form.Item label="Memory Window" name="memory_window">
+              <InputNumber
+                min={1}
+                max={1000}
+                className="w-full max-w-[180px]"
+                addonAfter="messages"
+                size="large"
+              />
+            </Form.Item>
+          </Form>
+        </Card>
       ),
     },
     {
@@ -410,10 +479,10 @@ export default function Settings() {
         </span>
       ),
       children: (
-        <div className="max-w-2xl">
-          <Title level={5} className="!mb-4">
-            Theme
-          </Title>
+        <Card
+          title="Theme"
+          className="max-w-2xl shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+        >
           <div className="grid grid-cols-3 gap-4">
             {[
               { value: 'light', Icon: Sun, label: 'Light', desc: 'Clean and bright' },
@@ -454,7 +523,7 @@ export default function Settings() {
               </Card>
             ))}
           </div>
-        </div>
+        </Card>
       ),
     },
     {
@@ -465,18 +534,20 @@ export default function Settings() {
         </span>
       ),
       children: (
-        <div className="space-y-4">
-          <Title level={5} className="!mb-0">
-            API Key / API Base
-          </Title>
-          <Alert
-            message="Sensitive"
-            description="API keys are stored in your config file. Restart the bot for provider changes to take effect."
-            type="warning"
-            showIcon
-            className="mb-2"
-          />
-          <Collapse
+        <div className="max-w-2xl space-y-4">
+          <Card
+            title="API Key / API Base"
+            className="shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+            styles={{ body: { paddingTop: 0 } }}
+          >
+            <Alert
+              message="Sensitive"
+              description="API keys are stored in your config file. Restart the bot for provider changes to take effect."
+              type="warning"
+              showIcon
+              className="mb-4"
+            />
+            <Collapse
             defaultActiveKey={[]}
             items={PROVIDER_NAMES.map((name) => {
               const entry = providerForm[name] ?? { apiKey: '', apiBase: '', extraHeadersJson: '' };
@@ -525,7 +596,8 @@ export default function Settings() {
                 ),
               };
             })}
-          />
+            />
+          </Card>
         </div>
       ),
     },
@@ -537,11 +609,13 @@ export default function Settings() {
         </span>
       ),
       children: (
-        <div className="space-y-6">
-          <Title level={5}>Tool Settings</Title>
-
+        <div className="max-w-2xl space-y-6">
+          <Card
+            title="Tool Settings"
+            className="shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+          >
           <Form form={form} layout="vertical">
-            <Card size="small">
+            <div className="rounded-lg bg-gray-50 dark:bg-gray-800/50 p-4 border border-gray-100 dark:border-gray-700/50">
               <div className="flex items-center justify-between">
                 <div className="flex-1 pr-4">
                   <p className="font-medium">Restrict to Workspace</p>
@@ -554,13 +628,16 @@ export default function Settings() {
                   <Switch />
                 </Form.Item>
               </div>
-            </Card>
+            </div>
           </Form>
+          </Card>
 
-          <div>
-            <Title level={5} className="!text-sm !mb-3">
-              Configured MCP Servers
-            </Title>
+          <Card
+            title="Configured MCP Servers"
+            size="small"
+            className="shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+          >
+          <div className="pt-1">
             {mcpServers && Object.keys(mcpServers).length > 0 ? (
               <div className="space-y-2">
                 {Object.entries(mcpServers).map(([name, serverConfig]) => {
@@ -598,6 +675,7 @@ export default function Settings() {
               />
             )}
           </div>
+          </Card>
         </div>
       ),
     },
@@ -609,9 +687,11 @@ export default function Settings() {
         </span>
       ),
       children: (
-        <div className="space-y-6">
-          <Title level={5}>Configured Channels</Title>
-
+        <div className="max-w-2xl space-y-6">
+          <Card
+            title="Configured Channels"
+            className="shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+          >
           {channels && Object.keys(channels).length > 0 ? (
             <div className="space-y-3">
               {Object.entries(channels).map(([name, channelConfig]) => {
@@ -638,20 +718,23 @@ export default function Settings() {
                 );
               })}
             </div>
-          ) : (
-            <Alert
-              message="No channels configured"
-              description="Add channel configurations to your config file."
-              type="info"
-              showIcon
-              icon={<MobileOutlined />}
-            />
+            ) : (
+              <Alert
+                message="No channels configured"
+                description="Add channel configurations to your config file."
+                type="info"
+                showIcon
+                icon={<MobileOutlined />}
+              />
           )}
+          </Card>
 
-          <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
-            <Title level={5} className="!text-sm !mb-3">
-              Configuration Format
-            </Title>
+          <Card
+            title="Configuration Format"
+            size="small"
+            className="shadow-sm border border-gray-200/80 dark:border-gray-700/80"
+          >
+          <div className="pt-1">
             <Alert
               message={
                 <span>
@@ -673,6 +756,7 @@ export default function Settings() {
 }`}
             </pre>
           </div>
+          </Card>
         </div>
       ),
     },
@@ -688,16 +772,18 @@ export default function Settings() {
   ];
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-6 max-w-4xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">
             Settings
           </h1>
-          <p className="text-sm text-gray-500 mt-1">Configure your Nanobot preferences</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+            Configure your Nanobot preferences
+          </p>
         </div>
-        <Space>
+        <Space wrap>
           <Button icon={<DownloadOutlined />} onClick={handleExportConfig}>
             Export
           </Button>
@@ -716,6 +802,7 @@ export default function Settings() {
         activeKey={activeTab}
         onChange={(key) => setActiveTab(key as SettingsTab)}
         items={tabItems}
+        className="settings-tabs [&_.ant-slider-track]:h-2 [&_.ant-slider-rail]:h-2"
       />
     </div>
   );

@@ -385,29 +385,14 @@ export default function Agents() {
         <Empty description={`错误: ${(error as Error).message}`} className="py-12 shrink-0" />
       ) : filteredAgents.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
-          <Card
-            className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60 bg-white dark:bg-gray-800/40 shadow-sm max-w-md w-full"
-            styles={{ body: { padding: '3rem 2rem' } }}
-          >
-            <Empty
-              description={
-                <span className="text-gray-500 dark:text-gray-400">
-                  暂无 Agent，点击上方按钮创建
-                </span>
-              }
-              className="py-4"
-            >
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={() => setCreateModalOpen(true)}
-                className="mt-4"
-                size="large"
-              >
-                创建 Agent
-              </Button>
-            </Empty>
-          </Card>
+          <Empty
+            description={
+              <span className="text-gray-500 dark:text-gray-400">
+                暂无 Agent，点击上方按钮创建
+              </span>
+            }
+            className="py-12"
+          />
         </div>
       ) : (
         <div className="w-full grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
@@ -423,64 +408,60 @@ export default function Agents() {
                 styles={{ body: { padding: 0 } }}
                 hoverable
               >
-                {/* Top colored border - thicker */}
+                {/* Accent bar — content starts below via padding-top */}
                 <div
-                  className="absolute top-0 left-0 right-0 h-1.5"
+                  className="absolute top-0 left-0 right-0 h-1.5 z-[1]"
                   style={{ backgroundColor: categoryConfig.color }}
                 />
-                
-                <div className="p-3 relative">
-                  {/* Labels in top right corner */}
-                  <div className="absolute top-3 right-3 flex items-center gap-1 flex-wrap justify-end">
-                    <Tag
-                      className="text-xs !m-0 border-0 px-1.5 py-0 rounded"
-                      style={{
-                        backgroundColor: `${categoryConfig.color}20`,
-                        color: categoryConfig.color,
-                      }}
-                    >
-                      {categoryConfig.label}
-                    </Tag>
-                    {agent.enabled && (
-                      <Tag 
-                        className="text-xs !m-0 border-0 px-1.5 py-0 rounded" 
-                        style={{ backgroundColor: '#f0f0ff', color: '#722ed1' }}
-                      >
-                        系统
-                      </Tag>
-                    )}
-                  </div>
 
-                  {/* Header with checkbox, icon, and name */}
-                  <div className="flex items-start gap-2 mb-2 pr-16">
+                <div className="relative z-0 px-3.5 pb-3 pt-3.5">
+                  {/* Header: checkbox + icon + title/tags (flow layout, no overlap) */}
+                  <div className="flex items-start gap-2.5 mb-2">
                     <Checkbox
                       checked={isSelected}
                       onChange={() => handleToggleSelect(agent.id)}
                       onClick={(e) => e.stopPropagation()}
-                      className="mt-0.5"
+                      className="mt-1 shrink-0"
                     />
-                    <div 
-                      className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105" 
+                    <div
+                      className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-transform group-hover:scale-105"
                       style={{ backgroundColor: `${categoryConfig.color}15` }}
                     >
-                      <Bot className="w-4 h-4" style={{ color: categoryConfig.color }} />
+                      <Bot className="w-[18px] h-[18px]" style={{ color: categoryConfig.color }} />
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100 truncate text-sm">
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100 text-sm leading-snug line-clamp-2 break-words">
                         {agent.name}
                       </h3>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Tag
+                          className="text-xs !m-0 border-0 px-1.5 py-0.5 rounded-md leading-none"
+                          style={{
+                            backgroundColor: `${categoryConfig.color}20`,
+                            color: categoryConfig.color,
+                          }}
+                        >
+                          {categoryConfig.label}
+                        </Tag>
+                        {agent.enabled && (
+                          <Tag
+                            className="text-xs !m-0 border-0 px-1.5 py-0.5 rounded-md leading-none dark:!bg-[#2a1f4a] dark:!text-[#b37feb]"
+                            style={{ backgroundColor: '#f0f0ff', color: '#722ed1' }}
+                          >
+                            系统
+                          </Tag>
+                        )}
+                      </div>
+                      {agent.description && (
+                        <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-2 leading-snug pt-0.5">
+                          {agent.description}
+                        </p>
+                      )}
                     </div>
                   </div>
 
-                  {/* Description */}
-                  {agent.description && (
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 line-clamp-2 leading-snug">
-                      {agent.description}
-                    </p>
-                  )}
-
-                  {/* Action buttons - compact */}
-                  <div className="flex items-center justify-end gap-0.5 pt-2 border-t border-gray-100 dark:border-gray-700">
+                  {/* Action buttons */}
+                  <div className="flex items-center justify-end gap-0.5 pt-2.5 mt-0.5 border-t border-gray-100 dark:border-gray-700">
                     <Tooltip title="编辑">
                       <Button
                         type="text"

@@ -581,9 +581,11 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
 
         state.increment_messages()
 
+        message = response.content if response else ""
+
         return ChatResponse(
             session_key=session_key,
-            message=response or "",
+            message=message,
             done=True,
         )
 
@@ -678,8 +680,9 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
                     )
 
                     if follow_up_response:
+                        content = follow_up_response.content if hasattr(follow_up_response, 'content') else follow_up_response
                         await queue.put(
-                            f"data: {json.dumps({'type': 'assistant_message', 'content': follow_up_response, 'source': 'sub_agent'})}\n\n"
+                            f"data: {json.dumps({'type': 'assistant_message', 'content': content, 'source': 'sub_agent'})}\n\n"
                         )
                 except Exception as e:
                     logger.warning("Failed to process subagent result: {}", e)
@@ -699,7 +702,7 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
                         chat_id="web",
                         on_progress=stream_progress,
                     )
-                    response_holder.append(response_text or "")
+                    response_holder.append(response_text.content if response_text else "")
                 except Exception as e:
                     agent_failed[0] = True
                     await queue.put(f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n")

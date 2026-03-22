@@ -183,7 +183,7 @@ def _start_gateway_internal(gateway_port: int) -> None:
                 OutboundMessage(
                     channel=job.payload.channel or "cli",
                     chat_id=job.payload.to,
-                    content=response,
+                    content=response.content if response else "",
                 )
             )
         return response
@@ -226,7 +226,7 @@ def _start_gateway_internal(gateway_port: int) -> None:
         if channel == "cli":
             return
         await bus.publish_outbound(
-            OutboundMessage(channel=channel, chat_id=chat_id, content=response)
+            OutboundMessage(channel=channel, chat_id=chat_id, content=response.content if response else "")
         )
 
     hb_cfg = config.gateway.heartbeat

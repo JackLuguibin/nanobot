@@ -5,35 +5,19 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 
 from console.server.api.state import get_state
+from console.server.models.skills import (
+    SkillContentUpdateRequest,
+    SkillCreateRequest,
+    SkillInstallFromRegistryRequest,
+)
 
 router = APIRouter(prefix="/api/skills")
 
 
 def _resolve_state(bot_id: str | None = None):
     return get_state(bot_id)
-
-
-# ---------------------------------------------------------------------------
-# Request/Response Models
-# ---------------------------------------------------------------------------
-
-
-class SkillCreateRequest(BaseModel):
-    name: str
-    description: str
-    content: str = ""
-
-
-class SkillContentUpdateRequest(BaseModel):
-    content: str
-
-
-class SkillInstallFromRegistryRequest(BaseModel):
-    name: str
-    registry_url: str | None = None
 
 
 # ---------------------------------------------------------------------------

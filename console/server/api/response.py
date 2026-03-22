@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import Response
 
-from console.server.api.models import API_CODE_SUCCESS, ApiErrorResponse
+from console.server.models.base import API_CODE_SUCCESS, ApiErrorResponse
 
 
 def _error_body(code: int, message: str) -> dict[str, Any]:

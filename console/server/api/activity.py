@@ -7,9 +7,9 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel
 
 from console.server.api.state import get_state
+from console.server.models.activity import HealthResponse
 
 router = APIRouter(prefix="/api")
 
@@ -151,12 +151,6 @@ async def dismiss_alert(
 # ---------------------------------------------------------------------------
 
 
-class HealthResponse(BaseModel):
-    status: str
-    version: str
-    timestamp: str
-
-
 @router.get("/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """Health check endpoint."""
@@ -185,7 +179,6 @@ async def health_audit(bot_id: str | None = Query(None)) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Control
 # ---------------------------------------------------------------------------
-
 
 @router.post("/control/stop")
 async def stop_current_task(bot_id: str | None = Query(None)) -> dict[str, str]:

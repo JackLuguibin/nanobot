@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from pydantic import BaseModel
 
-from console.server.api.models import SessionInfo
+from console.server.models.base import SessionInfo
 from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager
 

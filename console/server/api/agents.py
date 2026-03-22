@@ -6,10 +6,20 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from loguru import logger
-from pydantic import BaseModel
 
 from console.server.api.state import get_state_manager
 from console.server.extension.agents import AgentConfig, AgentManager
+from console.server.models.agents import (
+    AgentCreateRequest,
+    AgentResponse,
+    AgentUpdateRequest,
+    BroadcastEventRequest,
+    CategoryCreateRequest,
+    CategoryOverrideRequest,
+    CategoryResponse,
+    DelegateTaskRequest,
+    DelegateTaskResponse,
+)
 
 router = APIRouter(prefix="/api/bots/{bot_id}/agents")
 
@@ -37,15 +47,6 @@ def _resolve_agent_manager(bot_id: str) -> AgentManager:
 # ---------------------------------------------------------------------------
 # Category endpoints
 # ---------------------------------------------------------------------------
-
-class CategoryResponse(BaseModel):
-    key: str
-    label: str
-    color: str
-
-
-class CategoryCreateRequest(BaseModel):
-    label: str
 
 
 @router.get("/categories", response_model=list[CategoryResponse])
@@ -82,11 +83,6 @@ async def remove_category(bot_id: str, category_key: str) -> dict[str, str]:
     return {"status": "deleted", "key": category_key}
 
 
-class CategoryOverrideRequest(BaseModel):
-    agent_id: str
-    category_key: str | None  # None = clear override
-
-
 @router.get("/categories/overrides", response_model=dict[str, str])
 async def get_category_overrides(bot_id: str) -> dict[str, str]:
     """Get all agent-to-category overrides."""
@@ -109,53 +105,6 @@ async def set_category_override(
 # ---------------------------------------------------------------------------
 # Agent endpoints
 # ---------------------------------------------------------------------------
-
-class AgentCreateRequest(BaseModel):
-    """Request body for creating an Agent."""
-
-    id: str | None = None
-    name: str
-    description: str | None = None
-    model: str | None = None
-    temperature: float | None = None
-    system_prompt: str | None = None
-    skills: list[str] = []
-    topics: list[str] = []
-    collaborators: list[str] = []
-    enabled: bool = True
-    display_category: str | None = None
-
-
-class AgentUpdateRequest(BaseModel):
-    """Request body for updating an Agent."""
-
-    name: str | None = None
-    description: str | None = None
-    model: str | None = None
-    temperature: float | None = None
-    system_prompt: str | None = None
-    skills: list[str] | None = None
-    topics: list[str] | None = None
-    collaborators: list[str] | None = None
-    enabled: bool | None = None
-    display_category: str | None = None  # None = keep existing
-
-
-class AgentResponse(BaseModel):
-    """Response body for an Agent."""
-
-    id: str
-    name: str
-    description: str | None
-    model: str | None
-    temperature: float | None
-    system_prompt: str | None
-    skills: list[str]
-    topics: list[str]
-    collaborators: list[str]
-    enabled: bool
-    created_at: str
-
 
 def _agent_to_response(agent: AgentConfig) -> AgentResponse:
     """Convert AgentConfig to API response."""
@@ -277,18 +226,6 @@ async def disable_agent(bot_id: str, agent_id: str) -> AgentResponse:
         raise HTTPException(status_code=404, detail=str(e))
 
 
-class DelegateTaskRequest(BaseModel):
-    to_agent_id: str
-    task: str
-    context: dict[str, Any] = {}
-    wait_response: bool = False
-
-
-class DelegateTaskResponse(BaseModel):
-    correlation_id: str
-    response: str | None
-
-
 @router.post("/{agent_id}/delegate")
 async def delegate_task(
     bot_id: str, agent_id: str, request: DelegateTaskRequest
@@ -309,12 +246,6 @@ async def delegate_task(
         )
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
-
-
-class BroadcastEventRequest(BaseModel):
-    topic: str
-    content: str
-    context: dict[str, Any] = {}
 
 
 @router.post("/{agent_id}/broadcast")

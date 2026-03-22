@@ -6,7 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from console.server.api.models import CronAddRequest, CronJobResponse
+from console.server.models.cron import CronAddRequest, CronJobResponse
 from console.server.api.state import get_state
 
 router = APIRouter(prefix="/api/cron")

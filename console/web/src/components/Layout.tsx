@@ -73,7 +73,7 @@ const navSections: NavSection[] = [
       { path: '/workspace', label: 'Workspace', icon: FolderOpen },
       { path: '/agents', label: 'Agents', icon: Users },
       { path: '/plans', label: 'Plans', icon: LayoutList },
-      { path: '/bot-profile', label: 'Bot Profile', icon: UserCircle },
+      { path: '/bot-profile', label: 'Profile', icon: UserCircle },
       { path: '/logs', label: 'Logs', icon: FileText },
       { path: '/skills', label: 'Skills', icon: BookOpen },
     ],

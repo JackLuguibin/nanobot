@@ -6,55 +6,15 @@ import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 
 from console.server.api.state import get_state
+from console.server.models.plans import PlanTaskCreateRequest, PlanTaskUpdateRequest, PlansSaveRequest
 
 router = APIRouter(prefix="/api/plans")
 
 
 def _resolve_state(bot_id: str | None = None):
     return get_state(bot_id)
-
-
-# ---------------------------------------------------------------------------
-# Request Models
-# ---------------------------------------------------------------------------
-
-
-class PlansSaveRequest(BaseModel):
-    """Request body for saving plans board."""
-
-    id: str
-    name: str | None = None
-    columns: list[dict[str, Any]]
-    tasks: list[dict[str, Any]]
-
-
-class PlanTaskCreateRequest(BaseModel):
-    """Request body for creating a task."""
-
-    title: str
-    description: str | None = None
-    columnId: str = "col-backlog"
-    priority: str | None = None
-    startDate: str | None = None
-    dueDate: str | None = None
-    progress: int | None = None
-    project: str | None = None
-
-
-class PlanTaskUpdateRequest(BaseModel):
-    """Request body for updating a task."""
-
-    title: str | None = None
-    description: str | None = None
-    columnId: str | None = None
-    priority: str | None = None
-    startDate: str | None = None
-    dueDate: str | None = None
-    progress: int | None = None
-    project: str | None = None
 
 
 # ---------------------------------------------------------------------------

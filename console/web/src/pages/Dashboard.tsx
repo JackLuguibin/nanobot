@@ -369,46 +369,54 @@ export default function Dashboard() {
           )}
         </Card>
 
-        {displayStatus?.token_usage?.cost_by_model &&
-          Object.keys(displayStatus.token_usage.cost_by_model).length > 0 &&
-          Object.values(displayStatus.token_usage.cost_by_model).some((v) => v > 0) && (
-            <Card
-              title={
-                <span className="flex items-center gap-2">
-                  <DollarOutlined className="text-green-500" /> 按模型成本分布
-                </span>
-              }
-              size="small"
-            >
-              <div className="flex flex-wrap items-center gap-6">
-                <div style={{ width: 200, height: 200 }}>
-                  <Pie
-                    data={Object.entries(displayStatus.token_usage.cost_by_model)
-                      .filter(([, v]) => v > 0)
-                      .map(([model, usd]) => ({ type: model, value: usd }))}
-                    angleField="value"
-                    colorField="type"
-                    radius={0.8}
-                    innerRadius={0.4}
-                    label={{ type: 'inner', formatter: (v: { value: number }) => formatCost(v.value) }}
-                    legend={false}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  {Object.entries(displayStatus.token_usage.cost_by_model)
-                    .filter(([, v]) => v > 0)
-                    .map(([model, usd]) => (
-                      <div key={model} className="flex items-center justify-between gap-4">
-                        <span className="font-medium truncate max-w-[120px]">{model}</span>
-                        <span className="text-green-600 dark:text-green-400 font-mono">
-                          {formatCost(usd)}
-                        </span>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            </Card>
-          )}
+        <Card
+          title={
+            <span className="flex items-center gap-2">
+              <ThunderboltOutlined className="text-amber-500" /> 按模型消耗占比
+            </span>
+          }
+          size="small"
+        >
+          <div className="flex flex-col items-center gap-4 w-full">
+            <div style={{ width: 180, height: 180 }}>
+              <Pie
+                data={Object.entries(displayStatus?.token_usage?.by_model ?? {})
+                  .filter(([, v]) => (v.total_tokens ?? 0) > 0)
+                  .map(([model, u]) => ({ type: model, value: u.total_tokens ?? 0 }))}
+                angleField="value"
+                colorField="type"
+                radius={0.8}
+                innerRadius={0.4}
+                label={{ type: 'inner', formatter: (v: { value: number }) => formatTokenCount(v.value) }}
+                legend={false}
+                tooltip={{
+                  items: [
+                    {
+                      channel: 'y',
+                      valueFormatter: (v: number) => formatTokenCount(v),
+                    },
+                  ],
+                }}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              {Object.entries(displayStatus?.token_usage?.by_model ?? {})
+                .filter(([, v]) => (v.total_tokens ?? 0) > 0)
+                .map(([model, u]) => (
+                  <div key={model} className="flex items-center justify-between gap-4">
+                    <span className="font-medium truncate max-w-[100px]">{model}</span>
+                    <span className="text-amber-600 dark:text-amber-400 font-mono">
+                      {formatTokenCount(u.total_tokens ?? 0)}
+                    </span>
+                  </div>
+                ))}
+              {(!(displayStatus?.token_usage?.by_model) ||
+                Object.entries(displayStatus?.token_usage?.by_model ?? {}).filter(([, u]) => (u.total_tokens ?? 0) > 0).length === 0) && (
+                <Text type="secondary" className="text-xs">暂无数据</Text>
+              )}
+            </div>
+          </div>
+        </Card>
       </div>
 
     </div>

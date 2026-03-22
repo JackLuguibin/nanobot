@@ -80,7 +80,7 @@ export default function BotProfile() {
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
-            Bot Profile
+            Profile
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             SOUL, USER, HEARTBEAT, TOOLS, AGENTS and other bootstrap files

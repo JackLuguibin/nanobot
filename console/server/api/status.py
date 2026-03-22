@@ -6,15 +6,11 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel
 
-from console.server.api.models import (
-    ChannelStatus,
-    MCPStatus,
-    StatusResponse,
-    ToolCallLog,
-)
 from console.server.api.state import get_state
+from console.server.models.base import ChannelStatus, MCPStatus, ToolCallLog
+from console.server.models.system import StatusResponse
+from console.server.models.status import ChannelUpdateRequest
 
 router = APIRouter(prefix="/api")
 
@@ -74,12 +70,6 @@ async def get_channels(bot_id: str | None = Query(None)) -> list[ChannelStatus]:
     state = _resolve_state(bot_id)
     channels = await state.get_channels()
     return [ChannelStatus(**ch) for ch in channels]
-
-
-class ChannelUpdateRequest(BaseModel):
-    """Request body for updating a channel."""
-
-    data: dict[str, Any]
 
 
 @router.put("/channels/{name}")

@@ -6,10 +6,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel
 
 from console.server.api.state import get_state_manager
 from console.server.api.websocket import get_connection_manager
+from console.server.models.bots import BotCreateRequest, BotInfoResponse, SetDefaultRequest
 
 router = APIRouter(prefix="/api/bots")
 
@@ -20,28 +20,8 @@ def _resolve_state(bot_id: str | None = None):
 
 
 # ---------------------------------------------------------------------------
-# Request/Response Models
+# Routes
 # ---------------------------------------------------------------------------
-
-
-class BotCreateRequest(BaseModel):
-    name: str
-    source_config: dict[str, Any] | None = None
-
-
-class BotInfoResponse(BaseModel):
-    id: str
-    name: str
-    config_path: str
-    workspace_path: str
-    created_at: str
-    updated_at: str
-    is_default: bool = False
-    running: bool = False
-
-
-class SetDefaultRequest(BaseModel):
-    bot_id: str
 
 
 def _bot_to_response(bot, manager, registry) -> BotInfoResponse:
@@ -58,11 +38,6 @@ def _bot_to_response(bot, manager, registry) -> BotInfoResponse:
         is_default=(bot.id == registry.default_bot_id),
         running=running,
     )
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
 
 @router.get("", response_model=list[BotInfoResponse])

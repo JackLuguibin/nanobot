@@ -9,7 +9,8 @@ from typing import Any
 from fastapi import WebSocket, WebSocketDisconnect
 from loguru import logger
 
-from console.server.api.models import WSMessage, WSMessageType
+from console.server.models.chat import WSMessage
+from console.server.models.base import WSMessageType
 from console.server.api.state import get_state, get_state_manager
 
 

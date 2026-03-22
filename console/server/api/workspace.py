@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
 
 from console.server.api.state import get_state
+from console.server.models.workspace import BotFileUpdateRequest, WorkspaceFileUpdateRequest
 
 router = APIRouter(prefix="/api")
 
@@ -89,22 +89,19 @@ async def list_workspace_files(
         if d <= 0:
             return []
         items = []
-        try:
-            for child in sorted(p.iterdir()):
-                name = child.name
-                if name.startswith(".") and name != ".env":
-                    continue
-                rel = child.relative_to(workspace)
-                item = {
-                    "name": name,
-                    "path": str(rel).replace("\\", "/"),
-                    "is_dir": child.is_dir(),
-                }
-                if child.is_dir() and d > 1:
-                    item["children"] = _list_dir(child, d - 1)
-                items.append(item)
-        except PermissionError:
-            pass
+        for child in sorted(p.iterdir()):
+            name = child.name
+            if name.startswith(".") and name != ".env":
+                continue
+            rel = child.relative_to(workspace)
+            item = {
+                "name": name,
+                "path": str(rel).replace("\\", "/"),
+                "is_dir": child.is_dir(),
+            }
+            if child.is_dir() and d > 1:
+                item["children"] = _list_dir(child, d - 1)
+            items.append(item)
         return items
 
     return {"path": path or ".", "items": _list_dir(resolved, depth)}
@@ -131,11 +128,6 @@ async def get_workspace_file(
         raise HTTPException(status_code=500, detail=str(e))
 
     return {"path": path, "content": content}
-
-
-class WorkspaceFileUpdateRequest(BaseModel):
-    path: str
-    content: str
 
 
 @router.put("/workspace/file")
@@ -182,17 +174,7 @@ async def get_bot_files(bot_id: str | None = Query(None)) -> dict[str, str]:
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
 
-    return {
-        "soul": _read_workspace_file(workspace, "SOUL.md"),
-        "user": _read_workspace_file(workspace, "USER.md"),
-        "heartbeat": _read_workspace_file(workspace, "HEARTBEAT.md"),
-        "tools": _read_workspace_file(workspace, "TOOLS.md"),
-        "agents": _read_workspace_file(workspace, "AGENTS.md"),
-    }
-
-
-class BotFileUpdateRequest(BaseModel):
-    content: str
+    return {key: _read_workspace_file(workspace, filename) for key, filename in BOT_FILE_KEYS.items()}
 
 
 @router.put("/bot-files/{key}")

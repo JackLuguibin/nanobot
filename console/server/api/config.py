@@ -7,11 +7,10 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel
 
-from console.server.api.models import ConfigUpdateRequest
 from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager
+from console.server.models.config import ConfigUpdateRequest, EnvUpdateRequest
 
 router = APIRouter(prefix="/api")
 
@@ -67,10 +66,6 @@ async def validate_config(data: dict[str, Any], bot_id: str | None = Query(None)
 # ---------------------------------------------------------------------------
 # Environment Variables
 # ---------------------------------------------------------------------------
-
-
-class EnvUpdateRequest(BaseModel):
-    vars: dict[str, str] = {}
 
 
 def _get_env_path(state) -> Path:

@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, WebSocket
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
-from console.server.api.models import ChatRequest, ChatResponse
+from console.server.models.chat import ChatRequest, ChatResponse
 from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager, handle_websocket
 

@@ -1,6 +1,8 @@
 """CLI commands for nanobot."""
 
 import asyncio
+from contextlib import contextmanager, nullcontext
+
 import os
 import select
 import signal
@@ -20,12 +22,11 @@ if sys.platform == "win32":
             pass
 
 import typer
-from prompt_toolkit import print_formatted_text
-from prompt_toolkit import PromptSession
+from prompt_toolkit import PromptSession, print_formatted_text
+from prompt_toolkit.application import run_in_terminal
 from prompt_toolkit.formatted_text import ANSI, HTML
 from prompt_toolkit.history import FileHistory
 from prompt_toolkit.patch_stdout import patch_stdout
-from prompt_toolkit.application import run_in_terminal
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.table import Table
@@ -38,6 +39,7 @@ from nanobot.utils.helpers import sync_workspace_templates
 
 app = typer.Typer(
     name="nanobot",
+    context_settings={"help_option_names": ["-h", "--help"]},
     help=f"{__logo__} nanobot - Personal AI Assistant",
     no_args_is_help=True,
 )
@@ -130,15 +132,28 @@ def _render_interactive_ansi(render_fn) -> str:
     return capture.get()
 
 
-def _print_agent_response(response: str, render_markdown: bool) -> None:
+def _print_agent_response(
+    response: str,
+    render_markdown: bool,
+    metadata: dict | None = None,
+) -> None:
     """Render assistant response with consistent terminal styling."""
     console = _make_console()
     content = response or ""
-    body = Markdown(content) if render_markdown else Text(content)
+    body = _response_renderable(content, render_markdown, metadata)
     console.print()
     console.print(f"[cyan]{__logo__} nanobot[/cyan]")
     console.print(body)
     console.print()
+
+
+def _response_renderable(content: str, render_markdown: bool, metadata: dict | None = None):
+    """Render plain-text command output without markdown collapsing newlines."""
+    if not render_markdown:
+        return Text(content)
+    if (metadata or {}).get("render_as") == "text":
+        return Text(content)
+    return Markdown(content)
 
 
 async def _print_interactive_line(text: str) -> None:
@@ -152,7 +167,11 @@ async def _print_interactive_line(text: str) -> None:
     await run_in_terminal(_write)
 
 
-async def _print_interactive_response(response: str, render_markdown: bool) -> None:
+async def _print_interactive_response(
+    response: str,
+    render_markdown: bool,
+    metadata: dict | None = None,
+) -> None:
     """Print async interactive replies with prompt_toolkit-safe Rich styling."""
     def _write() -> None:
         content = response or ""
@@ -160,13 +179,58 @@ async def _print_interactive_response(response: str, render_markdown: bool) -> N
             lambda c: (
                 c.print(),
                 c.print(f"[cyan]{__logo__} nanobot[/cyan]"),
-                c.print(Markdown(content) if render_markdown else Text(content)),
+                c.print(_response_renderable(content, render_markdown, metadata)),
                 c.print(),
             )
         )
         print_formatted_text(ANSI(ansi), end="")
 
     await run_in_terminal(_write)
+
+
+class _ThinkingSpinner:
+    """Spinner wrapper with pause support for clean progress output."""
+
+    def __init__(self, enabled: bool):
+        self._spinner = console.status(
+            "[dim]nanobot is thinking...[/dim]", spinner="dots"
+        ) if enabled else None
+        self._active = False
+
+    def __enter__(self):
+        if self._spinner:
+            self._spinner.start()
+        self._active = True
+        return self
+
+    def __exit__(self, *exc):
+        self._active = False
+        if self._spinner:
+            self._spinner.stop()
+        return False
+
+    @contextmanager
+    def pause(self):
+        """Temporarily stop spinner while printing progress."""
+        if self._spinner and self._active:
+            self._spinner.stop()
+        try:
+            yield
+        finally:
+            if self._spinner and self._active:
+                self._spinner.start()
+
+
+def _print_cli_progress_line(text: str, thinking: _ThinkingSpinner | None) -> None:
+    """Print a CLI progress line, pausing the spinner if needed."""
+    with thinking.pause() if thinking else nullcontext():
+        console.print(f"  [dim]↳ {text}[/dim]")
+
+
+async def _print_interactive_progress_line(text: str, thinking: _ThinkingSpinner | None) -> None:
+    """Print an interactive progress line, pausing the spinner if needed."""
+    with thinking.pause() if thinking else nullcontext():
+        await _print_interactive_line(text)
 
 
 def _is_exit_command(command: str) -> bool:
@@ -216,47 +280,92 @@ def main(
 
 
 @app.command()
-def onboard():
+def onboard(
+    workspace: str | None = typer.Option(None, "--workspace", "-w", help="Workspace directory"),
+    config: str | None = typer.Option(None, "--config", "-c", help="Path to config file"),
+    wizard: bool = typer.Option(False, "--wizard", help="Use interactive wizard"),
+):
     """Initialize nanobot configuration and workspace."""
-    from nanobot.config.loader import get_config_path, load_config, save_config
+    from nanobot.config.loader import get_config_path, load_config, save_config, set_config_path
     from nanobot.config.schema import Config
 
-    config_path = get_config_path()
-
-    if config_path.exists():
-        console.print(f"[yellow]Config already exists at {config_path}[/yellow]")
-        console.print("  [bold]y[/bold] = overwrite with defaults (existing values will be lost)")
-        console.print("  [bold]N[/bold] = refresh config, keeping existing values and adding new fields")
-        if typer.confirm("Overwrite?"):
-            config = Config()
-            save_config(config)
-            console.print(f"[green]✓[/green] Config reset to defaults at {config_path}")
-        else:
-            config = load_config()
-            save_config(config)
-            console.print(f"[green]✓[/green] Config refreshed at {config_path} (existing values preserved)")
+    if config:
+        config_path = Path(config).expanduser().resolve()
+        set_config_path(config_path)
+        console.print(f"[dim]Using config: {config_path}[/dim]")
     else:
-        save_config(Config())
-        console.print(f"[green]✓[/green] Created config at {config_path}")
+        config_path = get_config_path()
 
-    console.print("[dim]Config template now uses `maxTokens` + `contextWindowTokens`; `memoryWindow` is no longer a runtime setting.[/dim]")
+    def _apply_workspace_override(loaded: Config) -> Config:
+        if workspace:
+            loaded.agents.defaults.workspace = workspace
+        return loaded
 
+    # Create or update config
+    if config_path.exists():
+        if wizard:
+            config = _apply_workspace_override(load_config(config_path))
+        else:
+            console.print(f"[yellow]Config already exists at {config_path}[/yellow]")
+            console.print("  [bold]y[/bold] = overwrite with defaults (existing values will be lost)")
+            console.print("  [bold]N[/bold] = refresh config, keeping existing values and adding new fields")
+            if typer.confirm("Overwrite?"):
+                config = _apply_workspace_override(Config())
+                save_config(config, config_path)
+                console.print(f"[green]✓[/green] Config reset to defaults at {config_path}")
+            else:
+                config = _apply_workspace_override(load_config(config_path))
+                save_config(config, config_path)
+                console.print(f"[green]✓[/green] Config refreshed at {config_path} (existing values preserved)")
+    else:
+        config = _apply_workspace_override(Config())
+        # In wizard mode, don't save yet - the wizard will handle saving if should_save=True
+        if not wizard:
+            save_config(config, config_path)
+            console.print(f"[green]✓[/green] Created config at {config_path}")
+
+    # Run interactive wizard if enabled
+    if wizard:
+        from nanobot.cli.onboard_wizard import run_onboard
+
+        try:
+            result = run_onboard(initial_config=config)
+            if not result.should_save:
+                console.print("[yellow]Configuration discarded. No changes were saved.[/yellow]")
+                return
+
+            config = result.config
+            save_config(config, config_path)
+            console.print(f"[green]✓[/green] Config saved at {config_path}")
+        except Exception as e:
+            console.print(f"[red]✗[/red] Error during configuration: {e}")
+            console.print("[yellow]Please run 'nanobot onboard' again to complete setup.[/yellow]")
+            raise typer.Exit(1)
     _onboard_plugins(config_path)
 
-    # Create workspace
-    workspace = get_workspace_path()
+    # Create workspace, preferring the configured workspace path.
+    workspace_path = get_workspace_path(config.workspace_path)
+    if not workspace_path.exists():
+        workspace_path.mkdir(parents=True, exist_ok=True)
+        console.print(f"[green]✓[/green] Created workspace at {workspace_path}")
 
-    if not workspace.exists():
-        workspace.mkdir(parents=True, exist_ok=True)
-        console.print(f"[green]✓[/green] Created workspace at {workspace}")
+    sync_workspace_templates(workspace_path)
 
-    sync_workspace_templates(workspace)
+    agent_cmd = 'nanobot agent -m "Hello!"'
+    gateway_cmd = "nanobot gateway"
+    if config:
+        agent_cmd += f" --config {config_path}"
+        gateway_cmd += f" --config {config_path}"
 
     console.print(f"\n{__logo__} nanobot is ready!")
     console.print("\nNext steps:")
-    console.print("  1. Add your API key to [cyan]~/.nanobot/config.json[/cyan]")
-    console.print("     Get one at: https://openrouter.ai/keys")
-    console.print("  2. Chat: [cyan]nanobot agent -m \"Hello!\"[/cyan]")
+    if wizard:
+        console.print(f"  1. Chat: [cyan]{agent_cmd}[/cyan]")
+        console.print(f"  2. Start gateway: [cyan]{gateway_cmd}[/cyan]")
+    else:
+        console.print(f"  1. Add your API key to [cyan]{config_path}[/cyan]")
+        console.print("     Get one at: https://openrouter.ai/keys")
+        console.print(f"  2. Chat: [cyan]{agent_cmd}[/cyan]")
     console.print("\n[dim]Want Telegram/WhatsApp? See: https://github.com/HKUDS/nanobot#-chat-apps[/dim]")
 
 
@@ -300,9 +409,9 @@ def _onboard_plugins(config_path: Path) -> None:
 
 def _make_provider(config: Config):
     """Create the appropriate LLM provider from config."""
+    from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
     from nanobot.providers.base import GenerationSettings
     from nanobot.providers.openai_codex_provider import OpenAICodexProvider
-    from nanobot.providers.azure_openai_provider import AzureOpenAIProvider
 
     model = config.agents.defaults.model
     provider_name = config.get_provider_name(model)
@@ -318,6 +427,7 @@ def _make_provider(config: Config):
             api_key=p.api_key if p else "no-key",
             api_base=config.get_api_base(model) or "http://localhost:8000/v1",
             default_model=model,
+            extra_headers=p.extra_headers if p else None,
         )
     # Azure OpenAI: direct Azure OpenAI endpoint with deployment name
     elif provider_name == "azure_openai":
@@ -370,19 +480,28 @@ def _load_runtime_config(config: str | None = None, workspace: str | None = None
         console.print(f"[dim]Using config: {config_path}[/dim]")
 
     loaded = load_config(config_path)
+    _warn_deprecated_config_keys(config_path)
     if workspace:
         loaded.agents.defaults.workspace = workspace
     return loaded
 
 
-def _print_deprecated_memory_window_notice(config: Config) -> None:
-    """Warn when running with old memoryWindow-only config."""
-    if config.agents.defaults.should_warn_deprecated_memory_window:
+def _warn_deprecated_config_keys(config_path: Path | None) -> None:
+    """Hint users to remove obsolete keys from their config file."""
+    import json
+    from nanobot.config.loader import get_config_path
+
+    path = config_path or get_config_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if "memoryWindow" in raw.get("agents", {}).get("defaults", {}):
         console.print(
-            "[yellow]Hint:[/yellow] Detected deprecated `memoryWindow` without "
-            "`contextWindowTokens`. `memoryWindow` is ignored; run "
-            "[cyan]nanobot onboard[/cyan] to refresh your config template."
+            "[dim]Hint: `memoryWindow` in your config is no longer used "
+            "and can be safely removed.[/dim]"
         )
+
 
 
 # ============================================================================
@@ -412,10 +531,9 @@ def gateway(
         logging.basicConfig(level=logging.DEBUG)
 
     config = _load_runtime_config(config, workspace)
-    _print_deprecated_memory_window_notice(config)
     port = port if port is not None else config.gateway.port
 
-    console.print(f"{__logo__} Starting nanobot gateway on port {port}...")
+    console.print(f"{__logo__} Starting nanobot gateway version {__version__} on port {port}...")
     sync_workspace_templates(config.workspace_path)
     bus = MessageBus()
     provider = _make_provider(config)
@@ -448,19 +566,20 @@ def gateway(
         """Execute a cron job through the agent."""
         from nanobot.agent.tools.cron import CronTool
         from nanobot.agent.tools.message import MessageTool
+        from nanobot.utils.evaluator import evaluate_response
+
         reminder_note = (
             "[Scheduled Task] Timer finished.\n\n"
             f"Task '{job.name}' has been triggered.\n"
             f"Scheduled instruction: {job.payload.message}"
         )
 
-        # Prevent the agent from scheduling new cron jobs during execution
         cron_tool = agent.tools.get("cron")
         cron_token = None
         if isinstance(cron_tool, CronTool):
             cron_token = cron_tool.set_cron_context(True)
         try:
-            response = await agent.process_direct(
+            resp = await agent.process_direct(
                 reminder_note,
                 session_key=f"cron:{job.id}",
                 channel=job.payload.channel or "cli",
@@ -470,17 +589,23 @@ def gateway(
             if isinstance(cron_tool, CronTool) and cron_token is not None:
                 cron_tool.reset_cron_context(cron_token)
 
+        response = resp.content if resp else ""
+
         message_tool = agent.tools.get("message")
         if isinstance(message_tool, MessageTool) and message_tool._sent_in_turn:
             return response
 
         if job.payload.deliver and job.payload.to and response:
-            from nanobot.bus.events import OutboundMessage
-            await bus.publish_outbound(OutboundMessage(
-                channel=job.payload.channel or "cli",
-                chat_id=job.payload.to,
-                content=response
-            ))
+            should_notify = await evaluate_response(
+                response, job.payload.message, provider, agent.model,
+            )
+            if should_notify:
+                from nanobot.bus.events import OutboundMessage
+                await bus.publish_outbound(OutboundMessage(
+                    channel=job.payload.channel or "cli",
+                    chat_id=job.payload.to,
+                    content=response,
+                ))
         return response
     cron.on_job = on_cron_job
 
@@ -511,13 +636,14 @@ def gateway(
         async def _silent(*_args, **_kwargs):
             pass
 
-        return await agent.process_direct(
+        resp = await agent.process_direct(
             tasks,
             session_key="heartbeat",
             channel=channel,
             chat_id=chat_id,
             on_progress=_silent,
         )
+        return resp.content if resp else ""
 
     async def on_heartbeat_notify(response: str) -> None:
         """Deliver a heartbeat response to the user's channel."""
@@ -559,6 +685,10 @@ def gateway(
             )
         except KeyboardInterrupt:
             console.print("\nShutting down...")
+        except Exception:
+            import traceback
+            console.print("\n[red]Error: Gateway crashed unexpectedly[/red]")
+            console.print(traceback.format_exc())
         finally:
             await agent.close_mcp()
             heartbeat.stop()
@@ -594,7 +724,6 @@ def agent(
     from nanobot.cron.service import CronService
 
     config = _load_runtime_config(config, workspace)
-    _print_deprecated_memory_window_notice(config)
     sync_workspace_templates(config.workspace_path)
 
     bus = MessageBus()
@@ -625,13 +754,8 @@ def agent(
         channels_config=config.channels,
     )
 
-    # Show spinner when logs are off (no output to miss); skip when logs are on
-    def _thinking_ctx():
-        if logs:
-            from contextlib import nullcontext
-            return nullcontext()
-        # Animated spinner is safe to use with prompt_toolkit input handling
-        return console.status("[dim]nanobot is thinking...[/dim]", spinner="dots")
+    # Shared reference for progress callbacks
+    _thinking: _ThinkingSpinner | None = None
 
     async def _cli_progress(content: str, *, tool_hint: bool = False) -> None:
         ch = agent_loop.channels_config
@@ -639,14 +763,23 @@ def agent(
             return
         if ch and not tool_hint and not ch.send_progress:
             return
-        console.print(f"  [dim]↳ {content}[/dim]")
+        _print_cli_progress_line(content, _thinking)
 
     if message:
         # Single message mode — direct call, no bus needed
         async def run_once():
-            with _thinking_ctx():
-                response = await agent_loop.process_direct(message, session_id, on_progress=_cli_progress)
-            _print_agent_response(response, render_markdown=markdown)
+            nonlocal _thinking
+            _thinking = _ThinkingSpinner(enabled=not logs)
+            with _thinking:
+                response = await agent_loop.process_direct(
+                    message, session_id, on_progress=_cli_progress,
+                )
+            _thinking = None
+            _print_agent_response(
+                response.content if response else "",
+                render_markdown=markdown,
+                metadata=response.metadata if response else None,
+            )
             await agent_loop.close_mcp()
 
         asyncio.run(run_once())
@@ -681,7 +814,7 @@ def agent(
             bus_task = asyncio.create_task(agent_loop.run())
             turn_done = asyncio.Event()
             turn_done.set()
-            turn_response: list[str] = []
+            turn_response: list[tuple[str, dict]] = []
 
             async def _consume_outbound():
                 while True:
@@ -695,14 +828,18 @@ def agent(
                             elif ch and not is_tool_hint and not ch.send_progress:
                                 pass
                             else:
-                                await _print_interactive_line(msg.content)
+                                await _print_interactive_progress_line(msg.content, _thinking)
 
                         elif not turn_done.is_set():
                             if msg.content:
-                                turn_response.append(msg.content)
+                                turn_response.append((msg.content, dict(msg.metadata or {})))
                             turn_done.set()
                         elif msg.content:
-                            await _print_interactive_response(msg.content, render_markdown=markdown)
+                            await _print_interactive_response(
+                                msg.content,
+                                render_markdown=markdown,
+                                metadata=msg.metadata,
+                            )
 
                     except asyncio.TimeoutError:
                         continue
@@ -735,11 +872,15 @@ def agent(
                             content=user_input,
                         ))
 
-                        with _thinking_ctx():
+                        nonlocal _thinking
+                        _thinking = _ThinkingSpinner(enabled=not logs)
+                        with _thinking:
                             await turn_done.wait()
+                        _thinking = None
 
                         if turn_response:
-                            _print_agent_response(turn_response[0], render_markdown=markdown)
+                            content, meta = turn_response[0]
+                            _print_agent_response(content, render_markdown=markdown, metadata=meta)
                     except KeyboardInterrupt:
                         _restore_terminal()
                         console.print("\nGoodbye!")

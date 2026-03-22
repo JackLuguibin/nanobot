@@ -301,11 +301,7 @@ export default function Cron() {
             description="暂无定时任务"
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             className="py-12"
-          >
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddModalOpen(true)}>
-              添加第一个任务
-            </Button>
-          </Empty>
+          />
         ) : (
           <List
             dataSource={jobs}

@@ -15,6 +15,127 @@ from loguru import logger
 from console.server.extension.zmq_bus import AgentMessage, ZeroMQBus
 
 
+# ----------------------------------------------------------------------
+# Category
+# ----------------------------------------------------------------------
+
+CATEGORY_COLORS = [
+    "#722ed1",
+    "#13c2c2",
+    "#eb2f96",
+    "#2f54eb",
+    "#fa8c16",
+]
+
+
+@dataclass
+class CategoryConfig:
+    key: str
+    label: str
+    color: str
+
+    def to_dict(self) -> dict[str, str]:
+        return {"key": self.key, "label": self.label, "color": self.color}
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "CategoryConfig":
+        return cls(key=data["key"], label=data["label"], color=data["color"])
+
+
+class CategoryManager:
+    """Manages per-bot custom categories and per-agent category overrides.
+
+    Persistence layout:
+      <workspace>/agents/categories.json
+        { "categories": [...], "overrides": { "<agent_id>": "<category_key>" } }
+    """
+
+    def __init__(self, bot_id: str, workspace: Path):
+        self.bot_id = bot_id
+        self.workspace = workspace
+        self._categories: dict[str, CategoryConfig] = {}
+        self._overrides: dict[str, str] = {}  # agent_id -> category key
+
+    @property
+    def _file(self) -> Path:
+        return self.workspace / "agents" / "categories.json"
+
+    async def initialize(self) -> None:
+        (self.workspace / "agents").mkdir(exist_ok=True)
+        await self._load()
+
+    async def _load(self) -> None:
+        if not self._file.exists():
+            return
+        try:
+            data = json.loads(self._file.read_text(encoding="utf-8"))
+            self._categories = {
+                c["key"]: CategoryConfig.from_dict(c)
+                for c in data.get("categories", [])
+            }
+            self._overrides = data.get("overrides", {})
+            logger.debug(
+                "CategoryManager loaded {} categories for bot '{}'",
+                len(self._categories),
+                self.bot_id,
+            )
+        except Exception as e:
+            logger.error("Failed to load categories for bot '{}': {}", self.bot_id, e)
+            self._categories = {}
+            self._overrides = {}
+
+    async def _save(self) -> None:
+        data = {
+            "categories": [c.to_dict() for c in self._categories.values()],
+            "overrides": self._overrides,
+        }
+        self._file.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def list_categories(self) -> list[CategoryConfig]:
+        return list(self._categories.values())
+
+    def get_category(self, key: str) -> CategoryConfig | None:
+        return self._categories.get(key)
+
+    async def add_category(self, label: str) -> CategoryConfig:
+        if any(c.label == label for c in self._categories.values()):
+            raise ValueError(f"Category '{label}' already exists")
+        key = f"custom_{uuid.uuid4().hex[:8]}"
+        idx = len(self._categories)
+        color = CATEGORY_COLORS[idx % len(CATEGORY_COLORS)]
+        cat = CategoryConfig(key=key, label=label, color=color)
+        self._categories[key] = cat
+        await self._save()
+        return cat
+
+    async def remove_category(self, key: str) -> bool:
+        if key not in self._categories:
+            return False
+        del self._categories[key]
+        # clear overrides that point to the removed category
+        self._overrides = {k: v for k, v in self._overrides.items() if v != key}
+        await self._save()
+        return True
+
+    def get_agent_category(self, agent_id: str) -> str | None:
+        return self._overrides.get(agent_id)
+
+    async def set_agent_category(self, agent_id: str, category_key: str | None) -> None:
+        if category_key is None:
+            self._overrides.pop(agent_id, None)
+        else:
+            self._overrides[agent_id] = category_key
+        await self._save()
+
+    def get_all_overrides(self) -> dict[str, str]:
+        return dict(self._overrides)
+
+
+# ----------------------------------------------------------------------
+# Agent
+# ----------------------------------------------------------------------
+
+
 @dataclass
 class AgentConfig:
     """单个Agent配置"""
@@ -47,7 +168,7 @@ class AgentConfig:
 
 
 class AgentManager:
-    """管理单个Bot内的多个Agent，提供ZeroMQ通信支持"""
+    """Manages multiple Agents within a single Bot, with ZeroMQ communication support."""
 
     def __init__(
         self,
@@ -65,11 +186,17 @@ class AgentManager:
         self._message_queue: asyncio.Queue[tuple[str, AgentMessage]] = asyncio.Queue()
         self._running = False
         self._process_task: asyncio.Task | None = None
+        self._category_manager = CategoryManager(bot_id, workspace)
+
+    @property
+    def category_manager(self) -> CategoryManager:
+        return self._category_manager
 
     async def initialize(self) -> None:
-        """初始化Agent系统"""
+        """Initialize the Agent system."""
         self.agents_dir.mkdir(exist_ok=True)
         await self._zmq_bus.initialize()
+        await self._category_manager.initialize()
         await self._load_agents()
         self._running = True
         self._process_task = asyncio.create_task(self._process_messages())

@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/bots/{bot_id}/agents")
 
 
 def _get_agent_manager_optional(bot_id: str) -> AgentManager | None:
-    """获取Bot的AgentManager实例，未初始化时返回None"""
+    """Get the Bot's AgentManager instance. Returns None if not initialized."""
     state_manager = get_state_manager()
     state = state_manager.get_state(bot_id)
     if not hasattr(state, "_agent_manager") or state._agent_manager is None:
@@ -24,7 +24,7 @@ def _get_agent_manager_optional(bot_id: str) -> AgentManager | None:
 
 
 def _resolve_agent_manager(bot_id: str) -> AgentManager:
-    """获取Bot的AgentManager实例，未初始化时抛出404"""
+    """Get the Bot's AgentManager instance. Raises 404 if not initialized."""
     manager = _get_agent_manager_optional(bot_id)
     if manager is None:
         logger.warning(f"Agent system not initialized for bot '{bot_id}'")
@@ -34,8 +34,84 @@ def _resolve_agent_manager(bot_id: str) -> AgentManager:
     return manager
 
 
+# ---------------------------------------------------------------------------
+# Category endpoints
+# ---------------------------------------------------------------------------
+
+class CategoryResponse(BaseModel):
+    key: str
+    label: str
+    color: str
+
+
+class CategoryCreateRequest(BaseModel):
+    label: str
+
+
+@router.get("/categories", response_model=list[CategoryResponse])
+async def list_categories(bot_id: str) -> list[CategoryResponse]:
+    """List all custom categories for a bot."""
+    manager = _get_agent_manager_optional(bot_id)
+    if manager is None:
+        return []
+    cats = manager.category_manager.list_categories()
+    return [CategoryResponse(key=c.key, label=c.label, color=c.color) for c in cats]
+
+
+@router.post("/categories", response_model=CategoryResponse)
+async def add_category(bot_id: str, request: CategoryCreateRequest) -> CategoryResponse:
+    """Create a new category."""
+    manager = _resolve_agent_manager(bot_id)
+    label = request.label.strip()
+    if not label:
+        raise HTTPException(status_code=400, detail="Category label cannot be empty")
+    try:
+        cat = await manager.category_manager.add_category(label)
+        return CategoryResponse(key=cat.key, label=cat.label, color=cat.color)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/categories/{category_key}")
+async def remove_category(bot_id: str, category_key: str) -> dict[str, str]:
+    """Delete a category."""
+    manager = _resolve_agent_manager(bot_id)
+    success = await manager.category_manager.remove_category(category_key)
+    if not success:
+        raise HTTPException(status_code=404, detail=f"Category '{category_key}' not found")
+    return {"status": "deleted", "key": category_key}
+
+
+class CategoryOverrideRequest(BaseModel):
+    agent_id: str
+    category_key: str | None  # None = clear override
+
+
+@router.get("/categories/overrides", response_model=dict[str, str])
+async def get_category_overrides(bot_id: str) -> dict[str, str]:
+    """Get all agent-to-category overrides."""
+    manager = _get_agent_manager_optional(bot_id)
+    if manager is None:
+        return {}
+    return manager.category_manager.get_all_overrides()
+
+
+@router.put("/categories/overrides", response_model=dict[str, str])
+async def set_category_override(
+    bot_id: str, request: CategoryOverrideRequest
+) -> dict[str, str]:
+    """Set an agent's display category."""
+    manager = _resolve_agent_manager(bot_id)
+    await manager.category_manager.set_agent_category(request.agent_id, request.category_key)
+    return manager.category_manager.get_all_overrides()
+
+
+# ---------------------------------------------------------------------------
+# Agent endpoints
+# ---------------------------------------------------------------------------
+
 class AgentCreateRequest(BaseModel):
-    """创建Agent的请求"""
+    """Request body for creating an Agent."""
 
     id: str | None = None
     name: str
@@ -47,10 +123,11 @@ class AgentCreateRequest(BaseModel):
     topics: list[str] = []
     collaborators: list[str] = []
     enabled: bool = True
+    display_category: str | None = None
 
 
 class AgentUpdateRequest(BaseModel):
-    """更新Agent的请求"""
+    """Request body for updating an Agent."""
 
     name: str | None = None
     description: str | None = None
@@ -61,10 +138,11 @@ class AgentUpdateRequest(BaseModel):
     topics: list[str] | None = None
     collaborators: list[str] | None = None
     enabled: bool | None = None
+    display_category: str | None = None  # None = keep existing
 
 
 class AgentResponse(BaseModel):
-    """Agent响应"""
+    """Response body for an Agent."""
 
     id: str
     name: str
@@ -80,7 +158,7 @@ class AgentResponse(BaseModel):
 
 
 def _agent_to_response(agent: AgentConfig) -> AgentResponse:
-    """将AgentConfig转换为API响应"""
+    """Convert AgentConfig to API response."""
     return AgentResponse(
         id=agent.id,
         name=agent.name,
@@ -98,7 +176,7 @@ def _agent_to_response(agent: AgentConfig) -> AgentResponse:
 
 @router.get("")
 async def list_agents(bot_id: str) -> list[AgentResponse]:
-    """获取Bot下所有Agent列表；未初始化 agent 系统时返回空列表"""
+    """List all Agents for a bot. Returns empty list if agent system not initialized."""
     agent_manager = _get_agent_manager_optional(bot_id)
     if agent_manager is None:
         return []
@@ -108,10 +186,9 @@ async def list_agents(bot_id: str) -> list[AgentResponse]:
 
 @router.post("")
 async def create_agent(bot_id: str, request: AgentCreateRequest) -> AgentResponse:
-    """创建新Agent"""
+    """Create a new Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
 
-    # 构建AgentConfig
     config = AgentConfig(
         id=request.id or "",
         name=request.name,
@@ -127,6 +204,10 @@ async def create_agent(bot_id: str, request: AgentCreateRequest) -> AgentRespons
 
     try:
         agent = await agent_manager.create_agent(config)
+        if request.display_category:
+            await agent_manager.category_manager.set_agent_category(
+                agent.id, request.display_category
+            )
         return _agent_to_response(agent)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -134,7 +215,7 @@ async def create_agent(bot_id: str, request: AgentCreateRequest) -> AgentRespons
 
 @router.get("/{agent_id}")
 async def get_agent(bot_id: str, agent_id: str) -> AgentResponse:
-    """获取指定Agent详情"""
+    """Get a specific Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
     agent = agent_manager.get_agent(agent_id)
     if not agent:
@@ -144,14 +225,21 @@ async def get_agent(bot_id: str, agent_id: str) -> AgentResponse:
 
 @router.put("/{agent_id}")
 async def update_agent(bot_id: str, agent_id: str, request: AgentUpdateRequest) -> AgentResponse:
-    """更新Agent配置"""
+    """Update an Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
 
-    # 构建更新字典 (排除None值)
     update_data = {k: v for k, v in request.model_dump(exclude_unset=True).items() if v is not None}
+    # remove display_category from the config update; handle it separately
+    update_data.pop("display_category", None)
 
     try:
         agent = await agent_manager.update_agent(agent_id, update_data)
+        # Only update category if explicitly provided (not None)
+        raw = request.model_dump()
+        if "display_category" in raw:
+            await agent_manager.category_manager.set_agent_category(
+                agent_id, raw["display_category"]
+            )
         return _agent_to_response(agent)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -159,7 +247,7 @@ async def update_agent(bot_id: str, agent_id: str, request: AgentUpdateRequest) 
 
 @router.delete("/{agent_id}")
 async def delete_agent(bot_id: str, agent_id: str) -> dict[str, str]:
-    """删除Agent"""
+    """Delete an Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
     success = await agent_manager.delete_agent(agent_id)
     if not success:
@@ -169,7 +257,7 @@ async def delete_agent(bot_id: str, agent_id: str) -> dict[str, str]:
 
 @router.post("/{agent_id}/enable")
 async def enable_agent(bot_id: str, agent_id: str) -> AgentResponse:
-    """启用Agent"""
+    """Enable an Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
     try:
         agent = await agent_manager.enable_agent(agent_id)
@@ -180,7 +268,7 @@ async def enable_agent(bot_id: str, agent_id: str) -> AgentResponse:
 
 @router.post("/{agent_id}/disable")
 async def disable_agent(bot_id: str, agent_id: str) -> AgentResponse:
-    """禁用Agent"""
+    """Disable an Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
     try:
         agent = await agent_manager.disable_agent(agent_id)
@@ -190,8 +278,6 @@ async def disable_agent(bot_id: str, agent_id: str) -> AgentResponse:
 
 
 class DelegateTaskRequest(BaseModel):
-    """委托任务请求"""
-
     to_agent_id: str
     task: str
     context: dict[str, Any] = {}
@@ -199,8 +285,6 @@ class DelegateTaskRequest(BaseModel):
 
 
 class DelegateTaskResponse(BaseModel):
-    """委托任务响应"""
-
     correlation_id: str
     response: str | None
 
@@ -209,9 +293,8 @@ class DelegateTaskResponse(BaseModel):
 async def delegate_task(
     bot_id: str, agent_id: str, request: DelegateTaskRequest
 ) -> DelegateTaskResponse:
-    """将任务委托给另一个Agent"""
+    """Delegate a task to another Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
-
     try:
         correlation_id, response_msg = await agent_manager.delegate_task(
             from_agent_id=agent_id,
@@ -229,8 +312,6 @@ async def delegate_task(
 
 
 class BroadcastEventRequest(BaseModel):
-    """广播事件请求"""
-
     topic: str
     content: str
     context: dict[str, Any] = {}
@@ -240,7 +321,7 @@ class BroadcastEventRequest(BaseModel):
 async def broadcast_event(
     bot_id: str, agent_id: str, request: BroadcastEventRequest
 ) -> dict[str, str]:
-    """广播事件给所有Agent"""
+    """Broadcast an event to all Agents."""
     agent_manager = _resolve_agent_manager(bot_id)
     await agent_manager.broadcast_event(
         agent_id=agent_id,
@@ -252,7 +333,6 @@ async def broadcast_event(
 
 
 def _empty_system_status() -> dict[str, Any]:
-    """Agent 系统未初始化时的默认状态"""
     return {
         "total_agents": 0,
         "enabled_agents": 0,
@@ -264,10 +344,10 @@ def _empty_system_status() -> dict[str, Any]:
 
 @router.get("/{agent_id}/status")
 async def get_agent_status(bot_id: str, agent_id: str) -> dict[str, Any]:
-    """获取Agent状态；未初始化 agent 系统时返回空状态"""
+    """Get Agent status; returns empty status if agent system not initialized."""
     agent_manager = _get_agent_manager_optional(bot_id)
 
-    # 特殊处理系统状态请求
+    # Special path: /agents/system-status/status
     if agent_id == "system-status":
         if agent_manager is None:
             return _empty_system_status()
@@ -281,11 +361,10 @@ async def get_agent_status(bot_id: str, agent_id: str) -> dict[str, Any]:
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
 
-    # 验证Agent身份
     agent_manager.zmq_bus.set_agent_id(agent_id)
-
     status = agent_manager.get_status()
     status["agent_id"] = agent_id
     status["agent_name"] = agent.name
     status["enabled"] = agent.enabled
     return status
+

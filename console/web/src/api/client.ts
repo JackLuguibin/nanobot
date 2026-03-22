@@ -805,6 +805,59 @@ export async function getAgentsSystemStatus(botId: string): Promise<import('./ty
   );
 }
 
+// ====================
+// Category API
+// ====================
+
+export interface CategoryInfo {
+  key: string;
+  label: string;
+  color: string;
+}
+
+export async function listCategories(botId: string): Promise<CategoryInfo[]> {
+  return fetchJson<CategoryInfo[]>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/categories`
+  );
+}
+
+export async function addCategory(botId: string, label: string): Promise<CategoryInfo> {
+  return fetchJson<CategoryInfo>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/categories`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }
+  );
+}
+
+export async function removeCategory(botId: string, key: string): Promise<{ status: string; key: string }> {
+  return fetchJson<{ status: string; key: string }>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/categories/${encodeURIComponent(key)}`,
+    { method: 'DELETE' }
+  );
+}
+
+export async function getCategoryOverrides(botId: string): Promise<Record<string, string>> {
+  return fetchJson<Record<string, string>>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/categories/overrides`
+  );
+}
+
+export async function setCategoryOverride(
+  botId: string,
+  agentId: string,
+  categoryKey: string | null
+): Promise<Record<string, string>> {
+  return fetchJson<Record<string, string>>(
+    `${API_BASE}/bots/${encodeURIComponent(botId)}/agents/categories/overrides`,
+    {
+      method: 'PUT',
+      body: JSON.stringify({ agent_id: agentId, category_key: categoryKey }),
+    }
+  );
+}
+
 
 export interface DelegateTaskRequest {
   to_agent_id: string;

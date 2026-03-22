@@ -35,27 +35,43 @@ import type { Agent, AgentCreateRequest } from '../api/types_agents';
 
 const { TextArea } = Input;
 
-// 分类配置
-const CATEGORIES = [
-  { key: 'all', label: '全部', color: '#1890ff' },
-  { key: 'general', label: '通用基础', color: '#52c41a' },
-  { key: 'content', label: '内容创作', color: '#ff7875' },
-  { key: 'office', label: '企业办公', color: '#faad14' },
-];
+// Built-in categories (never persisted; always available)
+const BUILTIN_CATEGORIES = [
+  { key: 'all', label: 'All', color: '#1890ff' },
+  { key: 'general', label: 'General', color: '#52c41a' },
+  { key: 'content', label: 'Content', color: '#ff7875' },
+  { key: 'office', label: 'Office', color: '#faad14' },
+] as const;
 
-// 根据agent名称或描述推断分类（简单实现）
+type CategoryDef = { key: string; label: string; color: string };
+
+function findCategoryConfig(key: string, custom: CategoryDef[]): CategoryDef {
+  const built = BUILTIN_CATEGORIES.find((c) => c.key === key);
+  if (built) return { ...built };
+  const c = custom.find((x) => x.key === key);
+  if (c) return c;
+  return { ...BUILTIN_CATEGORIES[1] };
+}
+
+// Infer category from agent name or description
 function getAgentCategory(agent: Agent): string {
   const name = agent.name.toLowerCase();
   const desc = (agent.description || '').toLowerCase();
   const text = `${name} ${desc}`;
-  
-  if (text.includes('内容') || text.includes('创作') || text.includes('content') || text.includes('creator')) {
+
+  if (text.includes('content') || text.includes('creator')) {
     return 'content';
   }
-  if (text.includes('办公') || text.includes('企业') || text.includes('office') || text.includes('enterprise')) {
+  if (text.includes('office') || text.includes('enterprise')) {
     return 'office';
   }
   return 'general';
+}
+
+function resolveAgentCategory(agent: Agent, overrides: Record<string, string>): string {
+  const o = overrides[agent.id];
+  if (o) return o;
+  return getAgentCategory(agent);
 }
 
 export default function Agents() {
@@ -67,6 +83,10 @@ export default function Agents() {
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [addCategoryModalOpen, setAddCategoryModalOpen] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [createFormCategory, setCreateFormCategory] = useState('general');
+  const [editFormCategory, setEditFormCategory] = useState('general');
   const [formData, setFormData] = useState<AgentCreateRequest>({
     name: '',
     description: '',
@@ -103,37 +123,84 @@ export default function Agents() {
     enabled: !!currentBotId,
   });
 
-  // 根据分类筛选agents
+  // Custom categories from API
+  const { data: customCategories = [], refetch: refetchCategories } = useQuery({
+    queryKey: ['agent-categories', currentBotId],
+    queryFn: () => api.listCategories(currentBotId!),
+    enabled: !!currentBotId,
+  });
+
+  // Category overrides from API
+  const { data: categoryOverrides = {} } = useQuery({
+    queryKey: ['agent-category-overrides', currentBotId],
+    queryFn: () => api.getCategoryOverrides(currentBotId!),
+    enabled: !!currentBotId,
+  });
+
+  const allCategoryTabs = useMemo(
+    () => [...BUILTIN_CATEGORIES.map((c) => ({ ...c })), ...customCategories],
+    [customCategories],
+  );
+
+  const selectableCategories = useMemo(
+    () => allCategoryTabs.filter((c) => c.key !== 'all'),
+    [allCategoryTabs],
+  );
+
+  // Filter agents by category
   const filteredAgents = useMemo(() => {
     if (selectedCategory === 'all') return agents;
-    return agents.filter((agent) => getAgentCategory(agent) === selectedCategory);
-  }, [agents, selectedCategory]);
+    return agents.filter(
+      (agent) => resolveAgentCategory(agent, categoryOverrides) === selectedCategory,
+    );
+  }, [agents, selectedCategory, categoryOverrides]);
+
+  const addCategoryMutation = useMutation({
+    mutationFn: (label: string) => api.addCategory(currentBotId!, label),
+    onSuccess: (cat) => {
+      refetchCategories();
+      setSelectedCategory(cat.key);
+      setNewCategoryName('');
+      setAddCategoryModalOpen(false);
+      addToast({ type: 'success', message: `Category "${cat.label}" added` });
+    },
+    onError: (err: Error) => {
+      addToast({ type: 'error', message: `Failed to add category: ${err.message}` });
+    },
+  });
 
   const createMutation = useMutation({
-    mutationFn: (data: AgentCreateRequest) => api.createAgent(currentBotId!, data),
+    mutationFn: (data: AgentCreateRequest & { displayCategory?: string }) =>
+      api.createAgent(currentBotId!, data),
     onSuccess: (agent) => {
       queryClient.invalidateQueries({ queryKey: ['agents', currentBotId] });
       queryClient.invalidateQueries({ queryKey: ['agents-status', currentBotId] });
-      addToast({ type: 'success', message: `Agent "${agent.name}" 创建成功` });
+      addToast({ type: 'success', message: `Agent "${agent.name}" created` });
       setCreateModalOpen(false);
       resetForm();
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `创建失败: ${err.message}` });
+      addToast({ type: 'error', message: `Failed to create: ${err.message}` });
     },
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ agentId, data }: { agentId: string; data: Partial<Agent> }) =>
-      api.updateAgent(currentBotId!, agentId, data),
+    mutationFn: ({
+      agentId,
+      data,
+    }: {
+      agentId: string;
+      data: Partial<Agent>;
+      displayCategory?: string;
+    }) => api.updateAgent(currentBotId!, agentId, data),
     onSuccess: (agent) => {
       queryClient.invalidateQueries({ queryKey: ['agents', currentBotId] });
-      addToast({ type: 'success', message: `Agent "${agent.name}" 更新成功` });
+      addToast({ type: 'success', message: `Agent "${agent.name}" updated` });
       setEditModalOpen(false);
       setSelectedAgent(null);
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `更新失败: ${err.message}` });
+      addToast({ type: 'error', message: `Failed to update: ${err.message}` });
     },
   });
 
@@ -142,10 +209,10 @@ export default function Agents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents', currentBotId] });
       queryClient.invalidateQueries({ queryKey: ['agents-status', currentBotId] });
-      addToast({ type: 'success', message: 'Agent 已删除' });
+      addToast({ type: 'success', message: 'Agent deleted' });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `删除失败: ${err.message}` });
+      addToast({ type: 'error', message: `Failed to delete: ${err.message}` });
     },
   });
 
@@ -154,10 +221,10 @@ export default function Agents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents', currentBotId] });
       queryClient.invalidateQueries({ queryKey: ['agents-status', currentBotId] });
-      addToast({ type: 'success', message: 'Agent 已启用' });
+      addToast({ type: 'success', message: 'Agent enabled' });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `启用失败: ${err.message}` });
+      addToast({ type: 'error', message: `Failed to enable: ${err.message}` });
     },
   });
 
@@ -166,10 +233,10 @@ export default function Agents() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['agents', currentBotId] });
       queryClient.invalidateQueries({ queryKey: ['agents-status', currentBotId] });
-      addToast({ type: 'success', message: 'Agent 已禁用' });
+      addToast({ type: 'success', message: 'Agent disabled' });
     },
     onError: (err: Error) => {
-      addToast({ type: 'error', message: `禁用失败: ${err.message}` });
+      addToast({ type: 'error', message: `Failed to disable: ${err.message}` });
     },
   });
 
@@ -185,16 +252,27 @@ export default function Agents() {
       collaborators: [],
       enabled: true,
     });
+    setCreateFormCategory('general');
   };
 
   const handleCreate = () => {
     if (formData.name.trim()) {
-      createMutation.mutate(formData);
+      createMutation.mutate({ ...formData, displayCategory: createFormCategory });
     }
+  };
+
+  const handleConfirmAddCategory = () => {
+    const label = newCategoryName.trim();
+    if (!label) {
+      addToast({ type: 'error', message: 'Please enter a category name' });
+      return;
+    }
+    addCategoryMutation.mutate(label);
   };
 
   const handleEdit = (agent: Agent) => {
     setSelectedAgent(agent);
+    setEditFormCategory(resolveAgentCategory(agent, categoryOverrides));
     setFormData({
       name: agent.name,
       description: agent.description || '',
@@ -211,7 +289,11 @@ export default function Agents() {
 
   const handleUpdate = () => {
     if (selectedAgent && formData.name.trim()) {
-      updateMutation.mutate({ agentId: selectedAgent.id, data: formData });
+      updateMutation.mutate({
+        agentId: selectedAgent.id,
+        data: formData,
+        displayCategory: editFormCategory,
+      });
     }
   };
 
@@ -230,16 +312,16 @@ export default function Agents() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    addToast({ type: 'success', message: '导出成功' });
+    addToast({ type: 'success', message: 'Export successful' });
   };
 
   const handleImport = async (file: File) => {
     try {
       const text = await file.text();
       const importedAgents = JSON.parse(text);
-      
+
       if (!Array.isArray(importedAgents)) {
-        throw new Error('无效的导入文件格式');
+        throw new Error('Invalid import file format');
       }
 
       let successCount = 0;
@@ -261,18 +343,18 @@ export default function Agents() {
           successCount++;
         } catch (err) {
           errorCount++;
-          console.error('导入agent失败:', err);
+          console.error('Failed to import agent:', err);
         }
       }
 
       queryClient.invalidateQueries({ queryKey: ['agents', currentBotId] });
       addToast({
         type: successCount > 0 ? 'success' : 'error',
-        message: `导入完成: 成功 ${successCount} 个, 失败 ${errorCount} 个`,
+        message: `Import complete: ${successCount} succeeded, ${errorCount} failed`,
       });
       setImportModalOpen(false);
     } catch (err) {
-      addToast({ type: 'error', message: `导入失败: ${err instanceof Error ? err.message : '未知错误'}` });
+      addToast({ type: 'error', message: `Import failed: ${err instanceof Error ? err.message : 'Unknown error'}` });
     }
   };
 
@@ -299,7 +381,7 @@ export default function Agents() {
   if (!currentBotId) {
     return (
       <div className="p-6 flex flex-col flex-1 min-h-0">
-        <Empty description="请先选择一个 Bot" className="py-20" />
+        <Empty description="Please select a Bot first" className="py-20" />
       </div>
     );
   }
@@ -310,10 +392,10 @@ export default function Agents() {
       <div className="flex items-center justify-between shrink-0 mb-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
-            Agent 管理
+            Agents
           </h1>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5 hidden sm:block">
-            管理多个 AI Agent，每个 Agent 拥有独立的配置和能力
+            Manage multiple AI Agents, each with independent configuration and capabilities
           </p>
         </div>
         <Space align="center" size="middle">
@@ -323,7 +405,7 @@ export default function Agents() {
               color={systemStatus.zmq_initialized ? 'success' : 'default'}
               className="!m-0"
             >
-              ZeroMQ: {systemStatus.zmq_initialized ? '已连接' : '未连接'}
+              ZeroMQ: {systemStatus.zmq_initialized ? 'Connected' : 'Disconnected'}
             </Tag>
           )}
           <Button
@@ -331,29 +413,32 @@ export default function Agents() {
             onClick={() => refetch()}
             className="border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
           >
-            <span className="hidden sm:inline">刷新</span>
+            <span className="hidden sm:inline">Refresh</span>
           </Button>
           <Button
             icon={<UploadOutlined />}
             onClick={() => setImportModalOpen(true)}
             className="border-gray-300 dark:border-gray-600 hover:border-gray-400 dark:hover:border-gray-500"
           >
-            <span className="hidden sm:inline">导入</span>
+            <span className="hidden sm:inline">Import</span>
           </Button>
           <Button
             type="primary"
             icon={<PlusOutlined />}
-            onClick={() => setCreateModalOpen(true)}
+            onClick={() => {
+              resetForm();
+              setCreateModalOpen(true);
+            }}
             className="shadow-md shadow-blue-500/25"
           >
-            <span className="hidden sm:inline">创建 Agent</span>
+            <span className="hidden sm:inline">New Agent</span>
           </Button>
         </Space>
       </div>
 
       {/* Category Filter */}
       <div className="flex items-center gap-2.5 mb-6 flex-wrap">
-        {CATEGORIES.map((cat) => (
+        {allCategoryTabs.map((cat) => (
           <button
             key={cat.key}
             onClick={() => setSelectedCategory(cat.key)}
@@ -370,9 +455,14 @@ export default function Agents() {
           </button>
         ))}
         <button
+          type="button"
+          onClick={() => {
+            setNewCategoryName('');
+            setAddCategoryModalOpen(true);
+          }}
           className="px-5 py-2 rounded-full text-sm font-medium border border-dashed border-gray-300 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:border-gray-400 dark:hover:border-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-all"
         >
-          + 添加分类
+          + Add Category
         </button>
       </div>
 
@@ -382,13 +472,13 @@ export default function Agents() {
           <Spin size="large" />
         </div>
       ) : error ? (
-        <Empty description={`错误: ${(error as Error).message}`} className="py-12 shrink-0" />
+        <Empty description={`Error: ${(error as Error).message}`} className="py-12 shrink-0" />
       ) : filteredAgents.length === 0 ? (
         <div className="flex-1 flex items-center justify-center">
           <Empty
             description={
               <span className="text-gray-500 dark:text-gray-400">
-                暂无 Agent，点击上方按钮创建
+                No agents yet — click the button above to create one
               </span>
             }
             className="py-12"
@@ -397,8 +487,8 @@ export default function Agents() {
       ) : (
         <div className="w-full grid gap-3 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {filteredAgents.map((agent) => {
-            const category = getAgentCategory(agent);
-            const categoryConfig = CATEGORIES.find((c) => c.key === category) || CATEGORIES[0];
+            const category = resolveAgentCategory(agent, categoryOverrides);
+            const categoryConfig = findCategoryConfig(category, customCategories);
             const isSelected = selectedAgents.has(agent.id);
             
             return (
@@ -448,7 +538,7 @@ export default function Agents() {
                             className="text-xs !m-0 border-0 px-1.5 py-0.5 rounded-md leading-none dark:!bg-[#2a1f4a] dark:!text-[#b37feb]"
                             style={{ backgroundColor: '#f0f0ff', color: '#722ed1' }}
                           >
-                            系统
+                            SYS
                           </Tag>
                         )}
                       </div>
@@ -462,7 +552,7 @@ export default function Agents() {
 
                   {/* Action buttons */}
                   <div className="flex items-center justify-end gap-0.5 pt-2.5 mt-0.5 border-t border-gray-100 dark:border-gray-700">
-                    <Tooltip title="编辑">
+                    <Tooltip title="Edit">
                       <Button
                         type="text"
                         size="small"
@@ -474,7 +564,7 @@ export default function Agents() {
                         className="text-gray-500 dark:text-gray-400 hover:text-blue-500 dark:hover:text-blue-400 !px-1"
                       />
                     </Tooltip>
-                    <Tooltip title="导出">
+                    <Tooltip title="Export">
                       <Button
                         type="text"
                         size="small"
@@ -491,23 +581,23 @@ export default function Agents() {
                           link.click();
                           document.body.removeChild(link);
                           URL.revokeObjectURL(url);
-                          addToast({ type: 'success', message: '导出成功' });
+                      addToast({ type: 'success', message: 'Export successful' });
                         }}
                         className="text-gray-500 dark:text-gray-400 hover:text-green-500 dark:hover:text-green-400 !px-1"
                       />
                     </Tooltip>
                     <Popconfirm
-                      title="确认隐藏"
-                      description="确定要隐藏这个 Agent 吗？"
+                      title="Confirm Hide"
+                      description="Are you sure you want to hide this Agent?"
                       onConfirm={(e) => {
                         e?.stopPropagation();
                         disableMutation.mutate(agent.id);
                       }}
-                      okText="隐藏"
-                      cancelText="取消"
+                      okText="Hide"
+                      cancelText="Cancel"
                       okButtonProps={{ danger: true }}
                     >
-                      <Tooltip title="隐藏">
+                      <Tooltip title="Hide">
                         <Button
                           type="text"
                           size="small"
@@ -530,15 +620,15 @@ export default function Agents() {
         <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-10">
           <Card className="shadow-xl border border-gray-200 dark:border-gray-700 rounded-xl">
             <Space size="middle">
-              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
-                已选择 <span className="text-blue-500 font-semibold">{selectedAgents.size}</span> 个 Agent
-              </span>
+                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  <span className="text-blue-500 font-semibold">{selectedAgents.size}</span> Agent{selectedAgents.size > 1 ? 's' : ''} selected
+                </span>
               <Divider type="vertical" className="!my-0" />
               <Button size="small" onClick={handleSelectAll}>
-                {selectedAgents.size === filteredAgents.length ? '取消全选' : '全选'}
+                {selectedAgents.size === filteredAgents.length ? 'Deselect All' : 'Select All'}
               </Button>
               <Button size="small" icon={<DownloadOutlined />} onClick={handleExport}>
-                批量导出
+                Batch Export
               </Button>
               <Button
                 size="small"
@@ -546,11 +636,11 @@ export default function Agents() {
                 icon={<DeleteOutlined />}
                 onClick={() => {
                   Modal.confirm({
-                    title: '确认删除',
-                    content: `确定要删除选中的 ${selectedAgents.size} 个 Agent 吗？此操作不可恢复。`,
-                    okText: '删除',
+                    title: 'Confirm Delete',
+                    content: `Are you sure you want to delete ${selectedAgents.size} selected Agent${selectedAgents.size > 1 ? 's' : ''}? This cannot be undone.`,
+                    okText: 'Delete',
                     okType: 'danger',
-                    cancelText: '取消',
+                    cancelText: 'Cancel',
                     onOk: () => {
                       selectedAgents.forEach((id) => {
                         deleteMutation.mutate(id);
@@ -560,7 +650,7 @@ export default function Agents() {
                   });
                 }}
               >
-                批量删除
+                Batch Delete
               </Button>
             </Space>
           </Card>
@@ -569,15 +659,15 @@ export default function Agents() {
 
       {/* Create Modal */}
       <Modal
-        title="创建 Agent"
+        title="New Agent"
         open={createModalOpen}
         onOk={handleCreate}
         onCancel={() => {
           setCreateModalOpen(false);
           resetForm();
         }}
-        okText="创建"
-        cancelText="取消"
+        okText="Create"
+        cancelText="Cancel"
         confirmLoading={createMutation.isPending}
         okButtonProps={{ disabled: !formData.name.trim() }}
         width={640}
@@ -586,34 +676,45 @@ export default function Agents() {
       >
         <Form layout="vertical" className="pt-2">
           <Typography.Text type="secondary" strong className="text-xs uppercase tracking-wide">
-            基本信息
+            Basic Info
           </Typography.Text>
           <Divider className="!mt-1 !mb-3" />
-          <Form.Item label="Agent 名称" required>
+          <Form.Item label="Agent Name" required>
             <Input
-              placeholder="例如: 代码审查、文档编写、测试生成"
+              placeholder="e.g. Code Review, Documentation, Test Generation"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               onPressEnter={handleCreate}
             />
           </Form.Item>
-          <Form.Item label="描述">
+          <Form.Item label="Description">
             <TextArea
               rows={2}
-              placeholder="这个 Agent 的功能是什么？"
+              placeholder="What does this Agent do?"
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value || null })}
             />
           </Form.Item>
+          <Form.Item label="Display Category" extra="Used for list filtering and tag colors; custom categories can be created via + Add Category">
+            <Select
+              value={createFormCategory}
+              onChange={(v) => setCreateFormCategory(v)}
+              options={selectableCategories.map((c) => ({
+                value: c.key,
+                label: c.label,
+              }))}
+              className="w-full"
+            />
+          </Form.Item>
 
           <Typography.Text type="secondary" strong className="text-xs uppercase tracking-wide mt-4 block">
-            模型配置
+            Model Config
           </Typography.Text>
           <Divider className="!mt-1 !mb-3" />
           <div className="grid grid-cols-2 gap-4">
-            <Form.Item label="模型">
+            <Form.Item label="Model">
               <Select
-                placeholder="选择模型（为空则使用默认）"
+                placeholder="Select model (defaults to global if empty)"
                 value={formData.model || undefined}
                 onChange={(v) => setFormData({ ...formData, model: v || null })}
                 allowClear
@@ -647,21 +748,21 @@ export default function Agents() {
           </div>
 
           <Typography.Text type="secondary" strong className="text-xs uppercase tracking-wide mt-4 block">
-            系统提示词与技能
+            System Prompt & Skills
           </Typography.Text>
           <Divider className="!mt-1 !mb-3" />
-          <Form.Item label="系统提示词">
+          <Form.Item label="System Prompt">
             <TextArea
               rows={4}
-              placeholder="定义 Agent 的行为和个性..."
+              placeholder="Define the Agent's behavior and personality..."
               value={formData.system_prompt || ''}
               onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value || null })}
             />
           </Form.Item>
-          <Form.Item label="技能">
+          <Form.Item label="Skills">
             <Select
               mode="multiple"
-              placeholder="选择技能"
+              placeholder="Select skills"
               value={formData.skills || []}
               onChange={(v) => setFormData({ ...formData, skills: v || [] })}
               options={
@@ -688,11 +789,11 @@ export default function Agents() {
           </Form.Item>
           <Form.Item
             label="ZeroMQ Topics"
-            extra="Agent 将订阅这些主题以进行 Agent 间通信"
+            extra="The Agent subscribes to these topics for inter-Agent communication"
           >
             <Select
               mode="tags"
-              placeholder="添加主题（按 Enter）"
+              placeholder="Add topics (press Enter)"
               value={formData.topics || []}
               onChange={(v) => setFormData({ ...formData, topics: v || [] })}
               tokenSeparators={[',']}
@@ -704,7 +805,7 @@ export default function Agents() {
 
       {/* Edit Modal */}
       <Modal
-        title={`编辑 Agent: ${selectedAgent?.name ?? ''}`}
+        title={`Edit Agent: ${selectedAgent?.name ?? ''}`}
         open={editModalOpen}
         onOk={handleUpdate}
         onCancel={() => {
@@ -712,8 +813,8 @@ export default function Agents() {
           setSelectedAgent(null);
           resetForm();
         }}
-        okText="保存"
-        cancelText="取消"
+        okText="Save"
+        cancelText="Cancel"
         confirmLoading={updateMutation.isPending}
         okButtonProps={{ disabled: !formData.name.trim() }}
         width={640}
@@ -722,32 +823,43 @@ export default function Agents() {
       >
         <Form layout="vertical" className="pt-2">
           <Typography.Text type="secondary" strong className="text-xs uppercase tracking-wide">
-            基本信息
+            Basic Info
           </Typography.Text>
           <Divider className="!mt-1 !mb-3" />
-          <Form.Item label="Agent 名称" required>
+          <Form.Item label="Agent Name" required>
             <Input
-              placeholder="例如: 代码审查、文档编写"
+              placeholder="e.g. Code Review, Documentation"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value })}
             />
           </Form.Item>
-          <Form.Item label="描述">
+          <Form.Item label="Description">
             <TextArea
               rows={2}
               value={formData.description || ''}
               onChange={(e) => setFormData({ ...formData, description: e.target.value || null })}
             />
           </Form.Item>
+          <Form.Item label="Display Category" extra="Used for list filtering and tag colors">
+            <Select
+              value={editFormCategory}
+              onChange={(v) => setEditFormCategory(v)}
+              options={selectableCategories.map((c) => ({
+                value: c.key,
+                label: c.label,
+              }))}
+              className="w-full"
+            />
+          </Form.Item>
 
           <Typography.Text type="secondary" strong className="text-xs uppercase tracking-wide mt-4 block">
-            模型配置
+            Model Config
           </Typography.Text>
           <Divider className="!mt-1 !mb-3" />
           <div className="grid grid-cols-2 gap-4">
-            <Form.Item label="模型">
+            <Form.Item label="Model">
               <Select
-                placeholder="选择模型（为空则使用默认）"
+                placeholder="Select model (defaults to global if empty)"
                 value={formData.model || undefined}
                 onChange={(v) => setFormData({ ...formData, model: v || null })}
                 allowClear
@@ -781,20 +893,20 @@ export default function Agents() {
           </div>
 
           <Typography.Text type="secondary" strong className="text-xs uppercase tracking-wide mt-4 block">
-            系统提示词与技能
+            System Prompt & Skills
           </Typography.Text>
           <Divider className="!mt-1 !mb-3" />
-          <Form.Item label="系统提示词">
+          <Form.Item label="System Prompt">
             <TextArea
               rows={4}
               value={formData.system_prompt || ''}
               onChange={(e) => setFormData({ ...formData, system_prompt: e.target.value || null })}
             />
           </Form.Item>
-          <Form.Item label="技能">
+          <Form.Item label="Skills">
             <Select
               mode="multiple"
-              placeholder="选择技能"
+              placeholder="Select skills"
               value={formData.skills || []}
               onChange={(v) => setFormData({ ...formData, skills: v || [] })}
               options={
@@ -821,11 +933,11 @@ export default function Agents() {
           </Form.Item>
           <Form.Item
             label="ZeroMQ Topics"
-            extra="Agent 将订阅这些主题以进行 Agent 间通信"
+            extra="The Agent subscribes to these topics for inter-Agent communication"
           >
             <Select
               mode="tags"
-              placeholder="添加主题（按 Enter）"
+              placeholder="Add topics (press Enter)"
               value={formData.topics || []}
               onChange={(v) => setFormData({ ...formData, topics: v || [] })}
               tokenSeparators={[',']}
@@ -834,10 +946,10 @@ export default function Agents() {
           </Form.Item>
 
           <Typography.Text type="secondary" strong className="text-xs uppercase tracking-wide mt-4 block">
-            状态
+            Status
           </Typography.Text>
           <Divider className="!mt-1 !mb-3" />
-          <Form.Item label="启用">
+          <Form.Item label="Enabled">
             <Switch
               checked={formData.enabled}
               onChange={(checked) => setFormData({ ...formData, enabled: checked })}
@@ -846,9 +958,34 @@ export default function Agents() {
         </Form>
       </Modal>
 
+      <Modal
+        title="Add Category"
+        open={addCategoryModalOpen}
+        onOk={handleConfirmAddCategory}
+        onCancel={() => {
+          setAddCategoryModalOpen(false);
+          setNewCategoryName('');
+        }}
+        okText="Add"
+        cancelText="Cancel"
+        destroyOnClose
+      >
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+          New categories appear in the filter tabs. Assign an Agent to a category via the Display Category field when creating or editing.
+        </p>
+        <Input
+          placeholder="Category name"
+          value={newCategoryName}
+          onChange={(e) => setNewCategoryName(e.target.value)}
+          onPressEnter={handleConfirmAddCategory}
+          maxLength={32}
+          showCount
+        />
+      </Modal>
+
       {/* Import Modal */}
       <Modal
-        title="导入 Agent"
+        title="Import Agent"
         open={importModalOpen}
         onCancel={() => setImportModalOpen(false)}
         footer={null}
@@ -866,8 +1003,8 @@ export default function Agents() {
             <p className="ant-upload-drag-icon">
               <UploadOutlined className="text-4xl text-gray-400" />
             </p>
-            <p className="ant-upload-text">点击或拖拽文件到此区域上传</p>
-            <p className="ant-upload-hint">支持 JSON 格式的 Agent 配置文件</p>
+            <p className="ant-upload-text">Click or drag a file to upload</p>
+            <p className="ant-upload-hint">Supports JSON-formatted Agent configuration files</p>
           </Upload.Dragger>
         </div>
       </Modal>

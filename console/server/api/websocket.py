@@ -146,6 +146,14 @@ class ConnectionManager:
         message = WSMessage(type=WSMessageType.BOTS_UPDATE, data={})
         await self.send_message(message)
 
+    async def broadcast_queue_update(self, data: dict[str, Any]) -> None:
+        """广播队列状态更新。"""
+        message = WSMessage(
+            type=WSMessageType.QUEUE_UPDATE,
+            data=data,
+        )
+        await self.send_message(message)
+
 
 # Global connection manager
 _manager: ConnectionManager | None = None
@@ -169,78 +177,111 @@ async def handle_websocket(websocket: WebSocket) -> None:
     manager = get_connection_manager()
     await manager.connect(websocket)
 
-    # Send initial status and sessions for default bot on connect
-    try:
-        state_manager = get_state_manager()
-        default_bot_id = state_manager.default_bot_id
-        if default_bot_id:
-            state = get_state(default_bot_id)
-            status = await state.get_status()
-            status_data = dict(status)
-            status_data["bot_id"] = default_bot_id
-            await manager.send_to_connection(
-                websocket,
-                WSMessage(type=WSMessageType.STATUS_UPDATE, data=status_data),
-            )
-            sessions = await state.get_sessions()
-            await manager.send_to_connection(
-                websocket,
-                WSMessage(
-                    type=WSMessageType.SESSIONS_UPDATE,
-                    data={"bot_id": default_bot_id, "sessions": sessions},
-                ),
-            )
-    except Exception as e:
-        logger.debug("WebSocket initial send failed: {}", e)
+    # Start background task to broadcast queue status periodically
+    queue_broadcast_task: asyncio.Task | None = None
+    if not hasattr(manager, "_queue_broadcast_task") or manager._queue_broadcast_task is None:
+        manager._queue_broadcast_task = asyncio.create_task(_broadcast_queue_periodically(manager))
+        logger.info("[WebSocket] Started periodic queue broadcast task")
+    queue_broadcast_task = getattr(manager, "_queue_broadcast_task", None)
 
     try:
-        # Keep the connection alive and handle incoming messages
-        while True:
-            try:
-                data = await asyncio.wait_for(websocket.receive_text(), timeout=60)
+        # Send initial status and sessions for default bot on connect
+        try:
+            state_manager = get_state_manager()
+            default_bot_id = state_manager.default_bot_id
+            if default_bot_id:
+                state = get_state(default_bot_id)
+                status = await state.get_status()
+                status_data = dict(status)
+                status_data["bot_id"] = default_bot_id
+                await manager.send_to_connection(
+                    websocket,
+                    WSMessage(type=WSMessageType.STATUS_UPDATE, data=status_data),
+                )
+                sessions = await state.get_sessions()
+                await manager.send_to_connection(
+                    websocket,
+                    WSMessage(
+                        type=WSMessageType.SESSIONS_UPDATE,
+                        data={"bot_id": default_bot_id, "sessions": sessions},
+                    ),
+                )
+                # Send initial queue status for all bots
+                all_status = await state_manager.get_all_queue_status()
+                await manager.send_to_connection(
+                    websocket,
+                    WSMessage(type=WSMessageType.QUEUE_UPDATE, data={"queues": all_status}),
+                )
+        except Exception as e:
+            logger.debug("WebSocket initial send failed: {}", e)
 
-                # Handle incoming messages (e.g., chat messages)
+        try:
+            # Keep the connection alive and handle incoming messages
+            while True:
                 try:
-                    message = json.loads(data)
-                    # Process message based on type
-                    msg_type = message.get("type")
+                    data = await asyncio.wait_for(websocket.receive_text(), timeout=60)
 
-                    if msg_type == "chat":
-                        # Handle chat message - this would integrate with AgentLoop
-                        response = {
-                            "type": "chat_response",
-                            "data": {"status": "received"},
-                        }
-                        await websocket.send_text(json.dumps(response))
-                    elif msg_type == "subscribe" or msg_type == "request_initial":
-                        # Client requests initial status/sessions for a specific bot
-                        bot_id = message.get("bot_id") or get_state_manager().default_bot_id
-                        if bot_id:
-                            state = get_state(bot_id)
-                            status = await state.get_status()
-                            status_data = dict(status)
-                            status_data["bot_id"] = bot_id
-                            await manager.send_to_connection(
-                                websocket,
-                                WSMessage(type=WSMessageType.STATUS_UPDATE, data=status_data),
-                            )
-                            sessions = await state.get_sessions()
-                            await manager.send_to_connection(
-                                websocket,
-                                WSMessage(
-                                    type=WSMessageType.SESSIONS_UPDATE,
-                                    data={"bot_id": bot_id, "sessions": sessions},
-                                ),
-                            )
+                    # Handle incoming messages (e.g., chat messages)
+                    try:
+                        message = json.loads(data)
+                        # Process message based on type
+                        msg_type = message.get("type")
 
-                except json.JSONDecodeError:
-                    pass
+                        if msg_type == "chat":
+                            # Handle chat message - this would integrate with AgentLoop
+                            response = {
+                                "type": "chat_response",
+                                "data": {"status": "received"},
+                            }
+                            await websocket.send_text(json.dumps(response))
+                        elif msg_type == "subscribe" or msg_type == "request_initial":
+                            # Client requests initial status/sessions for a specific bot
+                            bot_id = message.get("bot_id") or get_state_manager().default_bot_id
+                            if bot_id:
+                                state = get_state(bot_id)
+                                status = await state.get_status()
+                                status_data = dict(status)
+                                status_data["bot_id"] = bot_id
+                                await manager.send_to_connection(
+                                    websocket,
+                                    WSMessage(type=WSMessageType.STATUS_UPDATE, data=status_data),
+                                )
+                                sessions = await state.get_sessions()
+                                await manager.send_to_connection(
+                                    websocket,
+                                    WSMessage(
+                                        type=WSMessageType.SESSIONS_UPDATE,
+                                        data={"bot_id": bot_id, "sessions": sessions},
+                                    ),
+                                )
+                                # Send queue status for all bots on subscribe
+                                state_manager = get_state_manager()
+                                all_status = await state_manager.get_all_queue_status()
+                                await manager.send_to_connection(
+                                    websocket,
+                                    WSMessage(type=WSMessageType.QUEUE_UPDATE, data={"queues": all_status}),
+                                )
 
-            except asyncio.TimeoutError:
-                # Send ping to keep connection alive
-                continue
+                    except json.JSONDecodeError:
+                        pass
 
-    except WebSocketDisconnect:
-        pass
+                except asyncio.TimeoutError:
+                    # Send ping to keep connection alive
+                    continue
+
+        except WebSocketDisconnect:
+            pass
     finally:
         await manager.disconnect(websocket)
+
+
+async def _broadcast_queue_periodically(manager: ConnectionManager) -> None:
+    """Background task: periodically broadcast queue status to all clients."""
+    while True:
+        await asyncio.sleep(5)
+        try:
+            state_manager = get_state_manager()
+            all_status = await state_manager.get_all_queue_status()
+            await manager.broadcast_queue_update({"queues": all_status})
+        except Exception as e:
+            logger.debug("[Queue Broadcast] Error: {}", e)

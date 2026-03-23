@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-namespace */
-import type { Alert, HealthIssue, BotInfo, BotFilesResponse, ChatRequest, ChatResponse, ChannelStatus, ConfigSection, CronAddRequest, CronJob, CronStatus, MCPStatus, MemoryResponse, SessionInfo, SessionDetail, StatusResponse, SkillInfo, ToolCallLog, StreamChunk, BatchDeleteResponse, ActivityItem, ChannelRefreshResult, MCPTestResult } from './types';
+import type { Alert, HealthIssue, BotInfo, BotFilesResponse, ChatRequest, ChatResponse, ChannelStatus, ConfigSection, CronAddRequest, CronJob, CronStatus, MCPStatus, MemoryResponse, SessionInfo, SessionDetail, StatusResponse, ToolCallLog, StreamChunk, BatchDeleteResponse, ActivityItem, ChannelRefreshResult, MCPTestResult } from './types';
 
 // ====================
 // Agent Types
@@ -94,7 +94,6 @@ export type {
   SessionInfo,
   SessionDetail,
   StatusResponse,
-  SkillInfo,
   ToolCallLog,
   StreamChunk,
   BatchDeleteResponse,

@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import type { StatusResponse, SessionInfo, WSMessage } from '../api/types';
+import type { QueueStatus } from '../api/types_queue';
 
 export function useWebSocket() {
   const queryClient = useQueryClient();
@@ -74,6 +75,21 @@ export function useWebSocket() {
           if (message.type === 'bots_update') {
             console.log('[WebSocket] Bots list updated, invalidating query');
             queryClient.invalidateQueries({ queryKey: ['bots'] });
+          }
+          if (message.type === 'queue_update' && message.data) {
+            const queueData = message.data as { queues?: QueueStatus[]; bot_id?: string };
+            // queues 是数组（全量），bot_id 是旧格式（单个）
+            if (queueData.queues && Array.isArray(queueData.queues)) {
+              // 全量更新：将每个 bot 的状态写入对应 queryKey
+              for (const q of queueData.queues) {
+                if (q.bot_id) {
+                  queryClient.setQueryData(['queue-status', q.bot_id], q);
+                }
+              }
+            } else if (queueData.bot_id) {
+              // 旧格式：仅 invalidate，让组件重新 fetch
+              queryClient.invalidateQueries({ queryKey: ['queue-status', queueData.bot_id] });
+            }
           }
         } catch (e) {
           console.error('[WebSocket] Parse error:', e);

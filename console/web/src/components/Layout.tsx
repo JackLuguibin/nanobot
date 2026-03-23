@@ -30,6 +30,7 @@ import {
   Clock,
   Heart,
   Activity,
+  Database,
 } from 'lucide-react';
 
 interface LayoutProps {
@@ -62,6 +63,7 @@ const navSections: NavSection[] = [
       { path: '/sessions', label: 'Sessions', icon: FolderOpen },
       { path: '/cron', label: 'Cron', icon: Clock },
       { path: '/health', label: 'Health', icon: Heart },
+      { path: '/queue', label: 'Queue', icon: Database },
       { path: '/activity', label: 'Activity', icon: Activity },
     ],
   },

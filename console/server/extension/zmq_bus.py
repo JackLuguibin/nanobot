@@ -1,17 +1,20 @@
-"""ZeroMQ-based Agent message bus for inter-agent communication."""
+"""ZeroMQ-based Agent message bus for inter-agent and inter-bot communication."""
 
 from __future__ import annotations
 
 import asyncio
 import json
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace as dataclass_replace
 from datetime import datetime
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 import zmq
 import zmq.asyncio
 from loguru import logger
+
+if TYPE_CHECKING:
+    from console.server.extension.agents import AgentManager
 
 
 @dataclass
@@ -34,15 +37,52 @@ class AgentMessage:
             self.correlation_id = uuid.uuid4().hex[:8]
 
 
+# ----------------------------------------------------------------------
+# Global singleton
+# ----------------------------------------------------------------------
+
+
+_zero_mq_bus: "ZeroMQBus | None" = None
+
+
+def get_zmq_bus() -> "ZeroMQBus":
+    """Get the global shared ZeroMQBus instance."""
+    global _zero_mq_bus
+    if _zero_mq_bus is None:
+        _zero_mq_bus = ZeroMQBus()
+    return _zero_mq_bus
+
+
+async def shutdown_zmq_bus() -> None:
+    """Shutdown the global shared ZeroMQBus."""
+    global _zero_mq_bus
+    if _zero_mq_bus is not None:
+        await _zero_mq_bus.shutdown()
+        _zero_mq_bus = None
+
+
+# ----------------------------------------------------------------------
+# ZeroMQBus
+# ----------------------------------------------------------------------
+
+
 class ZeroMQBus:
-    """基于ZeroMQ的Agent消息总线，支持Pub/Sub和Router/ Dealer模式。"""
+    """基于ZeroMQ的Agent消息总线，支持Pub/Sub和Router/Dealer模式。
+
+    作为全局单例，所有 bot 共用同一对 ZMQ socket（PUB + ROUTER）。
+    通过 agent_id 前缀（"{bot_id}:{agent_id}"）区分不同 bot 下的 agent。
+    """
 
     def __init__(self, bind_addr: str = "tcp://127.0.0.1:5555"):
         self._context: zmq.asyncio.Context | None = None
-        self._pub_socket = None
-        self._router_socket = None
+        self._pub_socket: zmq.asyncio.Socket | None = None
+        self._router_socket: zmq.asyncio.Socket | None = None
+        # agent_id -> (socket, task)
         self._sub_sockets: dict[str, tuple[zmq.asyncio.Socket, asyncio.Task]] = {}
+        # agent_id -> handler
         self._handlers: dict[str, Callable] = {}
+        # agent_id -> AgentManager instance
+        self._managers: dict[str, "AgentManager"] = {}
         self._bind_addr = bind_addr
         self._agent_id: str | None = None
         self._is_initialized = False
@@ -57,7 +97,17 @@ class ZeroMQBus:
         await self.start_publisher()
         await self.start_router()
         self._is_initialized = True
-        logger.info("ZeroMQ Bus initialized at {}", self._bind_addr)
+        logger.info("ZeroMQ Bus (shared) initialized at {}", self._bind_addr)
+
+    def register_manager(self, bot_id: str, manager: "AgentManager") -> None:
+        """Register an AgentManager so that messages can be routed to it."""
+        self._managers[bot_id] = manager
+        logger.debug("ZeroMQ Bus registered manager for bot '{}'", bot_id)
+
+    def unregister_manager(self, bot_id: str) -> None:
+        """Unregister an AgentManager on bot shutdown."""
+        self._managers.pop(bot_id, None)
+        logger.debug("ZeroMQ Bus unregistered manager for bot '{}'", bot_id)
 
     async def start_publisher(self) -> None:
         """启动Publisher (广播消息)。"""
@@ -84,33 +134,37 @@ class ZeroMQBus:
         asyncio.create_task(self._router_loop())
 
     async def subscribe(
-        self, agent_id: str, topics: list[str], handler: Callable[[AgentMessage], Any]
+        self, bot_id: str, agent_id: str, topics: list[str], handler: Callable[[AgentMessage], Any]
     ) -> None:
-        """订阅一个或多个主题。"""
+        """订阅一个或多个主题。bot_id+agent_id 组合构成唯一的 agent 标识。"""
         if self._context is None:
             self._context = zmq.asyncio.Context()
+
+        # agent_id 在全局必须唯一：使用 "{bot_id}:{agent_id}" 前缀
+        full_id = f"{bot_id}:{agent_id}"
 
         socket = self._context.socket(zmq.SUB)
         socket.connect(self._bind_addr)
 
         for topic in topics:
             socket.setsockopt(zmq.SUBSCRIBE, topic.encode())
-            logger.debug("Agent {} subscribed to topic: {}", agent_id, topic)
+            logger.debug("Agent {} (bot {}) subscribed to topic: {}", agent_id, bot_id, topic)
 
-        task = asyncio.create_task(self._read_messages(socket, agent_id, handler))
-        self._sub_sockets[agent_id] = (socket, task)
-        self._handlers[agent_id] = handler
-        logger.info("Agent {} subscribed to topics: {}", agent_id, topics)
+        task = asyncio.create_task(self._read_messages(socket, full_id, handler))
+        self._sub_sockets[full_id] = (socket, task)
+        self._handlers[full_id] = handler
+        logger.info("Agent '{}' (bot '{}') subscribed to topics: {}", agent_id, bot_id, topics)
 
-    async def unsubscribe(self, agent_id: str) -> None:
+    async def unsubscribe(self, bot_id: str, agent_id: str) -> None:
         """取消订阅。"""
-        if agent_id in self._sub_sockets:
-            socket, task = self._sub_sockets[agent_id]
+        full_id = f"{bot_id}:{agent_id}"
+        if full_id in self._sub_sockets:
+            socket, task = self._sub_sockets[full_id]
             task.cancel()
             socket.close()
-            del self._sub_sockets[agent_id]
-            del self._handlers[agent_id]
-            logger.info("Agent {} unsubscribed", agent_id)
+            del self._sub_sockets[full_id]
+            del self._handlers[full_id]
+            logger.info("Agent '{}' (bot '{}') unsubscribed", agent_id, bot_id)
 
     async def publish(self, topic: str, message: AgentMessage) -> None:
         """发布消息到指定主题。"""
@@ -123,12 +177,19 @@ class ZeroMQBus:
         logger.debug("Published to topic {}: {}", topic, message.correlation_id)
 
     async def send_direct(
-        self, receiver_id: str, message: AgentMessage, wait_response: bool = False
+        self, receiver_bot_id: str, receiver_agent_id: str, message: AgentMessage, wait_response: bool = False
     ) -> AgentMessage | None:
-        """直接发送消息给特定Agent (通过Router socket)。"""
+        """直接发送消息给特定Agent (通过Router socket)。
+
+        receiver_id 格式为 "{bot_id}:{agent_id}"，在全局唯一。
+        """
         if self._router_socket is None:
             logger.warning("Router not initialized")
             return None
+
+        # 全局唯一 receiver_id
+        receiver_full_id = f"{receiver_bot_id}:{receiver_agent_id}"
+        message = dataclass_replace(message, receiver_id=receiver_full_id)
 
         msg_data = json.dumps(asdict(message), ensure_ascii=False)
 
@@ -136,10 +197,10 @@ class ZeroMQBus:
             future: asyncio.Future[AgentMessage] = asyncio.Future()
             self._pending_delegations[message.correlation_id] = future
 
-        await self._router_socket.send_string(f"{receiver_id}:{msg_data}")
+        await self._router_socket.send_string(f"{receiver_full_id}:{msg_data}")
         logger.debug(
             "Sent direct to {}: {}",
-            receiver_id,
+            receiver_full_id,
             message.correlation_id,
         )
 
@@ -160,38 +221,41 @@ class ZeroMQBus:
 
     async def delegate_task(
         self,
+        from_bot_id: str,
+        from_agent_id: str,
+        to_bot_id: str,
         to_agent_id: str,
         task: str,
         context: dict[str, Any],
         wait_response: bool = False,
     ) -> tuple[str, AgentMessage | None]:
-        """将任务委托给另一个Agent。"""
-        if self._agent_id is None:
-            raise RuntimeError("Agent ID not set")
+        """将任务委托给另一个Agent（可跨bot）。"""
+        sender_full_id = f"{from_bot_id}:{from_agent_id}"
+        receiver_full_id = f"{to_bot_id}:{to_agent_id}"
 
         correlation_id = uuid.uuid4().hex[:8]
         message = AgentMessage(
             msg_type="delegate",
-            sender_id=self._agent_id,
-            receiver_id=to_agent_id,
+            sender_id=sender_full_id,
+            receiver_id=receiver_full_id,
             topic="task_delegation",
             content=task,
             context=context,
             correlation_id=correlation_id,
         )
 
-        response = await self.send_direct(to_agent_id, message, wait_response)
+        response = await self.send_direct(to_bot_id, to_agent_id, message, wait_response)
         return correlation_id, response
 
     def set_agent_id(self, agent_id: str) -> None:
         """设置当前Agent ID。"""
         self._agent_id = agent_id
-        logger.info("ZeroMQ Bus agent_id set to: {}", agent_id)
+        logger.debug("ZeroMQ Bus agent_id set to: {}", agent_id)
 
     async def _read_messages(
-        self, socket: zmq.asyncio.Socket, agent_id: str, handler: Callable
+        self, socket: zmq.asyncio.Socket, full_id: str, handler: Callable
     ) -> None:
-        """持续读取订阅消息。"""
+        """持续读取订阅消息（SUB socket）。"""
         while True:
             try:
                 message = await socket.recv_string()
@@ -201,32 +265,29 @@ class ZeroMQBus:
                 msg_obj = AgentMessage(**json.loads(data))
                 logger.debug(
                     "Agent {} received: topic={}, type={}, from={}",
-                    agent_id,
+                    full_id,
                     topic,
                     msg_obj.msg_type,
                     msg_obj.sender_id,
                 )
 
-                # 处理消息
                 result = handler(msg_obj)
                 if asyncio.iscoroutine(result):
                     await result
 
-                # 如果是请求消息，发送响应
-                if msg_obj.msg_type == "delegate" and msg_obj.receiver_id == agent_id:
-                    # 这里可以添加处理完成后发送响应的逻辑
-                    pass
-
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("Error reading message for {}: {}", agent_id, e)
+                logger.error("Error reading message for {}: {}", full_id, e)
 
     async def _router_loop(self) -> None:
-        """Router socket消息处理循环。"""
+        """Router socket消息处理循环，支持跨 bot 路由。
+
+        ZMQ ROUTER 会自动附加发送方的 identity 帧。
+        client_id 格式为 "{bot_id}:{agent_id}"，用于查找 handler。
+        """
         while True:
             try:
-                # Router接收: [client_id, message]
                 client_id = await self._router_socket.recv_string()
                 message = await self._router_socket.recv_string()
 
@@ -237,7 +298,6 @@ class ZeroMQBus:
                     msg_obj.correlation_id,
                 )
 
-                # 检查是否是响应的委托任务
                 if (
                     msg_obj.msg_type == "response"
                     and msg_obj.correlation_id in self._pending_delegations
@@ -246,12 +306,17 @@ class ZeroMQBus:
                     if not future.done():
                         future.set_result(msg_obj)
                 else:
-                    # 转发给对应的handler
                     if msg_obj.receiver_id in self._handlers:
                         handler = self._handlers[msg_obj.receiver_id]
                         result = handler(msg_obj)
                         if asyncio.iscoroutine(result):
                             await result
+                    else:
+                        logger.warning(
+                            "No handler registered for receiver '{}' (from {})",
+                            msg_obj.receiver_id,
+                            client_id,
+                        )
 
             except asyncio.CancelledError:
                 break
@@ -260,18 +325,26 @@ class ZeroMQBus:
 
     async def shutdown(self) -> None:
         """关闭所有socket和上下文。"""
-        # 取消所有订阅任务
-        for agent_id in list(self._sub_sockets.keys()):
-            await self.unsubscribe(agent_id)
+        # 取消所有订阅任务（遍历时取 snapshot 以避免修改 dict）
+        for full_id in list(self._sub_sockets.keys()):
+            socket, task = self._sub_sockets[full_id]
+            task.cancel()
+            socket.close()
+        self._sub_sockets.clear()
+        self._handlers.clear()
 
         # 关闭sockets
         if self._pub_socket:
             self._pub_socket.close()
+            self._pub_socket = None
         if self._router_socket:
             self._router_socket.close()
+            self._router_socket = None
         if self._context:
             self._context.term()
+            self._context = None
 
+        self._is_initialized = False
         logger.info("ZeroMQ Bus shutdown")
 
     @property

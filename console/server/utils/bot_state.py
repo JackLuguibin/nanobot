@@ -8,6 +8,7 @@ from console.server.api.state import get_state_manager
 from console.server.bot_registry import get_registry
 from console.server.extension.agents import AgentManager
 from console.server.extension.config_loader import load_bot_config
+from console.server.extension.zmq_bus import get_zmq_bus, shutdown_zmq_bus
 from console.server.utils.bot_builder import _initialize_bot
 from nanobot.config.loader import get_config_path, load_config
 
@@ -34,6 +35,13 @@ async def initialize_bot_state(app: FastAPI) -> None:
         bots = [info]
 
     default_id = registry.default_bot_id
+
+    # Initialize the shared global ZeroMQBus once before any AgentManager starts.
+    # All bots will share this same bus (single bind on ports 5555/5556).
+    zmq_bus = get_zmq_bus()
+    if not zmq_bus.is_initialized:
+        await zmq_bus.initialize()
+        logger.info("Global ZeroMQ Bus initialized (shared across all bots)")
 
     for bot_info in bots:
         config_path = Path(bot_info.config_path)
@@ -65,8 +73,22 @@ async def initialize_bot_state(app: FastAPI) -> None:
 
 
 async def shutdown_bot_state() -> None:
-    """Stop all bot cron services on shutdown."""
+    """Stop all bot cron services and AgentManagers, then shut down the global ZeroMQ bus."""
     manager = get_state_manager()
+
+    # Shutdown all AgentManagers first (unregisters from the shared bus)
+    for bot_id, state in manager.all_states().items():
+        if state._agent_manager:
+            try:
+                await state._agent_manager.shutdown()
+                logger.info("AgentManager shutdown for bot '{}'", bot_id)
+            except Exception as e:
+                logger.error("Error shutting down AgentManager for bot '{}': {}", bot_id, e)
+
+    # Stop all cron services
     for state in manager.all_states().values():
         if state.cron_service:
             state.cron_service.stop()
+
+    # Finally, shutdown the shared global ZeroMQ bus
+    await shutdown_zmq_bus()

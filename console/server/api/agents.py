@@ -292,10 +292,11 @@ async def get_agent_status(bot_id: str, agent_id: str) -> dict[str, Any]:
     if not agent:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
 
-    agent_manager.zmq_bus.set_agent_id(agent_id)
     status = agent_manager.get_status()
     status["agent_id"] = agent_id
     status["agent_name"] = agent.name
     status["enabled"] = agent.enabled
+    status["bot_id"] = bot_id  # shared bus: include bot context
+    status["full_agent_id"] = f"{bot_id}:{agent_id}"  # global unique identifier
     return status
 

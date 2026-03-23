@@ -12,7 +12,7 @@ from typing import Any
 
 from loguru import logger
 
-from console.server.extension.zmq_bus import AgentMessage, ZeroMQBus
+from console.server.extension.zmq_bus import AgentMessage, ZeroMQBus, get_zmq_bus
 
 
 # ----------------------------------------------------------------------
@@ -168,7 +168,12 @@ class AgentConfig:
 
 
 class AgentManager:
-    """Manages multiple Agents within a single Bot, with ZeroMQ communication support."""
+    """Manages multiple Agents within a single Bot, with shared ZeroMQ bus.
+
+    The ZeroMQBus is a global singleton shared across all bots. Each bot
+    registers itself so that inter-bot agent delegation is supported via
+    the "{bot_id}:{agent_id}" naming scheme.
+    """
 
     def __init__(
         self,
@@ -180,7 +185,8 @@ class AgentManager:
         self.workspace = workspace
         self.agents_dir = workspace / "agents"
         self.default_model = default_model
-        self._zmq_bus = ZeroMQBus()
+        # All bots share the same global ZeroMQBus singleton
+        self._zmq_bus = get_zmq_bus()
         self._agents: dict[str, AgentConfig] = {}
         self._agent_handlers: dict[str, callable] = {}
         self._message_queue: asyncio.Queue[tuple[str, AgentMessage]] = asyncio.Queue()
@@ -195,7 +201,8 @@ class AgentManager:
     async def initialize(self) -> None:
         """Initialize the Agent system."""
         self.agents_dir.mkdir(exist_ok=True)
-        await self._zmq_bus.initialize()
+        # Register with the shared global ZeroMQBus
+        self._zmq_bus.register_manager(self.bot_id, self)
         await self._category_manager.initialize()
         await self._load_agents()
         self._running = True
@@ -205,7 +212,12 @@ class AgentManager:
         )
 
     async def shutdown(self) -> None:
-        """关闭Agent系统"""
+        """关闭Agent系统（供外部调用，如进程退出时）。"""
+        await self._inner_shutdown()
+        logger.info("AgentManager shutdown for bot '{}'", self.bot_id)
+
+    async def _inner_shutdown(self) -> None:
+        """内部关闭逻辑。"""
         self._running = False
         if self._process_task:
             self._process_task.cancel()
@@ -213,8 +225,9 @@ class AgentManager:
                 await self._process_task
             except asyncio.CancelledError:
                 pass
-        await self._zmq_bus.shutdown()
-        logger.info("AgentManager shutdown for bot '{}'", self.bot_id)
+        # Unregister from the shared bus so messages stop being routed here
+        self._zmq_bus.unregister_manager(self.bot_id)
+        logger.debug("AgentManager inner shutdown for bot '{}'", self.bot_id)
 
     async def _load_agents(self) -> None:
         """从文件加载Agent配置"""
@@ -243,8 +256,9 @@ class AgentManager:
 
         async def handle_message(msg: AgentMessage) -> None:
             logger.info(
-                "Agent '{}' received message: type={}, from={}",
+                "Agent '{}' (bot '{}') received message: type={}, from={}",
                 agent_id,
+                self.bot_id,
                 msg.msg_type,
                 msg.sender_id,
             )
@@ -273,8 +287,9 @@ class AgentManager:
     async def _handle_delegation(self, agent_id: str, msg: AgentMessage) -> None:
         """处理任务委托"""
         logger.info(
-            "Agent '{}' handling delegation from '{}': {}",
+            "Agent '{}' (bot '{}') handling delegation from '{}': {}",
             agent_id,
+            self.bot_id,
             msg.sender_id,
             msg.content[:100],
         )
@@ -282,7 +297,9 @@ class AgentManager:
 
     async def _handle_broadcast(self, agent_id: str, msg: AgentMessage) -> None:
         """处理广播消息"""
-        logger.debug("Agent '{}' received broadcast: {}", agent_id, msg.topic)
+        logger.debug(
+            "Agent '{}' (bot '{}') received broadcast: {}", agent_id, self.bot_id, msg.topic
+        )
 
     async def _handle_request(self, agent_id: str, msg: AgentMessage) -> None:
         """处理请求消息"""
@@ -311,7 +328,9 @@ class AgentManager:
 
         # 订阅ZeroMQ主题
         if config.enabled and config.topics:
-            await self._zmq_bus.subscribe(config.id, config.topics, self._create_handler(config.id))
+            await self._zmq_bus.subscribe(
+                self.bot_id, config.id, config.topics, self._create_handler(config.id)
+            )
 
         logger.info("Created agent '{}' ({})", config.name, config.id)
         return config
@@ -335,10 +354,10 @@ class AgentManager:
 
         # 处理订阅变更
         if old_enabled != agent.enabled or old_topics != agent.topics:
-            await self._zmq_bus.unsubscribe(agent_id)
+            await self._zmq_bus.unsubscribe(self.bot_id, agent_id)
             if agent.enabled and agent.topics:
                 await self._zmq_bus.subscribe(
-                    agent_id, agent.topics, self._create_handler(agent_id)
+                    self.bot_id, agent_id, agent.topics, self._create_handler(agent_id)
                 )
 
         logger.info("Updated agent '{}'", agent_id)
@@ -349,7 +368,7 @@ class AgentManager:
         if agent_id not in self._agents:
             return False
 
-        await self._zmq_bus.unsubscribe(agent_id)
+        await self._zmq_bus.unsubscribe(self.bot_id, agent_id)
         del self._agents[agent_id]
         await self._save_agents()
 
@@ -369,28 +388,33 @@ class AgentManager:
     async def delegate_task(
         self,
         from_agent_id: str,
+        to_bot_id: str,
         to_agent_id: str,
         task: str,
         context: dict[str, Any] | None = None,
         wait_response: bool = False,
     ) -> tuple[str, AgentMessage | None]:
-        """委托任务给另一个Agent"""
+        """委托任务给另一个Agent（可跨bot）。"""
         if from_agent_id not in self._agents:
             raise ValueError(f"Source agent '{from_agent_id}' not found")
-        if to_agent_id not in self._agents:
-            raise ValueError(f"Target agent '{to_agent_id}' not found")
-
-        self._zmq_bus.set_agent_id(from_agent_id)
 
         correlation_id, response = await self._zmq_bus.delegate_task(
-            to_agent_id,
-            task,
-            context or {},
-            wait_response,
+            from_bot_id=self.bot_id,
+            from_agent_id=from_agent_id,
+            to_bot_id=to_bot_id,
+            to_agent_id=to_agent_id,
+            task=task,
+            context=context or {},
+            wait_response=wait_response,
         )
 
         logger.info(
-            "Task delegated from '{}' to '{}': {}", from_agent_id, to_agent_id, correlation_id
+            "Task delegated from '{}' (bot '{}') to '{}' (bot '{}'): {}",
+            from_agent_id,
+            self.bot_id,
+            to_agent_id,
+            to_bot_id,
+            correlation_id,
         )
         return correlation_id, response
 
@@ -401,12 +425,12 @@ class AgentManager:
         content: str,
         context: dict[str, Any] | None = None,
     ) -> None:
-        """广播事件给所有Agent"""
-        self._zmq_bus.set_agent_id(agent_id)
+        """广播事件给所有Agent（跨bot）。"""
+        sender_full_id = f"{self.bot_id}:{agent_id}"
 
         msg = AgentMessage(
             msg_type="broadcast",
-            sender_id=agent_id,
+            sender_id=sender_full_id,
             receiver_id=None,
             topic=topic,
             content=content,
@@ -415,7 +439,7 @@ class AgentManager:
         )
 
         await self._zmq_bus.broadcast(msg)
-        logger.info("Agent '{}' broadcast event: {}", agent_id, topic)
+        logger.info("Agent '{}' (bot '{}') broadcast event: {}", agent_id, self.bot_id, topic)
 
     # --- Agent Routing ---
 

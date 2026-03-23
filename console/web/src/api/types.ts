@@ -199,6 +199,7 @@ export type WSMessageType =
   | 'status_update'
   | 'sessions_update'
   | 'bots_update'
+  | 'queue_update'
   | 'subagent_start'
   | 'subagent_done'
   | 'assistant_message';

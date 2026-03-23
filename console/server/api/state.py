@@ -537,6 +537,37 @@ class BotState:
         logger.warning("Restart requested for bot '{}'", self.bot_id)
         return False
 
+    async def get_queue_status(self) -> dict[str, Any]:
+        """获取当前 Bot 的队列状态（Channel 层 + Agent 层）。"""
+        from datetime import datetime
+
+        # Channel 层：MessageBus inbound/outbound
+        channel_queue: dict[str, Any] = {
+            "inbound_size": 0,
+            "outbound_size": 0,
+        }
+        if self._channel_manager and hasattr(self._channel_manager, "bus"):
+            bus = self._channel_manager.bus
+            channel_queue = {
+                "inbound_size": getattr(bus, "inbound_size", 0),
+                "outbound_size": getattr(bus, "outbound_size", 0),
+            }
+
+        # Agent 层：ZeroMQ Bus
+        try:
+            from console.server.extension.zmq_bus import get_queue_status as get_zmq_status
+
+            zmq_queue: dict[str, Any] = get_zmq_status()
+        except Exception:
+            zmq_queue = {"is_initialized": False}
+
+        return {
+            "bot_id": self.bot_id,
+            "channel_queue": channel_queue,
+            "zmq_queue": zmq_queue,
+            "last_updated": datetime.now().isoformat(),
+        }
+
 
 class BotStateManager:
     """Manages multiple BotState instances, one per bot."""
@@ -577,6 +608,17 @@ class BotStateManager:
 
     def all_states(self) -> dict[str, BotState]:
         return dict(self._states)
+
+    async def get_all_queue_status(self) -> list[dict[str, Any]]:
+        """汇总所有 Bot 的队列状态。"""
+        results: list[dict[str, Any]] = []
+        for bot_id, state in self._states.items():
+            try:
+                status = await state.get_queue_status()
+                results.append(status)
+            except Exception as e:
+                results.append({"bot_id": bot_id, "error": str(e)})
+        return results
 
 
 # Global state manager

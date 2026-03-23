@@ -69,6 +69,7 @@ class WSMessageType(str, Enum):
     STATUS_UPDATE = "status_update"
     SESSIONS_UPDATE = "sessions_update"
     BOTS_UPDATE = "bots_update"
+    QUEUE_UPDATE = "queue_update"
 
 
 # ====================

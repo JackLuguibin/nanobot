@@ -358,3 +358,39 @@ class ZeroMQBus:
     @property
     def subscribed_agents(self) -> list[str]:
         return list(self._sub_sockets.keys())
+
+    def get_queue_status(self) -> dict:
+        """获取 ZMQ Bus 的连接状态和统计信息。"""
+        return {
+            "is_initialized": self._is_initialized,
+            "bind_addr": self._bind_addr,
+            "pub_socket": {
+                "type": "PUB",
+                "address": self._bind_addr,
+                "connected": self._pub_socket is not None,
+            },
+            "router_socket": {
+                "type": "ROUTER",
+                "address": f"tcp://127.0.0.1:{int(self._bind_addr.split(':')[-1]) + 1}",
+                "connected": self._router_socket is not None,
+            },
+            "sub_sockets": [
+                {
+                    "agent_id": full_id,
+                    "bot_id": full_id.split(":")[0],
+                    "topics": [],
+                    "address": self._bind_addr,
+                    "connected": socket is not None,
+                }
+                for full_id, (socket, _) in self._sub_sockets.items()
+            ],
+            "pending_delegations": len(self._pending_delegations),
+        }
+
+
+def get_queue_status() -> dict:
+    """模块级便捷函数，获取全局 ZMQ Bus 状态。"""
+    bus = get_zmq_bus()
+    if bus is None or not bus.is_initialized:
+        return {"is_initialized": False}
+    return bus.get_queue_status()

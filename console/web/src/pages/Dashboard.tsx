@@ -56,6 +56,11 @@ export default function Dashboard() {
     refetchInterval: false,
   });
 
+  const { data: bots = [] } = useQuery({
+    queryKey: ['bots'],
+    queryFn: api.listBots,
+  });
+
   const { data: usageHistory, isLoading: usageLoading } = useQuery({
     queryKey: ['usage-history', currentBotId],
     queryFn: () => api.getUsageHistory(currentBotId, 14),
@@ -74,10 +79,19 @@ export default function Dashboard() {
   }, [data, setStatus, setChannels, setMCPServers]);
 
   const stopMutation = useMutation({
-    mutationFn: () => api.stopCurrentTask(currentBotId),
+    mutationFn: () => {
+      const botId =
+        currentBotId || bots.find((b) => b.is_default)?.id || bots[0]?.id;
+      if (!botId) {
+        return Promise.reject(new Error('无法确定当前 Bot，请先在侧栏选择 Bot'));
+      }
+      return api.stopBot(botId);
+    },
     onSuccess: () => {
-      addToast({ type: 'success', message: 'Task stopped successfully' });
+      addToast({ type: 'success', message: 'Bot 已停止' });
       queryClient.invalidateQueries({ queryKey: ['status'] });
+      queryClient.invalidateQueries({ queryKey: ['bots'] });
+      queryClient.invalidateQueries({ queryKey: ['usage-history', currentBotId] });
     },
     onError: (error) => {
       addToast({ type: 'error', message: String(error) });
@@ -85,10 +99,20 @@ export default function Dashboard() {
   });
 
   const restartMutation = useMutation({
-    mutationFn: () => api.restartBot(currentBotId),
+    mutationFn: async () => {
+      const botId =
+        currentBotId || bots.find((b) => b.is_default)?.id || bots[0]?.id;
+      if (!botId) {
+        return Promise.reject(new Error('无法确定当前 Bot，请先在侧栏选择 Bot'));
+      }
+      await api.stopBot(botId);
+      await api.startBot(botId);
+    },
     onSuccess: () => {
-      addToast({ type: 'success', message: 'Bot restart initiated' });
+      addToast({ type: 'success', message: 'Bot 重启成功' });
       queryClient.invalidateQueries({ queryKey: ['status'] });
+      queryClient.invalidateQueries({ queryKey: ['bots'] });
+      queryClient.invalidateQueries({ queryKey: ['usage-history', currentBotId] });
     },
     onError: (error) => {
       addToast({ type: 'error', message: String(error) });

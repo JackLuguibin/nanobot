@@ -90,5 +90,10 @@ async def shutdown_bot_state() -> None:
         if state.cron_service:
             state.cron_service.stop()
 
+    # Cancel background websocket tasks
+    from console.server.websocket import get_room_manager
+    room_manager = get_room_manager()
+    await room_manager.shutdown()
+
     # Finally, shutdown the shared global ZeroMQ bus
     await shutdown_zmq_bus()

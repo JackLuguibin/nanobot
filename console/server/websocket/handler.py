@@ -1,0 +1,213 @@
+"""WebSocket connection handler.
+
+Each incoming connection is assigned to rooms based on the page it
+is viewing. The client sends subscribe/unsubscribe messages to move
+between rooms; it starts in the "global" room only.
+
+Supported client messages:
+  { "type": "subscribe", "room": "page:chat" }
+  { "type": "unsubscribe", "room": "page:chat" }
+  { "type": "subscribe", "bot_id": "my-bot" }      # shortcut for "bot:<bot_id>"
+  { "type": "chat", "message": "...", "session_key": "..." }
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from typing import Any
+
+from fastapi import WebSocket, WebSocketDisconnect
+from loguru import logger
+
+from console.server.api.state import get_state, get_state_manager
+from console.server.models.chat import WSMessage
+from console.server.models.base import WSMessageType
+from console.server.websocket.rooms import RoomManager, get_room_manager
+
+
+def _bot_room(bot_id: str) -> str:
+    return f"bot:{bot_id}"
+
+
+def _page_room(page: str) -> str:
+    return f"page:{page}"
+
+
+class WSConnection:
+    """Encapsulates the state of a single WebSocket client."""
+
+    def __init__(self, ws: WebSocket, rooms: RoomManager) -> None:
+        self._ws = ws
+        self._rooms = rooms
+        self._rooms_joined: set[str] = set()
+        self._queue_broadcast_task: asyncio.Task | None = None
+
+    async def accept(self) -> None:
+        await self._ws.accept()
+
+    async def join_room(self, name: str) -> None:
+        if name in self._rooms_joined:
+            return
+        await self._rooms.join(self._ws, name)
+        self._rooms_joined.add(name)
+
+    async def leave_room(self, name: str) -> None:
+        if name not in self._rooms_joined:
+            return
+        await self._rooms.leave(self._ws, name)
+        self._rooms_joined.discard(name)
+
+    async def leave_all_rooms(self) -> None:
+        await self._rooms.leave_all(self._ws)
+        self._rooms_joined.clear()
+
+    async def send_json(self, data: dict[str, Any]) -> None:
+        try:
+            await self._ws.send_text(json.dumps(data, default=str))
+        except OSError:
+            pass
+
+    async def send_ws_message(self, msg: WSMessage) -> None:
+        data = msg.model_dump()
+        data["type"] = msg.type.value if hasattr(msg.type, "value") else msg.type
+        await self.send_json(data)
+
+    async def send_initial_state(self) -> None:
+        """Send initial status, sessions, and queue data for the default bot."""
+        try:
+            state_manager = get_state_manager()
+            default_bot_id = state_manager.default_bot_id or ""
+
+            if default_bot_id:
+                state = get_state(default_bot_id)
+                status = await state.get_status()
+                status_data = dict(status)
+                status_data["bot_id"] = default_bot_id
+                await self.send_ws_message(
+                    WSMessage(type=WSMessageType.STATUS_UPDATE, data=status_data)
+                )
+                sessions = await state.get_sessions()
+                await self.send_ws_message(
+                    WSMessage(
+                        type=WSMessageType.SESSIONS_UPDATE,
+                        data={"bot_id": default_bot_id, "sessions": sessions},
+                    )
+                )
+                all_status = await state_manager.get_all_queue_status()
+                await self.send_ws_message(
+                    WSMessage(type=WSMessageType.QUEUE_UPDATE, data={"queues": all_status})
+                )
+        except Exception as e:
+            logger.debug("Failed to send initial state: {}", e)
+
+    async def handle_subscribe(self, msg: dict[str, Any]) -> None:
+        """Handle subscribe message: join a room (page or bot)."""
+        room_name: str | None = msg.get("room")
+        if room_name:
+            await self.join_room(room_name)
+            return
+
+        bot_id: str | None = msg.get("bot_id")
+        if bot_id:
+            await self.join_room(_bot_room(bot_id))
+            return
+
+        page: str | None = msg.get("page")
+        if page:
+            await self.join_room(_page_room(page))
+
+    async def handle_unsubscribe(self, msg: dict[str, Any]) -> None:
+        """Handle unsubscribe message: leave a room."""
+        room_name: str | None = msg.get("room")
+        if room_name:
+            await self.leave_room(room_name)
+            return
+
+        bot_id: str | None = msg.get("bot_id")
+        if bot_id:
+            await self.leave_room(_bot_room(bot_id))
+
+    async def handle_chat(self, msg: dict[str, Any]) -> None:
+        """Handle chat message from client."""
+        response = {"type": "chat_response", "data": {"status": "received"}}
+        await self.send_json(response)
+
+    async def handle_message(self, raw: str) -> bool:
+        """Parse and handle a client message. Returns False to signal disconnect."""
+        try:
+            msg = json.loads(raw)
+        except json.JSONDecodeError:
+            return True
+
+        msg_type = msg.get("type")
+
+        if msg_type == "subscribe" or msg_type == "request_initial":
+            await self.handle_subscribe(msg)
+            if msg_type == "request_initial":
+                await self.send_initial_state()
+
+        elif msg_type == "unsubscribe":
+            await self.handle_unsubscribe(msg)
+
+        elif msg_type == "chat":
+            await self.handle_chat(msg)
+
+        return True
+
+    @property
+    def ws(self) -> WebSocket:
+        return self._ws
+
+
+async def handle_websocket(websocket: WebSocket) -> None:
+    """Main entry point: accept a connection, set up rooms, run the loop."""
+    rooms = get_room_manager()
+    conn = WSConnection(websocket, rooms)
+
+    await conn.accept()
+    await conn.join_room(RoomManager.GLOBAL)
+    logger.debug("[WS] Client connected, joined global room")
+
+    # Start periodic queue broadcast task (singleton per manager)
+    if not hasattr(rooms, "_queue_broadcast_task") or rooms._queue_broadcast_task is None:
+        rooms._queue_broadcast_task = asyncio.create_task(
+            _broadcast_queue_periodically(rooms)
+        )
+        logger.info("[WS] Started periodic queue broadcast task")
+
+    try:
+        await conn.send_initial_state()
+
+        while True:
+            try:
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=60)
+                should_continue = await conn.handle_message(data)
+                if not should_continue:
+                    break
+            except asyncio.TimeoutError:
+                continue
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await conn.leave_all_rooms()
+        logger.debug("[WS] Client disconnected")
+
+
+async def _broadcast_queue_periodically(rooms: RoomManager) -> None:
+    """Background task: periodically push queue status to the global room."""
+    while True:
+        await asyncio.sleep(5)
+        try:
+            state_manager = get_state_manager()
+            all_status = await state_manager.get_all_queue_status()
+            msg = WSMessage(
+                type=WSMessageType.QUEUE_UPDATE,
+                data={"queues": all_status},
+            )
+            data = msg.model_dump()
+            data["type"] = msg.type.value if hasattr(msg.type, "value") else msg.type
+            await rooms.broadcast(RoomManager.GLOBAL, data)
+        except Exception as e:
+            logger.debug("[Queue Broadcast] Error: {}", e)

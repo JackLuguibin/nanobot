@@ -84,7 +84,6 @@ const ACTIVITY_TYPE_OPTIONS = [
 export default function Activity() {
   const { currentBotId, setCurrentBotId } = useAppStore();
   const [typeFilter, setTypeFilter] = useState<string>('');
-  const [limit, setLimit] = useState(50);
 
   const { data: bots } = useQuery({
     queryKey: ['bots'],
@@ -92,8 +91,8 @@ export default function Activity() {
   });
 
   const { data: activities, isLoading, error, refetch } = useQuery({
-    queryKey: ['activity', currentBotId, typeFilter, limit],
-    queryFn: () => api.getRecentActivity(limit, currentBotId, typeFilter || undefined),
+    queryKey: ['activity', currentBotId, typeFilter],
+    queryFn: () => api.getRecentActivity(100, currentBotId, typeFilter || undefined),
     refetchInterval: 30000,
   });
 
@@ -144,20 +143,10 @@ export default function Activity() {
       {/* Filters */}
       <div className="flex items-center gap-4 mt-4 shrink-0">
         <Segmented
+          className="activity-seg-align"
           value={typeFilter}
           onChange={(val) => setTypeFilter(String(val))}
           options={ACTIVITY_TYPE_OPTIONS}
-        />
-        <Select
-          value={limit}
-          onChange={setLimit}
-          style={{ width: 140 }}
-          options={[
-            { value: 20, label: 'Last 20' },
-            { value: 50, label: 'Last 50' },
-            { value: 100, label: 'Last 100' },
-            { value: 200, label: 'Last 200' },
-          ]}
         />
       </div>
 

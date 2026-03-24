@@ -167,3 +167,60 @@ button, input, select, textarea {
 .compact-form .ant-slider {
   margin: 4px 0;
 }
+
+/*
+ * Logs 页 Table 填满容器：
+ * antd scroll.y 设置的是 max-height，内容少时表体会收缩。
+ * 用 CSS 自定义属性 min-height 强制表体填满分配高度。
+ */
+.logs-page-table-host .ant-table-wrapper,
+.logs-page-table-host .ant-table-wrapper .ant-spin-nested-loading,
+.logs-page-table-host .ant-table-wrapper .ant-spin-nested-loading .ant-spin-container,
+.logs-page-table-host .ant-table-wrapper .ant-spin-nested-loading .ant-spin-container .ant-table,
+.logs-page-table-host .ant-table-wrapper .ant-spin-nested-loading .ant-spin-container .ant-table.ant-table-fixed-header,
+.logs-page-table-host .ant-table-wrapper .ant-spin-nested-loading .ant-spin-container .ant-table.ant-table-fixed-header .ant-table-container {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 表体 + 内部 table 高度 */
+.logs-page-table-host .ant-table-body {
+  flex: 1;
+  min-height: var(--logs-table-body-y, 320px) !important;
+  overflow-y: auto !important;
+}
+
+.logs-page-table-host .ant-table-body > table {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: var(--logs-table-body-y, 320px);
+}
+
+.logs-page-table-host .ant-table-tbody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 空状态行 */
+.logs-page-table-host .ant-table-tbody > tr.ant-table-placeholder {
+  flex: 1;
+  display: flex;
+  min-height: 100%;
+}
+
+.logs-page-table-host .ant-table-tbody > tr.ant-table-placeholder td.ant-table-cell {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  vertical-align: middle;
+}
+
+.logs-page-table-host .ant-table-tbody > tr.ant-table-placeholder td.ant-table-cell .ant-table-expanded-row-fixed {
+  display: none;
+}

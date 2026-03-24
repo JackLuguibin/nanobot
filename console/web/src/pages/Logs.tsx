@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Table,
@@ -33,6 +33,22 @@ export default function Logs() {
   const [searchQuery, setSearchQuery] = useState('');
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [limit, setLimit] = useState(100);
+  const tableAreaRef = useRef<HTMLDivElement>(null);
+  const [tableScrollY, setTableScrollY] = useState(320);
+
+  useLayoutEffect(() => {
+    const el = tableAreaRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = el.getBoundingClientRect().height;
+      // Ant Design table: header + horizontal scroll + pagination (~110px)
+      setTableScrollY(Math.max(160, Math.floor(h - 110)));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const { data: logs, isLoading, error, refetch } = useQuery({
     queryKey: ['tool-logs', toolFilter, statusFilter, limit, currentBotId],
@@ -206,9 +222,9 @@ export default function Logs() {
   );
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="flex h-full min-h-0 flex-1 flex-col p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex shrink-0 items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 dark:from-white dark:to-gray-300 bg-clip-text text-transparent">
             Tool Logs
@@ -222,7 +238,7 @@ export default function Logs() {
 
       {/* Stats */}
       {filteredLogs && filteredLogs.length > 0 && (
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid shrink-0 grid-cols-3 gap-4">
           <Card size="small">
             <Statistic title="Total Calls" value={filteredLogs.length} />
           </Card>
@@ -245,7 +261,7 @@ export default function Logs() {
       )}
 
       {/* Filters */}
-      <Space wrap>
+      <Space wrap className="shrink-0">
         <Input.Search
           placeholder="Search logs..."
           value={searchQuery}
@@ -303,42 +319,49 @@ export default function Logs() {
         />
       </Space>
 
-      {/* Table */}
-      <Table<ToolCallLog>
-        dataSource={filteredLogs}
-        columns={columns}
-        rowKey="id"
-        loading={isLoading}
-        expandable={{
-          expandedRowRender,
-          expandRowByClick: true,
-        }}
-        locale={{
-          emptyText: error ? (
-            <div className="text-red-500">Error loading logs: {String(error)}</div>
-          ) : (
-            <Space direction="vertical" className="py-6">
-              <CodeOutlined className="text-4xl text-gray-300" />
-              <span>No tool logs found</span>
-              {(toolFilter || statusFilter || searchQuery) && (
-                <Button
-                  type="link"
-                  size="small"
-                  onClick={() => {
-                    setToolFilter('');
-                    setStatusFilter('');
-                    setSearchQuery('');
-                  }}
-                >
-                  Clear filters
-                </Button>
-              )}
-            </Space>
-          ),
-        }}
-        pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total} logs` }}
-        size="middle"
-      />
+      {/* Table — 见 index.css `.logs-page-table-host`（scroll.y 只设 max-height，空表需 min-height 撑满） */}
+      <div
+        ref={tableAreaRef}
+        className="logs-page-table-host min-h-0 min-w-0 flex flex-1 flex-col"
+        style={{ ['--logs-table-body-y' as string]: `${tableScrollY}px` }}
+      >
+        <Table<ToolCallLog>
+          dataSource={filteredLogs}
+          columns={columns}
+          rowKey="id"
+          loading={isLoading}
+          scroll={{ y: tableScrollY }}
+          expandable={{
+            expandedRowRender,
+            expandRowByClick: true,
+          }}
+          locale={{
+            emptyText: error ? (
+              <div className="text-red-500">Error loading logs: {String(error)}</div>
+            ) : (
+              <Space direction="vertical" className="py-6">
+                <CodeOutlined className="text-4xl text-gray-300" />
+                <span>No tool logs found</span>
+                {(toolFilter || statusFilter || searchQuery) && (
+                  <Button
+                    type="link"
+                    size="small"
+                    onClick={() => {
+                      setToolFilter('');
+                      setStatusFilter('');
+                      setSearchQuery('');
+                    }}
+                  >
+                    Clear filters
+                  </Button>
+                )}
+              </Space>
+            ),
+          }}
+          pagination={{ pageSize: 20, showSizeChanger: true, showTotal: (total) => `${total} logs` }}
+          size="middle"
+        />
+      </div>
     </div>
   );
 }

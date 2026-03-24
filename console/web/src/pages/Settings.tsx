@@ -66,6 +66,57 @@ export type ProviderFormEntry = {
   extraHeadersJson: string;
 };
 
+/** Match pydantic `to_camel` for provider field names in model_dump(by_alias=True). */
+function providerSchemaKeyToJsonKey(snake: string): string {
+  const parts = snake.split('_');
+  if (parts.length === 1) return parts[0].toLowerCase();
+  return (
+    parts[0].toLowerCase() +
+    parts
+      .slice(1)
+      .map((p) => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+      .join('')
+  );
+}
+
+function buildProvidersPayload(
+  providerForm: Record<string, ProviderFormEntry>
+): Record<string, Record<string, unknown>> {
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const name of PROVIDER_NAMES) {
+    const entry = providerForm[name] ?? { apiKey: '', apiBase: '', extraHeadersJson: '' };
+    const trimmedJson = entry.extraHeadersJson?.trim() ?? '';
+    let extraHeaders: Record<string, string> | null = null;
+    if (trimmedJson) {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(trimmedJson) as unknown;
+      } catch {
+        throw new Error(
+          `「${name}」的 Extra Headers 不是合法 JSON，请修正后再保存。`
+        );
+      }
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+        throw new Error(`「${name}」的 Extra Headers 必须是 JSON 对象（键值均为字符串）。`);
+      }
+      const obj = parsed as Record<string, unknown>;
+      for (const [k, v] of Object.entries(obj)) {
+        if (typeof v !== 'string') {
+          throw new Error(`「${name}」的 Extra Headers 中 "${k}" 的值必须是字符串。`);
+        }
+      }
+      extraHeaders = obj as Record<string, string>;
+    }
+    const jsonKey = providerSchemaKeyToJsonKey(name);
+    out[jsonKey] = {
+      apiKey: entry.apiKey?.trim() ?? '',
+      apiBase: entry.apiBase?.trim() ? entry.apiBase.trim() : null,
+      extraHeaders,
+    };
+  }
+  return out;
+}
+
 type SettingsTab = 'general' | 'appearance' | 'providers' | 'tools' | 'channels' | 'environment';
 
 interface FormData {
@@ -164,15 +215,41 @@ export default function Settings() {
     }
   }, [config, form]);
 
-  const updateConfigMutation = useMutation({
-    mutationFn: ({ section, data }: { section: string; data: Record<string, unknown> }) =>
-      api.updateConfig(section, data, currentBotId),
+  const saveSettingsMutation = useMutation({
+    mutationFn: async () => {
+      const values = await form.validateFields();
+      const providersPayload = buildProvidersPayload(providerForm);
+      await api.updateConfig(
+        'agents',
+        {
+          defaults: {
+            workspace: values.workspace?.trim() || undefined,
+            model: values.model?.trim() || undefined,
+            provider: values.provider?.trim() || undefined,
+            max_tokens: values.max_tokens,
+            context_window_tokens: values.context_window_tokens,
+            max_tool_iterations: values.max_iterations,
+            temperature: values.temperature,
+            memory_window: values.memory_window,
+            reasoning_effort: values.reasoning_effort,
+          },
+        },
+        currentBotId
+      );
+      await api.updateConfig('providers', providersPayload, currentBotId);
+      await api.updateConfig(
+        'tools',
+        { restrictToWorkspace: values.restrict_to_workspace },
+        currentBotId
+      );
+    },
     onSuccess: () => {
       addToast({ type: 'success', message: 'Settings saved successfully' });
       queryClient.invalidateQueries({ queryKey: ['config'] });
     },
-    onError: (error) => {
-      addToast({ type: 'error', message: String(error) });
+    onError: (error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      addToast({ type: 'error', message });
     },
   });
 
@@ -190,24 +267,8 @@ export default function Settings() {
     },
   });
 
-  const handleSave = async () => {
-    const values = await form.validateFields();
-    updateConfigMutation.mutate({
-      section: 'agents',
-      data: {
-        defaults: {
-          workspace: values.workspace?.trim() || undefined,
-          model: values.model?.trim() || undefined,
-          provider: values.provider?.trim() || undefined,
-          max_tokens: values.max_tokens,
-          context_window_tokens: values.context_window_tokens,
-          max_tool_iterations: values.max_iterations,
-          temperature: values.temperature,
-          memory_window: values.memory_window,
-          reasoning_effort: values.reasoning_effort,
-        },
-      },
-    });
+  const handleSave = () => {
+    saveSettingsMutation.mutate();
   };
 
   const handleSaveEnv = () => {
@@ -790,7 +851,7 @@ export default function Settings() {
           <Button
             type="primary"
             icon={<SaveOutlined />}
-            loading={updateConfigMutation.isPending}
+            loading={saveSettingsMutation.isPending}
             onClick={handleSave}
           >
             Save Changes

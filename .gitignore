@@ -24,3 +24,4 @@ botpy.log
 *.lock
 nano.*.save
 uv.lock
+.vscode/

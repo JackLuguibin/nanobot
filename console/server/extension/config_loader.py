@@ -66,8 +66,11 @@ def load_bot_config(config_path: Path) -> Config:
     raw = _migrate_provider_keys(raw)
     raw = _ensure_agents_defaults(raw)
 
+    # Console 在同一份 JSON 里存 `skills`（见 bot_builder），nanobot 的 Config 不含该字段且 extra=forbid。
+    validate_payload = {k: v for k, v in raw.items() if k != "skills"}
+
     try:
-        return Config.model_validate(raw)
+        return Config.model_validate(validate_payload)
     except Exception as e:
         logger.warning(
             "Config validation failed at {} (schema/format may have changed): {}",

@@ -10,11 +10,13 @@ from console.server.extension.agents import AgentManager
 from console.server.extension.config_loader import load_bot_config
 from console.server.extension.zmq_bus import get_zmq_bus, shutdown_zmq_bus
 from console.server.utils.bot_builder import _initialize_bot
+from console.server.utils.proxy_env import normalize_proxy_env_urls
 from nanobot.config.loader import get_config_path, load_config
 
 
 async def initialize_bot_state(app: FastAPI) -> None:
     """Initialize bot states from registry (multi-bot) or legacy config (single-bot)."""
+    normalize_proxy_env_urls()
     registry = get_registry()
     manager = get_state_manager()
 

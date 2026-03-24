@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from loguru import logger
 
 from console.server.api import routes
+from console.server.websocket import ws_router
 from console.server.api.response import (
     SuccessEnvelopeMiddleware,
     generic_exception_handler,
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.add_middleware(SuccessEnvelopeMiddleware)
 
     app.include_router(routes.router)
+    app.include_router(ws_router)
 
     web_dist = Path(__file__).parent.parent / "web" / "dist"
 

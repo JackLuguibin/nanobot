@@ -23,12 +23,23 @@ Room naming convention:
 
 from __future__ import annotations
 
+from fastapi import APIRouter, WebSocket
+
 from console.server.websocket.handler import WSConnection, handle_websocket
 from console.server.websocket.rooms import RoomManager, get_room_manager
+
+ws_router = APIRouter()
+
+
+@ws_router.websocket("/ws")
+async def ws_endpoint(ws: WebSocket) -> None:
+    await handle_websocket(ws)
+
 
 __all__ = [
     "WSConnection",
     "RoomManager",
     "get_room_manager",
     "handle_websocket",
+    "ws_router",
 ]

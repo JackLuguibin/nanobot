@@ -19,7 +19,7 @@ export default defineConfig({
         target: `http://${host}:${port}`,
         changeOrigin: true,
       },
-      '/api/ws': {
+      '/ws': {
         target: `ws://${host}:${port}`,
         ws: true,
       },

@@ -87,6 +87,7 @@ class ZeroMQBus:
         self._agent_id: str | None = None
         self._is_initialized = False
         self._pending_delegations: dict[str, asyncio.Future[AgentMessage]] = {}
+        self._router_loop_task: asyncio.Task | None = None
 
     async def initialize(self) -> None:
         """初始化ZeroMQ上下文和 sockets。"""
@@ -131,7 +132,7 @@ class ZeroMQBus:
         logger.info("ZeroMQ Router bound to {}", router_addr)
 
         # 启动Router消息处理循环
-        asyncio.create_task(self._router_loop())
+        self._router_loop_task = asyncio.create_task(self._router_loop())
 
     async def subscribe(
         self, bot_id: str, agent_id: str, topics: list[str], handler: Callable[[AgentMessage], Any]
@@ -332,6 +333,16 @@ class ZeroMQBus:
             socket.close()
         self._sub_sockets.clear()
         self._handlers.clear()
+
+        # 先取消 router_loop，再关闭 socket
+        # 关闭 socket 会让 recv_string() 立即抛异常，从而让 loop 干净退出
+        if self._router_loop_task:
+            self._router_loop_task.cancel()
+            try:
+                await self._router_loop_task
+            except asyncio.CancelledError:
+                pass
+            self._router_loop_task = None
 
         # 关闭sockets
         if self._pub_socket:

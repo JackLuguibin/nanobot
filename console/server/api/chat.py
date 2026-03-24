@@ -6,13 +6,13 @@ import asyncio
 import json
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from loguru import logger
 
 from console.server.models.chat import ChatRequest, ChatResponse
 from console.server.api.state import get_state
-from console.server.api.websocket import get_connection_manager, handle_websocket
+from console.server.api.websocket import get_connection_manager
 
 router = APIRouter(prefix="/api")
 
@@ -242,13 +242,3 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
         },
     )
 
-
-# ---------------------------------------------------------------------------
-# WebSocket
-# ---------------------------------------------------------------------------
-
-
-@router.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket) -> None:
-    """WebSocket endpoint for real-time updates."""
-    await handle_websocket(websocket)

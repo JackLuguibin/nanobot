@@ -23,7 +23,7 @@ export function useWebSocket() {
 
     // Determine WebSocket URL - connect directly to backend
     // In dev: localhost:3000 -> proxy -> localhost:18791
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/api/ws`;
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
 
     console.log('[WebSocket] Connecting to:', wsUrl);
 

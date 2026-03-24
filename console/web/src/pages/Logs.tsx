@@ -283,6 +283,7 @@ export default function Logs() {
         />
 
         <Segmented
+          className="activity-seg-align"
           value={statusFilter || 'all'}
           onChange={(val) => setStatusFilter(val === 'all' ? '' : String(val))}
           options={[

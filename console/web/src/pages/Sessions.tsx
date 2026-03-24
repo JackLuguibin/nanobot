@@ -233,6 +233,7 @@ export default function Sessions() {
           style={{ width: 280 }}
         />
         <Segmented
+          className="activity-seg-align"
           value={sortBy}
           onChange={(val) => setSortBy(val as typeof sortBy)}
           options={[

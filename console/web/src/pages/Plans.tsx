@@ -1299,7 +1299,7 @@ export default function Plans() {
               <Space size={4}>
                 <Dropdown
                   trigger={['click']}
-                  dropdownRender={() => (
+                  popupRender={() => (
                     <Card size="small" className="shadow-lg min-w-[200px]" styles={{ body: { padding: 12 } }}>
                       <div className="space-y-3">
                         <div>

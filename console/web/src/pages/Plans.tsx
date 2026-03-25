@@ -1473,7 +1473,7 @@ export default function Plans() {
             overflow: 'auto',
           },
         }}
-        destroyOnClose
+        destroyOnHidden
         wrapClassName="plans-gantt-fullscreen-modal"
       >
         <div className="h-full min-h-[400px] w-full rounded border border-gray-200 dark:border-gray-600 overflow-auto">

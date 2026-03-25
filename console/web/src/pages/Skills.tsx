@@ -488,7 +488,7 @@ export default function Skills() {
           </div>
         }
         width={700}
-        destroyOnClose
+        destroyOnHidden
       >
         {skillViewModal && (
           <div className="overflow-auto max-h-[60vh]">
@@ -511,7 +511,7 @@ export default function Skills() {
         onCancel={() => setSkillEditModal(null)}
         footer={null}
         width={700}
-        destroyOnClose
+        destroyOnHidden
       >
         {skillEditModal && skillEditModal.isWorkspace && (
           <Form
@@ -563,7 +563,7 @@ export default function Skills() {
           skillCreateForm.resetFields();
         }}
         footer={null}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form
           form={skillCreateForm}

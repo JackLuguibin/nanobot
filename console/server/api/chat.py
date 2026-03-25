@@ -5,8 +5,8 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from console.server.models.chat import ChatRequest, ChatResponse
 from console.server.api.state import get_state
+from console.server.models.chat import ChatRequest, ChatResponse
 
 router = APIRouter(prefix="/api")
 
@@ -45,7 +45,10 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
         session_key = session["key"]
 
     try:
-        from console.server.extension.message_source import SOURCE_MAIN_AGENT, set_message_source_context
+        from console.server.extension.message_source import (
+            SOURCE_MAIN_AGENT,
+            set_message_source_context,
+        )
 
         async def silent_progress(content: str, *, tool_hint: bool = False) -> None:
             """与流式接口一致，process_direct 在工具调用时会传入 tool_hint=True。"""

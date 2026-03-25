@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import { useAppStore } from "../store";
+import { registerChatHandler, getWSRef } from "../hooks/useWebSocket";
 import * as api from "../api/client";
 import { Button, Tag, Tooltip, Popconfirm } from "antd";
 import {
@@ -384,6 +385,12 @@ export default function Chat() {
     [addToast, queryClient, navigate, setCurrentSessionKey, activeSessionKey, currentBotId],
   );
 
+  // Register WebSocket chat message handler (WS streaming replaces SSE)
+  useEffect(() => {
+    const unregister = registerChatHandler(handleStreamChunk);
+    return unregister;
+  }, [handleStreamChunk]);
+
   const handleSend = () => {
     if (!input.trim() || isStreaming) return;
 
@@ -408,27 +415,25 @@ export default function Chat() {
     setToolCalls([]);
     setStreamingToolProgress([]);
 
-    const abortStream = api.createChatStream(
-      {
-        session_key: activeSessionKey || undefined,
-        message: userMessage,
-        stream: true,
-        bot_id: currentBotId || undefined,
-      },
-      handleStreamChunk,
-      (error) => {
-        setIsStreaming(false);
-        setStreamingContent("");
-        addToast({ type: "error", message: String(error) });
-      },
-    );
+    const ws = getWSRef()?.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setIsStreaming(false);
+      setStreamingContent("");
+      addToast({ type: "error", message: "WebSocket not connected" });
+      return;
+    }
 
-    (window as { abortChat?: () => void }).abortChat = abortStream;
+    ws.send(JSON.stringify({
+      type: "chat",
+      message: userMessage,
+      session_key: activeSessionKey || undefined,
+      bot_id: currentBotId || undefined,
+    }));
   };
 
   const handleStop = () => {
-    const abortFn = (window as { abortChat?: () => void }).abortChat;
-    if (abortFn) abortFn();
+    // Agent interruption is not yet supported via WebSocket.
+    // Stop button clears local streaming state only.
     setIsStreaming(false);
     setStreamingContent("");
     setToolCalls([]);

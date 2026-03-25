@@ -129,9 +129,138 @@ class WSConnection:
             await self.leave_room(_bot_room(bot_id))
 
     async def handle_chat(self, msg: dict[str, Any]) -> None:
-        """Handle chat message from client."""
-        response = {"type": "chat_response", "data": {"status": "received"}}
-        await self.send_json(response)
+        """Handle chat message from client via WebSocket.
+
+        Runs the agent loop, streams tokens/progress/tool calls back through
+        the same WebSocket connection, then broadcasts status updates to all
+        connected clients.
+        """
+        from console.server.api.chat import _resolve_state, _agent_unavailable_detail
+        from console.server.api.websocket import get_connection_manager
+        from console.server.extension.message_source import (
+            SOURCE_MAIN_AGENT,
+            SOURCE_SUB_AGENT,
+            set_message_source_context,
+        )
+        from console.server.extension.subagent_events import set_subagent_callback
+        from console.server.models.chat import ChatRequest
+
+        try:
+            request = ChatRequest.model_validate(msg)
+        except Exception:
+            await self.send_json({"type": "error", "error": "Invalid chat request"})
+            return
+
+        state = _resolve_state(request.bot_id)
+        agent_loop = state.agent_loop
+
+        if agent_loop is None:
+            await self.send_json({
+                "type": "error",
+                "error": _agent_unavailable_detail(state),
+            })
+            return
+
+        session_key = request.session_key
+        if session_key is None:
+            session = await state.create_session()
+            session_key = session["key"]
+            await self.send_json({"type": "session_key", "session_key": session_key})
+
+        subagent_active: set[str] = set()
+
+        async def stream_progress(content: str | None, *, tool_hint: bool = False) -> None:
+            if tool_hint:
+                if content:
+                    await self.send_json({"type": "tool_progress", "content": content})
+                return
+            if content:
+                await self.send_json({"type": "chat_token", "content": content})
+
+        async def on_subagent_event(event: dict[str, Any]) -> None:
+            await self.send_json(event)
+
+            subagent_id = event.get("subagent_id")
+            event_type = event.get("type")
+            if event_type == "subagent_start" and isinstance(subagent_id, str):
+                subagent_active.add(subagent_id)
+            elif event_type == "subagent_done" and isinstance(subagent_id, str):
+                subagent_active.discard(subagent_id)
+
+            if event_type != "subagent_done":
+                return
+
+            label = event.get("label", "task")
+            task = event.get("task", "")
+            result = event.get("result", "")
+            status = event.get("status", "error")
+            status_text = "completed successfully" if status == "ok" else "failed"
+
+            summarize_content = f"""[Subagent '{label}' {status_text}]
+
+Task: {task}
+
+Result:
+{result}
+
+Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not mention technical details like "subagent" or task IDs."""
+
+            try:
+                set_message_source_context(SOURCE_SUB_AGENT)
+                follow_up_response = await agent_loop.process_direct(
+                    content=summarize_content,
+                    session_key=session_key,
+                    channel="console",
+                    chat_id="web",
+                    on_progress=stream_progress,
+                )
+                if follow_up_response:
+                    content = follow_up_response.content if hasattr(follow_up_response, "content") else follow_up_response
+                    await self.send_json({
+                        "type": "assistant_message",
+                        "content": content,
+                        "source": "sub_agent",
+                    })
+            except Exception as e:
+                logger.warning("Failed to process subagent result: {}", e)
+
+        set_subagent_callback(agent_loop, on_subagent_event)
+
+        response_holder: list[str] = []
+
+        try:
+            set_message_source_context(SOURCE_MAIN_AGENT)
+            response_text = await agent_loop.process_direct(
+                content=request.message,
+                session_key=session_key,
+                channel="console",
+                chat_id="web",
+                on_progress=stream_progress,
+            )
+            response_holder.append(response_text.content if response_text else "")
+        except Exception as e:
+            logger.error("Error in WS chat: {}", e)
+            await self.send_json({"type": "error", "error": str(e)})
+            return
+
+        state.increment_messages()
+
+        try:
+            manager = get_connection_manager()
+            status = await state.get_status()
+            sessions = await state.get_sessions()
+            await manager.broadcast_status_update(status, state.bot_id)
+            await manager.broadcast_sessions_update(sessions, state.bot_id)
+        except Exception as e:
+            logger.warning("Failed to broadcast status update: {}", e)
+
+        response_text = response_holder[0] if response_holder else ""
+        await self.send_json({
+            "type": "chat_done",
+            "done": True,
+            "content": response_text,
+            "source": "main_agent",
+        })
 
     async def handle_message(self, raw: str) -> bool:
         """Parse and handle a client message. Returns False to signal disconnect."""

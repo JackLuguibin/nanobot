@@ -53,7 +53,8 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
     try:
         from console.server.extension.message_source import SOURCE_MAIN_AGENT, set_message_source_context
 
-        async def silent_progress(content: str) -> None:
+        async def silent_progress(content: str, *, tool_hint: bool = False) -> None:
+            """与流式接口一致，process_direct 在工具调用时会传入 tool_hint=True。"""
             pass
 
         set_message_source_context(SOURCE_MAIN_AGENT)
@@ -78,7 +79,6 @@ async def send_chat_message(request: ChatRequest) -> ChatResponse:
     except Exception as e:
         logger.error("Error processing chat message: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
-
 
 # ---------------------------------------------------------------------------
 # Chat (streaming)
@@ -125,10 +125,18 @@ async def send_chat_message_stream(request: ChatRequest):
                     stream_closed = True
                     await queue.put(None)
 
-            async def stream_progress(content: str, *, tool_hint: bool = False) -> None:
-                await queue.put(
-                    f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n"
-                )
+            async def stream_progress(content: str | None, *, tool_hint: bool = False) -> None:
+                # 工具摘要由 AgentLoop._tool_hint 生成，勿与助手正文混在同一 Markdown 流里
+                if tool_hint:
+                    if content:
+                        await queue.put(
+                            f"data: {json.dumps({'type': 'tool_progress', 'content': content})}\n\n"
+                        )
+                    return
+                if content:
+                    await queue.put(
+                        f"data: {json.dumps({'type': 'chat_token', 'content': content})}\n\n"
+                    )
 
             async def on_subagent_event(event: dict[str, Any]) -> None:
                 """Handle subagent events and forward to SSE."""
@@ -241,4 +249,5 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
             "X-Accel-Buffering": "no",
         },
     )
+
 

@@ -141,10 +141,12 @@ function BotQueueCard({ botId }: { botId: string }) {
                 </span>
               }
               value={channelQueue.inbound_size}
-              valueStyle={{
-                color: getInboundColor(channelQueue.inbound_size),
-                fontSize: '2rem',
-                fontWeight: 700,
+              styles={{
+                content: {
+                  color: getInboundColor(channelQueue.inbound_size),
+                  fontSize: '2rem',
+                  fontWeight: 700,
+                },
               }}
               suffix={
                 channelQueue.inbound_size === 0 ? (
@@ -172,10 +174,12 @@ function BotQueueCard({ botId }: { botId: string }) {
                 </span>
               }
               value={channelQueue.outbound_size}
-              valueStyle={{
-                color: getOutboundColor(channelQueue.outbound_size),
-                fontSize: '2rem',
-                fontWeight: 700,
+              styles={{
+                content: {
+                  color: getOutboundColor(channelQueue.outbound_size),
+                  fontSize: '2rem',
+                  fontWeight: 700,
+                },
               }}
               suffix={
                 channelQueue.outbound_size === 0 ? (

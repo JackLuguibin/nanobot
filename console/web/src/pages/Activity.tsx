@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, type ComponentType } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
@@ -11,29 +11,26 @@ import {
   Timeline,
   Typography,
   Segmented,
+  Badge,
 } from 'antd';
 import {
   ReloadOutlined,
-  MessageOutlined,
   CodeOutlined,
   ApiOutlined,
   ClockCircleOutlined,
-  CloseCircleOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
 } from '@ant-design/icons';
-import {
-  Send,
-  Plug,
-  type LucideIcon,
-  MessageCircle,
-  AlertTriangle,
-} from 'lucide-react';
+import { Send, MessageCircle, AlertTriangle } from 'lucide-react';
 import * as api from '../api/client';
 import { useAppStore } from '../store';
-import type { ActivityItem } from '../api/types';
+import { getWSRef } from '../hooks/useWebSocket';
 
 const { Text } = Typography;
 
-const ACTIVITY_ICONS: Record<string, LucideIcon> = {
+type ActivityIconComponent = ComponentType<{ className?: string }>;
+
+const ACTIVITY_ICONS: Record<string, ActivityIconComponent> = {
   message: Send,
   tool_call: CodeOutlined,
   tool: CodeOutlined,
@@ -84,6 +81,7 @@ const ACTIVITY_TYPE_OPTIONS = [
 export default function Activity() {
   const { currentBotId, setCurrentBotId } = useAppStore();
   const [typeFilter, setTypeFilter] = useState<string>('');
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
 
   const { data: bots } = useQuery({
     queryKey: ['bots'],
@@ -93,8 +91,17 @@ export default function Activity() {
   const { data: activities, isLoading, error, refetch } = useQuery({
     queryKey: ['activity', currentBotId, typeFilter],
     queryFn: () => api.getRecentActivity(100, currentBotId, typeFilter || undefined),
-    refetchInterval: 30000,
   });
+
+  // Subscribe to the bot's activity room so live updates arrive via WebSocket.
+  useEffect(() => {
+    const ws = getWSRef()?.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify({ type: 'subscribe', room: `bot:${currentBotId}` }));
+    return () => {
+      ws.send(JSON.stringify({ type: 'unsubscribe', room: `bot:${currentBotId}` }));
+    };
+  }, [currentBotId]);
 
   const activityCounts = activities?.reduce(
     (acc, item) => {
@@ -104,6 +111,14 @@ export default function Activity() {
     },
     {} as Record<string, number>
   );
+
+  const sortedActivities = activities
+    ? [...activities].sort((a, b) => {
+        const timeA = a.timestamp ? new Date(a.timestamp).getTime() : 0;
+        const timeB = b.timestamp ? new Date(b.timestamp).getTime() : 0;
+        return sortOrder === 'desc' ? timeB - timeA : timeA - timeB;
+      })
+    : [];
 
   if (isLoading && !activities) {
     return (
@@ -134,6 +149,7 @@ export default function Activity() {
               className="w-40"
             />
           )}
+          <Badge status="processing" text={<span className="text-xs text-gray-400">Live</span>} />
           <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
             Refresh
           </Button>
@@ -147,6 +163,14 @@ export default function Activity() {
           value={typeFilter}
           onChange={(val) => setTypeFilter(String(val))}
           options={ACTIVITY_TYPE_OPTIONS}
+        />
+        <Segmented
+          value={sortOrder}
+          onChange={(val) => setSortOrder(val as 'desc' | 'asc')}
+          options={[
+            { value: 'desc', label: <ArrowDownOutlined /> },
+            { value: 'asc', label: <ArrowUpOutlined /> },
+          ]}
         />
       </div>
 
@@ -184,9 +208,9 @@ export default function Activity() {
             styles={{ body: { padding: '1rem 1.5rem' } }}
           >
             <Timeline
-              items={activities.map((item) => ({
+              items={sortedActivities.map((item) => ({
                 color: ACTIVITY_COLORS[item.type] || 'gray',
-                dot: (
+                icon: (
                   <div
                     className={`
                       w-8 h-8 rounded-lg flex items-center justify-center
@@ -208,7 +232,7 @@ export default function Activity() {
                     <ActivityIcon type={item.type} />
                   </div>
                 ),
-                children: (
+                content: (
                   <div className="pb-4">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-medium text-gray-900 dark:text-gray-100">

@@ -30,6 +30,10 @@ from console.server.websocket.rooms import RoomManager, get_room_manager
 
 ws_router = APIRouter()
 
+# Expose the singleton room manager so other modules (e.g. extension/activity.py)
+# can broadcast to WebSocket rooms without importing rooms directly.
+room_manager = get_room_manager()
+
 
 @ws_router.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
@@ -41,5 +45,6 @@ __all__ = [
     "RoomManager",
     "get_room_manager",
     "handle_websocket",
+    "room_manager",
     "ws_router",
 ]

@@ -536,7 +536,7 @@ export default function Channels() {
         confirmLoading={updateMutation.isPending}
         okText="Save"
         width={520}
-        destroyOnClose
+        destroyOnHidden
       >
         <Form form={form} layout="vertical" className="mt-4">
           <Form.Item name="enabled" label="Enabled" valuePropName="checked">

@@ -41,7 +41,6 @@ class WSConnection:
         self._ws = ws
         self._rooms = rooms
         self._rooms_joined: set[str] = set()
-        self._queue_broadcast_task: asyncio.Task | None = None
 
     async def accept(self) -> None:
         await self._ws.accept()
@@ -51,6 +50,22 @@ class WSConnection:
             return
         await self._rooms.join(self._ws, name)
         self._rooms_joined.add(name)
+
+    async def _broadcast_queue_to_page(self) -> None:
+        """Push queue status once to the page:queue room (called on subscribe)."""
+        try:
+            state_manager = get_state_manager()
+            all_status = await state_manager.get_all_queue_status()
+            await self._rooms.broadcast(
+                "page:queue",
+                {
+                    "type": "queue_update",
+                    "data": {"queues": all_status},
+                    "session_key": None,
+                },
+            )
+        except Exception as e:
+            logger.debug("[WS] Failed to broadcast queue to page:queue: {}", e)
 
     async def leave_room(self, name: str) -> None:
         if name not in self._rooms_joined:
@@ -106,6 +121,8 @@ class WSConnection:
         room_name: str | None = msg.get("room")
         if room_name:
             await self.join_room(room_name)
+            if room_name == "page:queue":
+                await self._broadcast_queue_to_page()
             return
 
         bot_id: str | None = msg.get("bot_id")
@@ -298,13 +315,6 @@ async def handle_websocket(websocket: WebSocket) -> None:
     await conn.join_room(RoomManager.GLOBAL)
     logger.debug("[WS] Client connected, joined global room")
 
-    # Start periodic queue broadcast task (singleton per manager)
-    if not hasattr(rooms, "_queue_broadcast_task") or rooms._queue_broadcast_task is None:
-        rooms._queue_broadcast_task = asyncio.create_task(
-            _broadcast_queue_periodically(rooms)
-        )
-        logger.info("[WS] Started periodic queue broadcast task")
-
     try:
         await conn.send_initial_state()
 
@@ -322,21 +332,3 @@ async def handle_websocket(websocket: WebSocket) -> None:
     finally:
         await conn.leave_all_rooms()
         logger.debug("[WS] Client disconnected")
-
-
-async def _broadcast_queue_periodically(rooms: RoomManager) -> None:
-    """Background task: periodically push queue status to the global room."""
-    while True:
-        await asyncio.sleep(5)
-        try:
-            state_manager = get_state_manager()
-            all_status = await state_manager.get_all_queue_status()
-            msg = WSMessage(
-                type=WSMessageType.QUEUE_UPDATE,
-                data={"queues": all_status},
-            )
-            data = msg.model_dump()
-            data["type"] = msg.type.value if hasattr(msg.type, "value") else msg.type
-            await rooms.broadcast(RoomManager.GLOBAL, data)
-        except Exception as e:
-            logger.debug("[Queue Broadcast] Error: {}", e)

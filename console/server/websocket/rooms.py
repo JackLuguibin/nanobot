@@ -53,8 +53,6 @@ class RoomManager:
         self._rooms: dict[str, Room] = {}
         self._conn_rooms: dict[int, set[str]] = {}
         self._lock = asyncio.Lock()
-        # Background task for periodic queue broadcasts (managed by handler.py)
-        self._queue_broadcast_task: asyncio.Task | None = None
 
     def _room(self, name: str) -> Room:
         if name not in self._rooms:
@@ -139,14 +137,9 @@ class RoomManager:
         return self._rooms.get(room_name, Room(name=room_name)).size
 
     async def shutdown(self) -> None:
-        """Cancel all background tasks owned by the room manager."""
-        if self._queue_broadcast_task:
-            self._queue_broadcast_task.cancel()
-            try:
-                await self._queue_broadcast_task
-            except asyncio.CancelledError:
-                pass
-            self._queue_broadcast_task = None
+        """Clean up room manager resources."""
+        self._rooms.clear()
+        self._conn_rooms.clear()
 
 
 # Global singleton

@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import {
   Card,
   Statistic,
@@ -22,6 +23,7 @@ import {
   PauseCircleOutlined,
 } from '@ant-design/icons';
 import { useAppStore } from '../store';
+import { getWSRef } from '../hooks/useWebSocket';
 import * as api from '../api/client';
 import type { QueueStatus } from '../api/types_queue';
 
@@ -283,6 +285,14 @@ export default function Queue() {
   });
 
   const activeBotId = currentBotId || bots?.find((b) => b.is_default)?.id || bots?.[0]?.id;
+
+  // Subscribe to page:queue room when component mounts
+  useEffect(() => {
+    const ws = getWSRef()?.current;
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'subscribe', room: 'page:queue' }));
+    }
+  }, [activeBotId]);
 
   // Listen for queue_update WebSocket messages
   useQuery({

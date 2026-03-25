@@ -251,7 +251,7 @@ export default function Logs() {
                   : 0
               }
               suffix="%"
-              valueStyle={{ color: '#16a34a' }}
+              styles={{ content: { color: '#16a34a' } }}
             />
           </Card>
           <Card size="small">

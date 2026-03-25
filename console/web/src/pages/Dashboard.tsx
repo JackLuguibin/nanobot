@@ -195,7 +195,7 @@ export default function Dashboard() {
           <Statistic
             title="Status"
             value={displayStatus?.running ? 'Running' : 'Stopped'}
-            valueStyle={{ color: displayStatus?.running ? '#16a34a' : '#9ca3af' }}
+            styles={{ content: { color: displayStatus?.running ? '#16a34a' : '#9ca3af' } }}
             prefix={
               displayStatus?.running ? (
                 <Badge status="processing" color="#22c55e" />

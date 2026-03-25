@@ -14,7 +14,53 @@ from typing import Any
 
 from loguru import logger
 
+from console.server.websocket import room_manager
+
 _MAX_ACTIVITY_ENTRIES = 5000
+
+
+def _transform_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Transform a raw activity entry to the API response shape."""
+    import datetime
+
+    ts = entry.get("timestamp", 0)
+    if isinstance(ts, (int, float)):
+        dt = datetime.datetime.fromtimestamp(ts)
+        ts_str = dt.isoformat()
+    else:
+        ts_str = str(ts)
+
+    data = entry.get("data") or {}
+    entry_type = entry.get("type", "unknown")
+
+    if entry_type == "tool_call":
+        title = f"Tool: {data.get('tool_name', 'unknown')}"
+        description = f"Status: {data.get('status', 'unknown')}"
+    elif entry_type == "message":
+        title = "Message received"
+        content = data.get("content", "")
+        description = content[:100] + "..." if len(content) > 100 else content
+    elif entry_type == "channel":
+        title = f"Channel: {data.get('channel', 'unknown')}"
+        description = data.get("event", "event")
+    elif entry_type == "session":
+        title = f"Session: {data.get('action', 'unknown')}"
+        description = data.get("session_key", "")
+    elif entry_type == "error":
+        title = "Error occurred"
+        description = data.get("error", "Unknown error")[:100]
+    else:
+        title = entry_type.capitalize()
+        description = str(data)[:100]
+
+    return {
+        "id": entry.get("id", ""),
+        "type": entry_type,
+        "title": title,
+        "description": description,
+        "timestamp": ts_str,
+        "metadata": data,
+    }
 
 
 def _get_activity_path(bot_id: str) -> Path:
@@ -65,6 +111,16 @@ def append_activity(bot_id: str, activity_type: str, data: dict[str, Any]) -> No
     entries.append(entry)
     entries = entries[-_MAX_ACTIVITY_ENTRIES:]
     _save_activity(bot_id, entries)
+
+    # Broadcast the transformed entry to all WS clients subscribed to this bot.
+    try:
+        transformed = _transform_entry(entry)
+        room_manager.broadcast(
+            f"bot:{bot_id}",
+            {"type": "activity_update", "entry": transformed},
+        )
+    except Exception as e:
+        logger.debug("Failed to broadcast activity update for bot '{}': {}", bot_id, e)
 
 
 def get_activity(

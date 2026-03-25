@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import type { RefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
-import type { StatusResponse, SessionInfo, WSMessage } from '../api/types';
+import type { StatusResponse, SessionInfo, WSMessage, ActivityItem } from '../api/types';
 import type { QueueStatus } from '../api/types_queue';
 import type { StreamChunk } from '../api/types';
 
@@ -123,6 +123,20 @@ export function useWebSocket() {
             } else if (queueData.bot_id) {
               // 旧格式：仅 invalidate，让组件重新 fetch
               queryClient.invalidateQueries({ queryKey: ['queue-status', queueData.bot_id] });
+            }
+          }
+          if (message.type === 'activity_update' && message.entry) {
+            const entry = message.entry as ActivityItem;
+            // Update all active activity query caches so the Activity page
+            // stays in sync with real-time events regardless of bot_id.
+            const queries = queryClient.getQueriesData<ActivityItem[]>({
+              queryKey: ['activity'],
+              type: 'active',
+            });
+            for (const [queryKey, old] of queries) {
+              if (!old) continue;
+              if (old.some((e) => e.id === entry.id)) continue;
+              queryClient.setQueryData<ActivityItem[]>(queryKey, [entry, ...old]);
             }
           }
         } catch (e) {

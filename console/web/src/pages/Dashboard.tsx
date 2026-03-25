@@ -411,7 +411,7 @@ export default function Dashboard() {
                 colorField="type"
                 radius={0.8}
                 innerRadius={0.4}
-                label={{ type: 'inner', formatter: (v: { value: number }) => formatTokenCount(v.value) }}
+                label={false}
                 legend={false}
                 tooltip={{
                   items: [

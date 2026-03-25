@@ -124,7 +124,7 @@ export default function MCPServers() {
       <div className="p-6 flex flex-col flex-1 min-h-0">
         <Alert
           type="error"
-          message="加载 MCP 服务器失败"
+          title="加载 MCP 服务器失败"
           description={String(error)}
           showIcon
         />
@@ -227,9 +227,9 @@ export default function MCPServers() {
                   <Alert
                     className="mt-3"
                     type="error"
-                    message={server.error}
                     showIcon
                     icon={<ExclamationCircleOutlined />}
+                    title={server.error}
                   />
                 )}
 
@@ -359,7 +359,7 @@ export default function MCPServers() {
                 <Alert
                   className="mt-4"
                   type="error"
-                  message="错误详情"
+                  title="错误详情"
                   description={selectedServerData.error}
                   showIcon
                 />
@@ -374,7 +374,7 @@ export default function MCPServers() {
               className="rounded-2xl border border-gray-200/80 dark:border-gray-700/60"
             >
               <Alert
-                message={
+                title={
                   <span>
                     在 config.json 的{' '}
                     <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono">

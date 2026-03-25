@@ -1,8 +1,31 @@
 import { useEffect, useRef, useCallback } from 'react';
+import type { RefObject } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAppStore } from '../store';
 import type { StatusResponse, SessionInfo, WSMessage } from '../api/types';
 import type { QueueStatus } from '../api/types_queue';
+import type { StreamChunk } from '../api/types';
+
+// Global chat message handler registry (used by Chat.tsx for WS streaming)
+type ChatMessageHandler = (chunk: StreamChunk) => void;
+const _chatHandlers = new Set<ChatMessageHandler>();
+
+export function registerChatHandler(handler: ChatMessageHandler): () => void {
+  _chatHandlers.add(handler);
+  return () => _chatHandlers.delete(handler);
+}
+
+function _dispatchChat(chunk: StreamChunk) {
+  for (const h of _chatHandlers) {
+    try { h(chunk); } catch {}
+  }
+}
+
+// Expose wsRef so callers can send messages directly
+let _wsRef: RefObject<WebSocket | null> | null = null;
+export function getWSRef(): RefObject<WebSocket | null> | null {
+  return _wsRef;
+}
 
 export function useWebSocket() {
   const queryClient = useQueryClient();
@@ -30,6 +53,7 @@ export function useWebSocket() {
     try {
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
+      _wsRef = wsRef;
 
       ws.onopen = () => {
         console.log('[WebSocket] Connected!');
@@ -48,6 +72,16 @@ export function useWebSocket() {
           addWSMessage(message);
 
           const activeBotId = useAppStore.getState().currentBotId;
+
+          // Dispatch chat streaming messages to registered handlers
+          const chatTypes = [
+            'chat_token', 'chat_done', 'session_key', 'tool_call',
+            'tool_result', 'tool_progress', 'subagent_start',
+            'subagent_done', 'assistant_message', 'error',
+          ];
+          if (chatTypes.includes(message.type)) {
+            _dispatchChat(message as StreamChunk);
+          }
 
           if (message.type === 'status_update' && message.data) {
             const statusData = message.data as StatusResponse & { bot_id?: string };

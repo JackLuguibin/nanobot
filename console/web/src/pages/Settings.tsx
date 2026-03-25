@@ -323,7 +323,7 @@ export default function Settings() {
       className="max-w-2xl shadow-sm border border-gray-200/80 dark:border-gray-700/80"
     >
       <Alert
-        message="These variables are written to .env and loaded when the bot starts."
+        title="These variables are written to .env and loaded when the bot starts."
         description="Restart the bot after saving for changes to take effect. Values are stored as plain text."
         type="info"
         showIcon
@@ -520,13 +520,10 @@ export default function Settings() {
             </Form.Item>
 
             <Form.Item label="Memory Window" name="memory_window">
-              <InputNumber
-                min={1}
-                max={1000}
-                className="w-full max-w-[180px]"
-                addonAfter="messages"
-                size="large"
-              />
+              <Space.Compact size="large">
+                <InputNumber min={1} max={1000} className="w-full max-w-[180px]" />
+                <Input readOnly value="messages" className="!w-[100px] !pointer-events-none !select-none" />
+              </Space.Compact>
             </Form.Item>
           </Form>
         </Card>
@@ -602,7 +599,7 @@ export default function Settings() {
             styles={{ body: { paddingTop: 0 } }}
           >
             <Alert
-              message="Sensitive"
+              title="Sensitive"
               description="API keys are stored in your config file. Restart the bot for provider changes to take effect."
               type="warning"
               showIcon
@@ -722,7 +719,7 @@ export default function Settings() {
               </div>
             ) : (
               <Alert
-                message="No MCP servers configured"
+                title="No MCP servers configured"
                 description={
                   <span>
                     Configure MCP servers in your config file under{' '}
@@ -781,7 +778,7 @@ export default function Settings() {
             </div>
             ) : (
               <Alert
-                message="No channels configured"
+                title="No channels configured"
                 description="Add channel configurations to your config file."
                 type="info"
                 showIcon
@@ -797,7 +794,7 @@ export default function Settings() {
           >
           <div className="pt-1">
             <Alert
-              message={
+              title={
                 <span>
                   Configure channels in your config file at{' '}
                   <code className="px-1.5 py-0.5 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono">

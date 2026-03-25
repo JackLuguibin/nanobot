@@ -324,7 +324,7 @@ export default function Skills() {
         <>
           <Alert
             className="shrink-0 mt-6 rounded-xl border-0"
-            message="Changes require restart"
+            title="Changes require restart"
             description="Skill enable/disable or content changes take effect after restarting the bot."
             type="info"
             showIcon

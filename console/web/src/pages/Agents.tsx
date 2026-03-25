@@ -671,7 +671,7 @@ export default function Agents() {
         confirmLoading={createMutation.isPending}
         okButtonProps={{ disabled: !formData.name.trim() }}
         width={640}
-        destroyOnClose
+        destroyOnHidden
         styles={{ body: { maxHeight: '60vh', overflowY: 'auto' } }}
       >
         <Form layout="vertical" className="pt-2">
@@ -818,7 +818,7 @@ export default function Agents() {
         confirmLoading={updateMutation.isPending}
         okButtonProps={{ disabled: !formData.name.trim() }}
         width={640}
-        destroyOnClose
+        destroyOnHidden
         styles={{ body: { maxHeight: '60vh', overflowY: 'auto' } }}
       >
         <Form layout="vertical" className="pt-2">
@@ -968,7 +968,7 @@ export default function Agents() {
         }}
         okText="Add"
         cancelText="Cancel"
-        destroyOnClose
+        destroyOnHidden
       >
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
           New categories appear in the filter tabs. Assign an Agent to a category via the Display Category field when creating or editing.

@@ -440,12 +440,12 @@ export default function MCPServers() {
                   配置步骤
                 </h3>
                 <Steps
-                  direction="vertical"
+                  orientation="vertical"
                   size="small"
                   items={[
                     {
                       title: '编辑配置文件',
-                      description: (
+                      content: (
                         <span>
                           打开 Bot 的 config.json，或前往{' '}
                           <Link to="/settings" className="text-blue-600 hover:underline">
@@ -457,7 +457,7 @@ export default function MCPServers() {
                     },
                     {
                       title: '添加 mcpServers',
-                      description: (
+                      content: (
                         <span>
                           在 <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">tools</code> 下添加{' '}
                           <code className="px-1 py-0.5 bg-gray-200 dark:bg-gray-700 rounded text-xs">mcpServers</code> 对象
@@ -466,7 +466,7 @@ export default function MCPServers() {
                     },
                     {
                       title: '重启 Bot',
-                      description: '保存配置后重启 Bot 使 MCP 服务器生效',
+                      content: '保存配置后重启 Bot 使 MCP 服务器生效',
                     },
                   ]}
                 />

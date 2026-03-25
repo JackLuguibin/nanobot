@@ -1,7 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   Card,
-  List,
   Tag,
   Spin,
   Alert,
@@ -93,35 +92,32 @@ export default function Health() {
             title="检查结果"
             size="small"
           >
-            <List
-              dataSource={issues}
-              renderItem={(issue: HealthIssue) => (
-                <List.Item>
-                  <div className="flex items-center gap-3 w-full">
-                    <IssueIcon severity={issue.severity} />
-                    <div className="flex-1 min-w-0">
-                      <p className="font-medium">{issue.message}</p>
-                      {issue.path && (
-                        <Text type="secondary" className="text-xs">
-                          {issue.path}
-                        </Text>
-                      )}
-                    </div>
-                    <Tag
-                      color={
-                        issue.severity === 'critical'
-                          ? 'red'
-                          : issue.severity === 'warning'
-                          ? 'orange'
-                          : 'blue'
-                      }
-                    >
-                      {issue.severity === 'critical' ? '严重' : issue.severity === 'warning' ? '警告' : '提示'}
-                    </Tag>
+            <div className="divide-y divide-gray-100 dark:divide-gray-700">
+              {issues.map((issue: HealthIssue) => (
+                <div key={issue.path ?? issue.message} className="flex items-center gap-3 py-3 first:pt-0 last:pb-0">
+                  <IssueIcon severity={issue.severity} />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium">{issue.message}</p>
+                    {issue.path && (
+                      <Text type="secondary" className="text-xs">
+                        {issue.path}
+                      </Text>
+                    )}
                   </div>
-                </List.Item>
-              )}
-            />
+                  <Tag
+                    color={
+                      issue.severity === 'critical'
+                        ? 'red'
+                        : issue.severity === 'warning'
+                        ? 'orange'
+                        : 'blue'
+                    }
+                  >
+                    {issue.severity === 'critical' ? '严重' : issue.severity === 'warning' ? '警告' : '提示'}
+                  </Tag>
+                </div>
+              ))}
+            </div>
           </Card>
         </>
       )}

@@ -10,7 +10,7 @@ from console.server.models.base import SessionInfo
 from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager
 
-router = APIRouter(prefix="/api/sessions")
+router = APIRouter(prefix="/sessions")
 
 
 def _resolve_state(bot_id: str | None = None):

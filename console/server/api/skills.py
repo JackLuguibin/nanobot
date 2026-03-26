@@ -13,7 +13,7 @@ from console.server.models.skills import (
     SkillInstallFromRegistryRequest,
 )
 
-router = APIRouter(prefix="/api/skills")
+router = APIRouter(prefix="/skills")
 
 
 def _resolve_state(bot_id: str | None = None):

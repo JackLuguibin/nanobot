@@ -6,10 +6,10 @@ from fastapi import APIRouter, Query
 
 from console.server.api.state import get_state, get_state_manager
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/queue")
 
 
-@router.get("/queue/status")
+@router.get("/status")
 async def get_queue_status(bot_id: str | None = Query(None)) -> dict:
     """获取所有 Bot（或指定 Bot）的队列状态。"""
     manager = get_state_manager()

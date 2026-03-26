@@ -8,7 +8,7 @@ from loguru import logger
 from console.server.api.state import get_state
 from console.server.models.chat import ChatRequest, ChatResponse
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/chat")
 
 
 def _resolve_state(bot_id: str | None = None):
@@ -30,7 +30,7 @@ def _agent_unavailable_detail(state) -> str:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/chat", response_model=ChatResponse)
+@router.post("", response_model=ChatResponse)
 async def send_chat_message(request: ChatRequest) -> ChatResponse:
     """Send a chat message and get a response."""
     state = _resolve_state(request.bot_id)

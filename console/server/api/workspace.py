@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from console.server.api.state import get_state
 from console.server.models.workspace import BotFileUpdateRequest, WorkspaceFileUpdateRequest
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/workspace")
 
 
 def _resolve_state(bot_id: str | None = None):
@@ -69,7 +69,7 @@ def _resolve_workspace_path(workspace: Path, rel_path: str) -> Path | None:
         return None
 
 
-@router.get("/workspace/files")
+@router.get("/files")
 async def list_workspace_files(
     path: str = Query("", description="Relative path from workspace root"),
     depth: int = Query(2, ge=1, le=5),
@@ -107,7 +107,7 @@ async def list_workspace_files(
     return {"path": path or ".", "items": _list_dir(resolved, depth)}
 
 
-@router.get("/workspace/file")
+@router.get("/file")
 async def get_workspace_file(
     path: str = Query(..., description="Relative path from workspace root"),
     bot_id: str | None = Query(None),
@@ -130,7 +130,7 @@ async def get_workspace_file(
     return {"path": path, "content": content}
 
 
-@router.put("/workspace/file")
+@router.put("/file")
 async def update_workspace_file(
     request: WorkspaceFileUpdateRequest,
     bot_id: str | None = Query(None),

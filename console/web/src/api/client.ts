@@ -23,7 +23,7 @@ import type {
   MCPTestResult,
 } from './types';
 
-const API_BASE = '/api';
+const API_BASE = '/api/v1';
 
 function botQuery(botId?: string | null): string {
   return botId ? `?bot_id=${encodeURIComponent(botId)}` : '';

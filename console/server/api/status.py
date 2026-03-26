@@ -12,7 +12,7 @@ from console.server.models.base import ChannelStatus, MCPStatus, ToolCallLog
 from console.server.models.system import StatusResponse
 from console.server.models.status import ChannelUpdateRequest
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/status")
 
 
 def _resolve_state(bot_id: str | None = None):
@@ -24,7 +24,7 @@ def _resolve_state(bot_id: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/status", response_model=StatusResponse)
+@router.get("", response_model=StatusResponse)
 async def get_status(bot_id: str | None = Query(None)) -> StatusResponse:
     """Get the overall bot status."""
     state = _resolve_state(bot_id)

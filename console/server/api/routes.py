@@ -20,7 +20,7 @@ from console.server.api.skills import router as skills_router
 from console.server.api.status import router as status_router
 from console.server.api.workspace import router as workspace_router
 
-router = APIRouter()
+router = APIRouter(prefix="/api/v1")
 
 router.include_router(bots_router)
 router.include_router(agents_router)

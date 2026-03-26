@@ -18,7 +18,7 @@ from console.server.api.chat import router as chat_router
 from console.server.api.config import router as config_router
 from console.server.api.cron import router as cron_router
 from console.server.api.health import router as health_router
-from console.server.api.health import control_router
+from console.server.api.control import router as control_router
 from console.server.api.memory import router as memory_router
 from console.server.api.mcp import router as mcp_router
 from console.server.api.plans import router as plans_router
@@ -26,8 +26,6 @@ from console.server.api.queue import router as queue_router
 from console.server.api.sessions import router as sessions_router
 from console.server.api.skills import router as skills_router
 from console.server.api.status import router as status_router
-from console.server.api.health import router as health_router
-from console.server.api.health import control_router
 from console.server.api.tools import router as tools_router
 from console.server.api.usage import router as usage_router
 from console.server.api.workspace import router as workspace_router

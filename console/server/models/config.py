@@ -12,7 +12,3 @@ from .base import ConfigSection
 class ConfigUpdateRequest(BaseModel):
     section: ConfigSection
     data: dict[str, Any]
-
-
-class EnvUpdateRequest(BaseModel):
-    vars: dict[str, str] = {}

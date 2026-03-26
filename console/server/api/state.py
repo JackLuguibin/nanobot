@@ -484,6 +484,33 @@ class BotState:
 
             return True
 
+    async def refresh_channel(self, name: str) -> dict[str, Any]:
+        """Stop and restart a specific channel. Returns result dict."""
+        if not self._channel_manager:
+            return {"name": name, "success": False, "message": "Channel manager not available"}
+        channel = self._channel_manager.get_channel(name)
+        if not channel:
+            return {"name": name, "success": False, "message": f"Channel '{name}' not found"}
+        try:
+            await channel.stop()
+        except Exception as e:
+            logger.debug("Stop {} failed (may not be running): {}", name, e)
+        try:
+            await channel.start()
+            return {"name": name, "success": True}
+        except Exception as e:
+            return {"name": name, "success": False, "message": str(e)}
+
+    async def refresh_all_channels(self) -> list[dict[str, Any]]:
+        """Stop and restart all channels. Returns list of per-channel results."""
+        if not self._channel_manager:
+            return []
+        results = []
+        for name in list(self._channel_manager.channels.keys()):
+            result = await self.refresh_channel(name)
+            results.append(result)
+        return results
+
     async def get_config(self) -> dict[str, Any]:
         """Get the current configuration."""
         return self._config
@@ -536,6 +563,41 @@ class BotState:
         """Restart the bot (reinitialize components)."""
         logger.warning("Restart requested for bot '{}'", self.bot_id)
         return False
+
+    async def test_mcp(self, name: str) -> dict[str, Any]:
+        """Test connection to an MCP server by name. Returns latency and success."""
+        import time
+
+        if not self._agent_loop or not hasattr(self._agent_loop, "_mcp_servers"):
+            return {"name": name, "success": False, "message": "Agent loop or MCP not available"}
+        servers = self._agent_loop._mcp_servers or {}
+        if name not in servers:
+            return {"name": name, "success": False, "message": f"MCP server '{name}' not found"}
+        start = time.monotonic()
+        try:
+            if self._agent_loop._mcp_connected:
+                elapsed_ms = int((time.monotonic() - start) * 1000)
+                return {"name": name, "success": True, "latency_ms": elapsed_ms}
+            return {"name": name, "success": False, "message": "MCP not connected"}
+        except Exception as e:
+            return {"name": name, "success": False, "message": str(e)}
+
+    async def refresh_mcp(self, name: str) -> dict[str, Any]:
+        """Reconnect an MCP server by name. Closes existing and reinitializes."""
+        if not self._agent_loop or not hasattr(self._agent_loop, "_mcp_servers"):
+            return {"name": name, "success": False, "message": "Agent loop or MCP not available"}
+        servers = self._agent_loop._mcp_servers or {}
+        if name not in servers:
+            return {"name": name, "success": False, "message": f"MCP server '{name}' not found"}
+        try:
+            if hasattr(self._agent_loop, "close_mcp"):
+                await self._agent_loop.close_mcp()
+            if hasattr(self._agent_loop, "_connect_mcp"):
+                self._agent_loop._mcp_connected = False
+                await self._agent_loop._connect_mcp()
+            return {"name": name, "success": True}
+        except Exception as e:
+            return {"name": name, "success": False, "message": str(e)}
 
     async def get_queue_status(self) -> dict[str, Any]:
         """获取当前 Bot 的队列状态（Channel 层 + Agent 层）。"""

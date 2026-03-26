@@ -11,7 +11,7 @@ from loguru import logger
 from console.server.api.state import get_state
 from console.server.models.activity import HealthResponse
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/activity")
 
 
 def _resolve_state(bot_id: str | None = None):
@@ -23,7 +23,7 @@ def _resolve_state(bot_id: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/activity")
+@router.get("")
 async def get_activity_feed(
     bot_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),

@@ -11,7 +11,7 @@ from console.server.api.state import get_state_manager
 from console.server.api.websocket import get_connection_manager
 from console.server.models.bots import BotCreateRequest, BotInfoResponse, SetDefaultRequest
 
-router = APIRouter(prefix="/api/bots")
+router = APIRouter(prefix="/bots")
 
 
 def _resolve_state(bot_id: str | None = None):

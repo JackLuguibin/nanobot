@@ -10,7 +10,7 @@ from fastapi import APIRouter, HTTPException, Query
 from console.server.api.state import get_state
 from console.server.models.plans import PlanTaskCreateRequest, PlanTaskUpdateRequest, PlansSaveRequest
 
-router = APIRouter(prefix="/api/plans")
+router = APIRouter(prefix="/plans")
 
 
 def _resolve_state(bot_id: str | None = None):

@@ -12,7 +12,7 @@ from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager
 from console.server.models.config import ConfigUpdateRequest, EnvUpdateRequest
 
-router = APIRouter(prefix="/api")
+router = APIRouter(prefix="/config")
 
 
 def _resolve_state(bot_id: str | None = None):
@@ -24,14 +24,14 @@ def _resolve_state(bot_id: str | None = None):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/config")
+@router.get("")
 async def get_config(bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Get the full configuration."""
     state = _resolve_state(bot_id)
     return await state.get_config()
 
 
-@router.put("/config")
+@router.put("")
 async def update_config(
     request: ConfigUpdateRequest, bot_id: str | None = Query(None)
 ) -> dict[str, Any]:
@@ -49,14 +49,14 @@ async def update_config(
     return result
 
 
-@router.get("/config/schema")
+@router.get("/schema")
 async def get_config_schema(bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Get the configuration schema."""
     state = _resolve_state(bot_id)
     return await state.get_config_schema()
 
 
-@router.post("/config/validate")
+@router.post("/validate")
 async def validate_config(data: dict[str, Any], bot_id: str | None = Query(None)) -> dict[str, Any]:
     """Validate configuration data."""
     state = _resolve_state(bot_id)

@@ -112,7 +112,7 @@ class PlansTool(Tool):
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(f"{self._base_url}/api/plans", timeout=10.0)
+                resp = await client.get(f"{self._base_url}/api/v1/plans", timeout=10.0)
             except Exception as e:
                 return f"Error: 无法连接到服务器 - {str(e)}"
 
@@ -183,7 +183,7 @@ class PlansTool(Tool):
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.post(f"{self._base_url}/api/plans/tasks", json=payload, timeout=10.0)
+                resp = await client.post(f"{self._base_url}/api/v1/plans/tasks", json=payload, timeout=10.0)
             except Exception as e:
                 return f"Error: 无法连接到服务器 - {str(e)}"
 
@@ -233,7 +233,7 @@ class PlansTool(Tool):
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.put(f"{self._base_url}/api/plans/tasks/{task_id}", json=payload, timeout=10.0)
+                resp = await client.put(f"{self._base_url}/api/v1/plans/tasks/{task_id}", json=payload, timeout=10.0)
             except Exception as e:
                 return f"Error: 无法连接到服务器 - {str(e)}"
 
@@ -253,7 +253,7 @@ class PlansTool(Tool):
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.delete(f"{self._base_url}/api/plans/tasks/{task_id}", timeout=10.0)
+                resp = await client.delete(f"{self._base_url}/api/v1/plans/tasks/{task_id}", timeout=10.0)
             except Exception as e:
                 return f"Error: 无法连接到服务器 - {str(e)}"
 

@@ -21,7 +21,7 @@ from console.server.models.agents import (
     DelegateTaskResponse,
 )
 
-router = APIRouter(prefix="/api/bots/{bot_id}/agents")
+router = APIRouter(prefix="/bots/{bot_id}/agents")
 
 
 def _get_agent_manager_optional(bot_id: str) -> AgentManager | None:

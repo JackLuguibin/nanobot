@@ -42,3 +42,25 @@ class CronJobResponse(BaseModel):
     created_at_ms: int
     updated_at_ms: int
     delete_after_run: bool
+
+
+class CronStatusResponse(BaseModel):
+    """Cron service status (GET /cron/status)."""
+
+    enabled: bool = True
+    jobs: int = 0
+    next_wake_at_ms: int | None = None
+
+
+class CronRunResponse(BaseModel):
+    """Response for POST /cron/{job_id}/run."""
+
+    status: str = "ok"
+    job_id: str
+
+
+class CronDeleteResponse(BaseModel):
+    """Response for DELETE /cron/{job_id}."""
+
+    status: str = "deleted"
+    job_id: str

@@ -40,3 +40,42 @@ class PlanTaskUpdateRequest(BaseModel):
     dueDate: str | None = None
     progress: int | None = None
     project: str | None = None
+
+
+class PlanColumn(BaseModel):
+    id: str
+    title: str
+    order: int
+
+
+class PlansBoardResponse(BaseModel):
+    """Plans board response (GET /plans)."""
+
+    id: str
+    name: str
+    columns: list[PlanColumn]
+    tasks: list[dict[str, Any]]
+
+
+class PlanTaskResponse(BaseModel):
+    """Single task response (POST/PUT /plans/tasks)."""
+
+    id: str
+    title: str
+    description: str | None = None
+    columnId: str
+    order: int
+    createdAt: str
+    updatedAt: str
+    priority: str | None = None
+    startDate: str | None = None
+    dueDate: str | None = None
+    progress: int | None = None
+    project: str | None = None
+
+
+class PlanTaskDeleteResponse(BaseModel):
+    """Response for DELETE /plans/tasks/{task_id}."""
+
+    status: str = "deleted"
+    task_id: str

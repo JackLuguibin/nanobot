@@ -6,12 +6,13 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from console.server.api.state import get_state
+from console.server.models.control import RestartResponse, StopResponse
 
 router = APIRouter(prefix="/control")
 
 
-@router.post("/stop")
-async def stop_current_task(bot_id: str | None = Query(None)) -> dict[str, str]:
+@router.post("/stop", response_model=StopResponse)
+async def stop_current_task(bot_id: str | None = Query(None)) -> StopResponse:
     """Stop the currently running task."""
     from console.server.api.websocket import get_connection_manager
 
@@ -27,11 +28,11 @@ async def stop_current_task(bot_id: str | None = Query(None)) -> dict[str, str]:
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 
-    return {"status": "stopped"}
+    return StopResponse()
 
 
-@router.post("/restart")
-async def restart_bot(bot_id: str | None = Query(None)) -> dict[str, str]:
+@router.post("/restart", response_model=RestartResponse)
+async def restart_bot(bot_id: str | None = Query(None)) -> RestartResponse:
     """Restart the bot."""
     from console.server.api.websocket import get_connection_manager
 
@@ -47,4 +48,4 @@ async def restart_bot(bot_id: str | None = Query(None)) -> dict[str, str]:
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 
-    return {"status": "restarting"}
+    return RestartResponse()

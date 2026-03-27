@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from console.server.api.state import get_state
-from console.server.models.workspace import BotFileUpdateRequest
+from console.server.models.workspace import (
+    BotFileUpdateRequest,
+    BotFileUpdateResponse,
+    BotFilesResponse,
+)
 
 router = APIRouter(prefix="/bot-files")
 
@@ -36,22 +39,28 @@ def _read_workspace_file(workspace: Path, filename: str) -> str:
         return ""
 
 
-@router.get("")
-async def get_bot_files(bot_id: str | None = Query(None)) -> dict[str, str]:
+@router.get("", response_model=BotFilesResponse)
+async def get_bot_files(bot_id: str | None = Query(None)) -> BotFilesResponse:
     """Get SOUL, USER, HEARTBEAT, TOOLS, AGENTS from workspace."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
     if not workspace:
         raise HTTPException(status_code=404, detail="Workspace not found")
-    return {key: _read_workspace_file(workspace, filename) for key, filename in BOT_FILE_KEYS.items()}
+    return BotFilesResponse(
+        soul=_read_workspace_file(workspace, BOT_FILE_KEYS["soul"]),
+        user=_read_workspace_file(workspace, BOT_FILE_KEYS["user"]),
+        heartbeat=_read_workspace_file(workspace, BOT_FILE_KEYS["heartbeat"]),
+        tools=_read_workspace_file(workspace, BOT_FILE_KEYS["tools"]),
+        agents=_read_workspace_file(workspace, BOT_FILE_KEYS["agents"]),
+    )
 
 
-@router.put("/{key}")
+@router.put("/{key}", response_model=BotFileUpdateResponse)
 async def update_bot_file(
     key: str,
     request: BotFileUpdateRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> BotFileUpdateResponse:
     """Update a bot profile MD file (SOUL, USER, HEARTBEAT, TOOLS, AGENTS)."""
     if key not in BOT_FILE_KEYS:
         raise HTTPException(
@@ -65,4 +74,4 @@ async def update_bot_file(
     filename = BOT_FILE_KEYS[key]
     path = workspace / filename
     path.write_text(request.content, encoding="utf-8")
-    return {"status": "updated", "key": key}
+    return BotFileUpdateResponse(key=key)

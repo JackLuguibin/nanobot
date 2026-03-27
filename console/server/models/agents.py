@@ -85,3 +85,38 @@ class BroadcastEventRequest(BaseModel):
     topic: str
     content: str
     context: dict[str, Any] = {}
+
+
+class BroadcastEventResponse(BaseModel):
+    """Response for POST /{agent_id}/broadcast."""
+
+    status: str = "broadcasted"
+    topic: str
+
+
+class CategoryDeleteResponse(BaseModel):
+    """Response for DELETE /categories/{category_key}."""
+
+    status: str = "deleted"
+    key: str
+
+
+class AgentDeleteResponse(BaseModel):
+    """Response for DELETE /{agent_id}."""
+
+    status: str = "deleted"
+    agent_id: str
+
+
+class AgentStatusResponse(BaseModel):
+    """Agent or system status response (GET /{agent_id}/status)."""
+
+    total_agents: int = 0
+    enabled_agents: int = 0
+    subscribed_agents: list[str] = []
+    zmq_initialized: bool = False
+    agent_id: str | None = None
+    agent_name: str | None = None
+    enabled: bool | None = None
+    bot_id: str | None = None
+    full_agent_id: str | None = None

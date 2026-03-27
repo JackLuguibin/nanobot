@@ -9,7 +9,7 @@ from loguru import logger
 
 from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager
-from console.server.models.config import ConfigUpdateRequest
+from console.server.models.config import ConfigUpdateRequest, ConfigValidateResponse
 
 router = APIRouter(prefix="/config")
 
@@ -55,8 +55,11 @@ async def get_config_schema(bot_id: str | None = Query(None)) -> dict[str, Any]:
     return await state.get_config_schema()
 
 
-@router.post("/validate")
-async def validate_config(data: dict[str, Any], bot_id: str | None = Query(None)) -> dict[str, Any]:
+@router.post("/validate", response_model=ConfigValidateResponse)
+async def validate_config(
+    data: dict[str, Any], bot_id: str | None = Query(None)
+) -> ConfigValidateResponse:
     """Validate configuration data."""
     state = _resolve_state(bot_id)
-    return await state.validate_config(data)
+    raw = await state.validate_config(data)
+    return ConfigValidateResponse(**raw)

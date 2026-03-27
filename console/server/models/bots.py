@@ -25,3 +25,13 @@ class BotInfoResponse(BaseModel):
 
 class SetDefaultRequest(BaseModel):
     bot_id: str
+
+
+class BotDeleteResponse(BaseModel):
+    status: str = "deleted"
+    bot_id: str
+
+
+class SetDefaultBotResponse(BaseModel):
+    status: str = "ok"
+    default_bot_id: str

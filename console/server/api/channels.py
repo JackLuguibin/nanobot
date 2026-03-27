@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, HTTPException, Query
-from loguru import logger
 
 from console.server.api.state import get_state
 from console.server.models.base import ChannelStatus
-from console.server.models.status import ChannelUpdateRequest
+from console.server.models.status import (
+    AllChannelsRefreshResponse,
+    ChannelDeleteResponse,
+    ChannelRefreshResponse,
+    ChannelUpdateRequest,
+    ChannelUpdateResponse,
+)
 
 router = APIRouter(prefix="/channels")
 
@@ -26,45 +29,49 @@ async def get_channels(bot_id: str | None = Query(None)) -> list[ChannelStatus]:
     return [ChannelStatus(**ch) for ch in channels]
 
 
-@router.put("/{name}")
+@router.put("/{name}", response_model=ChannelUpdateResponse)
 async def update_channel(
     name: str,
     request: ChannelUpdateRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> ChannelUpdateResponse:
     """Update a channel's configuration."""
     state = _resolve_state(bot_id)
     try:
-        return await state.update_channel(name, request.data)
+        raw = await state.update_channel(name, request.data)
+        return ChannelUpdateResponse(data=raw)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/{name}")
+@router.delete("/{name}", response_model=ChannelDeleteResponse)
 async def delete_channel(
     name: str,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> ChannelDeleteResponse:
     """Disable a channel (set enabled=False)."""
     state = _resolve_state(bot_id)
     ok = await state.delete_channel(name)
     if not ok:
         raise HTTPException(status_code=400, detail=f"Unknown channel: {name}")
-    return {"status": "ok"}
+    return ChannelDeleteResponse()
 
 
-@router.post("/{name}/refresh")
+@router.post("/{name}/refresh", response_model=ChannelRefreshResponse)
 async def refresh_channel(
     name: str,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> ChannelRefreshResponse:
     """Stop and restart a specific channel."""
     state = _resolve_state(bot_id)
-    return await state.refresh_channel(name)
+    raw = await state.refresh_channel(name)
+    return ChannelRefreshResponse(**raw)
 
 
-@router.post("/refresh")
-async def refresh_all_channels(bot_id: str | None = Query(None)) -> list[dict[str, Any]]:
+@router.post("/refresh", response_model=AllChannelsRefreshResponse)
+async def refresh_all_channels(bot_id: str | None = Query(None)) -> AllChannelsRefreshResponse:
     """Stop and restart all running channels."""
     state = _resolve_state(bot_id)
-    return await state.refresh_all_channels()
+    raws = await state.refresh_all_channels()
+    results = [ChannelRefreshResponse(**raw) for raw in raws]
+    return AllChannelsRefreshResponse(results=results)

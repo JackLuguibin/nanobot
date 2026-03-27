@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 
 from console.server.api.state import get_state
-from console.server.models.base import MCPStatus
+from console.server.models.status import MCPStatus
 from console.server.models.mcp import MCPRefreshResponse, MCPTestResponse
 
 router = APIRouter(prefix="/mcp")

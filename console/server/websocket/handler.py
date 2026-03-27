@@ -22,7 +22,7 @@ from loguru import logger
 
 from console.server.api.state import get_state, get_state_manager
 from console.server.models.chat import WSMessage
-from console.server.models.base import WSMessageType
+from console.server.models.enums import WSMessageType
 from console.server.websocket.rooms import RoomManager, get_room_manager
 
 

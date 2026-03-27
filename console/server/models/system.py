@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field
 
-from .base import ChannelStatus, MCPStatus
+from .status import ChannelStatus, MCPStatus
 from .usage import TokenUsageResponse
 
 

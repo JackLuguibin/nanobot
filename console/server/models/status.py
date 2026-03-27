@@ -1,12 +1,47 @@
-"""Session and channel status models."""
+"""Status and session-info models."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .base import ChannelStatus
+from .enums import MessageRole
+
+
+class SessionInfo(BaseModel):
+    key: str
+    title: str | None = None
+    message_count: int
+    last_message: str | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ChannelStatus(BaseModel):
+    name: str
+    enabled: bool
+    status: str  # "online", "offline", "error"
+    stats: dict[str, Any] = Field(default_factory=dict)
+
+
+class MCPStatus(BaseModel):
+    name: str
+    status: str  # "connected", "disconnected", "error"
+    server_type: str  # "stdio", "http"
+    last_connected: datetime | None = None
+    error: str | None = None
+
+
+class ToolCallLog(BaseModel):
+    id: str
+    tool_name: str
+    arguments: dict[str, Any]
+    result: str | None = None
+    status: str  # "success", "error"
+    duration_ms: float
+    timestamp: datetime
 
 
 class ChannelUpdateRequest(BaseModel):

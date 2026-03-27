@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 
 from console.server.api.state import get_state
-from console.server.models.base import ChannelStatus
+from console.server.models.status import ChannelStatus
 from console.server.models.status import (
     AllChannelsRefreshResponse,
     ChannelDeleteResponse,

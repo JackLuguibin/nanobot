@@ -2,12 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from fastapi import APIRouter, Query
 
 from console.server.api.state import get_state
 from console.server.models.base import MCPStatus
+from console.server.models.mcp import MCPRefreshResponse, MCPTestResponse
 
 router = APIRouter(prefix="/mcp")
 
@@ -24,21 +23,23 @@ async def get_mcp_servers(bot_id: str | None = Query(None)) -> list[MCPStatus]:
     return [MCPStatus(**mcp) for mcp in status.get("mcp_servers", [])]
 
 
-@router.post("/{name}/test")
+@router.post("/{name}/test", response_model=MCPTestResponse)
 async def test_mcp_connection(
     name: str,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> MCPTestResponse:
     """Test connection to an MCP server by name."""
     state = _resolve_state(bot_id)
-    return await state.test_mcp(name)
+    raw = await state.test_mcp(name)
+    return MCPTestResponse(**raw)
 
 
-@router.post("/{name}/refresh")
+@router.post("/{name}/refresh", response_model=MCPRefreshResponse)
 async def refresh_mcp_server(
     name: str,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> MCPRefreshResponse:
     """Reconnect an MCP server by name."""
     state = _resolve_state(bot_id)
-    return await state.refresh_mcp(name)
+    raw = await state.refresh_mcp(name)
+    return MCPRefreshResponse(**raw)

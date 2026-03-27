@@ -6,7 +6,13 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from console.server.models.cron import CronAddRequest, CronJobResponse
+from console.server.models.cron import (
+    CronAddRequest,
+    CronDeleteResponse,
+    CronJobResponse,
+    CronRunResponse,
+    CronStatusResponse,
+)
 from console.server.api.state import get_state
 
 router = APIRouter(prefix="/cron")
@@ -95,11 +101,11 @@ async def add_cron_job(
     return CronJobResponse(**_cron_job_to_response(job))
 
 
-@router.delete("/{job_id}")
+@router.delete("/{job_id}", response_model=CronDeleteResponse)
 async def remove_cron_job(
     job_id: str,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> CronDeleteResponse:
     """Remove a cron job."""
     state = _resolve_state(bot_id)
     cron = state.cron_service
@@ -109,7 +115,7 @@ async def remove_cron_job(
     removed = cron.remove_job(job_id)
     if not removed:
         raise HTTPException(status_code=404, detail="Job not found")
-    return {"status": "deleted", "job_id": job_id}
+    return CronDeleteResponse(job_id=job_id)
 
 
 @router.put("/{job_id}/enable")
@@ -130,12 +136,12 @@ async def enable_cron_job(
     return CronJobResponse(**_cron_job_to_response(job))
 
 
-@router.post("/{job_id}/run")
+@router.post("/{job_id}/run", response_model=CronRunResponse)
 async def run_cron_job(
     job_id: str,
     force: bool = Query(False),
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> CronRunResponse:
     """Manually run a cron job."""
     state = _resolve_state(bot_id)
     cron = state.cron_service
@@ -145,17 +151,18 @@ async def run_cron_job(
     ran = await cron.run_job(job_id, force=force)
     if not ran:
         raise HTTPException(status_code=404, detail="Job not found or disabled")
-    return {"status": "ok", "job_id": job_id}
+    return CronRunResponse(job_id=job_id)
 
 
-@router.get("/status")
-async def get_cron_status(bot_id: str | None = Query(None)) -> dict[str, Any]:
+@router.get("/status", response_model=CronStatusResponse)
+async def get_cron_status(bot_id: str | None = Query(None)) -> CronStatusResponse:
     """Get cron service status."""
     state = _resolve_state(bot_id)
     cron = state.cron_service
     if cron is None:
-        return {"enabled": False, "jobs": 0, "next_wake_at_ms": None}
-    return cron.status()
+        return CronStatusResponse(enabled=False, jobs=0, next_wake_at_ms=None)
+    raw = cron.status()
+    return CronStatusResponse(**raw)
 
 
 @router.get("/history")

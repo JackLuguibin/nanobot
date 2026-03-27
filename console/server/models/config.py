@@ -12,3 +12,10 @@ from .base import ConfigSection
 class ConfigUpdateRequest(BaseModel):
     section: ConfigSection
     data: dict[str, Any]
+
+
+class ConfigValidateResponse(BaseModel):
+    """Response for POST /config/validate."""
+
+    valid: bool
+    errors: list[str]

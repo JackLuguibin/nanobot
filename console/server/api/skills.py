@@ -8,9 +8,15 @@ from fastapi import APIRouter, HTTPException, Query
 
 from console.server.api.state import get_state
 from console.server.models.skills import (
-    SkillContentUpdateRequest,
+    SkillContentResponse,
+    SkillCopyResponse,
     SkillCreateRequest,
+    SkillCreateResponse,
+    SkillDeleteResponse,
+    SkillInfo,
     SkillInstallFromRegistryRequest,
+    SkillInstallResponse,
+    SkillUpdateResponse,
 )
 
 router = APIRouter(prefix="/skills")
@@ -20,13 +26,8 @@ def _resolve_state(bot_id: str | None = None):
     return get_state(bot_id)
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-
-@router.get("", response_model=list[dict[str, Any]])
-async def list_skills(bot_id: str | None = Query(None)) -> list[dict[str, Any]]:
+@router.get("", response_model=list[SkillInfo])
+async def list_skills(bot_id: str | None = Query(None)) -> list[SkillInfo]:
     """List all skills (builtin + workspace) for a bot."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -39,18 +40,29 @@ async def list_skills(bot_id: str | None = Query(None)) -> list[dict[str, Any]]:
     config = await state.get_config()
     skills_config = config.get("skills") or {}
 
+    result = []
     for s in skills:
         cfg = skills_config.get(s["name"])
-        s["enabled"] = cfg.get("enabled", True) if isinstance(cfg, dict) else True
+        enabled = cfg.get("enabled", True) if isinstance(cfg, dict) else True
+        result.append(
+            SkillInfo(
+                name=s["name"],
+                description=s.get("description"),
+                path=s.get("path"),
+                builtin=s.get("builtin", False),
+                workspace=s.get("workspace", False),
+                enabled=enabled,
+            )
+        )
 
-    return skills
+    return result
 
 
-@router.get("/{name}/content")
+@router.get("/{name}/content", response_model=SkillContentResponse)
 async def get_skill_content(
     name: str,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> SkillContentResponse:
     """Get skill content (read-only for builtin, editable for workspace)."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -63,14 +75,14 @@ async def get_skill_content(
     if content is None:
         raise HTTPException(status_code=404, detail="Skill not found")
 
-    return {"name": name, "content": content}
+    return SkillContentResponse(name=name, content=content)
 
 
-@router.post("/{name}/copy-to-workspace")
+@router.post("/{name}/copy-to-workspace", response_model=SkillCopyResponse)
 async def copy_skill_to_workspace(
     name: str,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> SkillCopyResponse:
     """Copy a built-in skill to workspace, enabling editing."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -84,15 +96,15 @@ async def copy_skill_to_workspace(
             status_code=400,
             detail="Skill already in workspace or not found",
         )
-    return {"status": "copied", "name": name}
+    return SkillCopyResponse(name=name)
 
 
-@router.put("/{name}/content")
+@router.put("/{name}/content", response_model=SkillUpdateResponse)
 async def update_skill_content(
     name: str,
     request: SkillContentUpdateRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> SkillUpdateResponse:
     """Update workspace skill content. Builtin skills are read-only."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -101,13 +113,12 @@ async def update_skill_content(
 
     from console.server.extension.skills import update_skill_content as _update_content
 
-    content = request.content
-    if not _update_content(workspace, name, content):
+    if not _update_content(workspace, name, request.content):
         raise HTTPException(
             status_code=400,
             detail="Skill not found or builtin (read-only)",
         )
-    return {"status": "updated", "name": name}
+    return SkillUpdateResponse(name=name)
 
 
 @router.get("/registry/search")
@@ -127,11 +138,11 @@ async def search_skills_registry(
     return search_registry(q or "", url)
 
 
-@router.post("/install-from-registry")
+@router.post("/install-from-registry", response_model=SkillInstallResponse)
 async def install_skill_from_registry(
     request: SkillInstallFromRegistryRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> SkillInstallResponse:
     """Install a skill from the registry into workspace."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -148,14 +159,14 @@ async def install_skill_from_registry(
             status_code=400,
             detail="Skill not found in registry, already installed, or invalid name",
         )
-    return {"status": "installed", "name": request.name}
+    return SkillInstallResponse(name=request.name)
 
 
-@router.post("")
+@router.post("", response_model=SkillCreateResponse)
 async def create_skill(
     request: SkillCreateRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> SkillCreateResponse:
     """Create a new workspace skill."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -174,14 +185,14 @@ async def create_skill(
             status_code=400,
             detail="Invalid skill name or skill already exists",
         )
-    return {"status": "created", "name": request.name}
+    return SkillCreateResponse(name=request.name)
 
 
-@router.delete("/{name}")
+@router.delete("/{name}", response_model=SkillDeleteResponse)
 async def delete_skill(
     name: str,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> SkillDeleteResponse:
     """Delete a workspace skill. Builtin skills cannot be deleted."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -195,4 +206,4 @@ async def delete_skill(
             status_code=400,
             detail="Skill not found or builtin (cannot delete)",
         )
-    return {"status": "deleted", "name": name}
+    return SkillDeleteResponse(name=name)

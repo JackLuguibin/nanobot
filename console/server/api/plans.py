@@ -8,7 +8,15 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from console.server.api.state import get_state
-from console.server.models.plans import PlanTaskCreateRequest, PlanTaskUpdateRequest, PlansSaveRequest
+from console.server.models.plans import (
+    PlanColumn,
+    PlanTaskCreateRequest,
+    PlanTaskDeleteResponse,
+    PlanTaskResponse,
+    PlanTaskUpdateRequest,
+    PlansBoardResponse,
+    PlansSaveRequest,
+)
 
 router = APIRouter(prefix="/plans")
 
@@ -17,29 +25,30 @@ def _resolve_state(bot_id: str | None = None):
     return get_state(bot_id)
 
 
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
-
-
-@router.get("")
-async def get_plans(bot_id: str | None = Query(None)) -> dict[str, Any]:
+@router.get("", response_model=PlansBoardResponse)
+async def get_plans(bot_id: str | None = Query(None)) -> PlansBoardResponse:
     """Get Plans kanban board data."""
     state = _resolve_state(bot_id)
     if state.bot_id == "_empty":
-        return {
-            "id": "board-default",
-            "name": "默认看板",
-            "columns": [
-                {"id": "col-backlog", "title": "待办", "order": 0},
-                {"id": "col-progress", "title": "进行中", "order": 1},
-                {"id": "col-done", "title": "已完成", "order": 2},
+        return PlansBoardResponse(
+            id="board-default",
+            name="默认看板",
+            columns=[
+                PlanColumn(id="col-backlog", title="待办", order=0),
+                PlanColumn(id="col-progress", title="进行中", order=1),
+                PlanColumn(id="col-done", title="已完成", order=2),
             ],
-            "tasks": [],
-        }
+            tasks=[],
+        )
     from console.server.extension.plans import get_plans as _get_plans
 
-    return _get_plans(state.bot_id)
+    raw = _get_plans(state.bot_id)
+    return PlansBoardResponse(
+        id=raw["id"],
+        name=raw.get("name", ""),
+        columns=[PlanColumn(**c) for c in raw.get("columns", [])],
+        tasks=raw.get("tasks", []),
+    )
 
 
 @router.put("")
@@ -63,11 +72,11 @@ async def save_plans(
     return data
 
 
-@router.post("/tasks")
+@router.post("/tasks", response_model=PlanTaskResponse)
 async def create_plan_task(
     request: PlanTaskCreateRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> PlanTaskResponse:
     """Create a new task in Plans."""
     state = _resolve_state(bot_id)
     if state.bot_id == "_empty":
@@ -77,19 +86,18 @@ async def create_plan_task(
 
     board = _get_plans(state.bot_id)
     now = time.time()
-
     task_id = f"task-{int(now * 1000)}"
+    now_str = time.strftime("%Y-%m-%dT%H:%M:%S")
 
-    new_task = {
+    new_task: dict[str, Any] = {
         "id": task_id,
         "title": request.title,
         "description": request.description,
         "columnId": request.columnId,
         "order": len([t for t in board.get("tasks", []) if t.get("columnId") == request.columnId]),
-        "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
-        "updatedAt": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "createdAt": now_str,
+        "updatedAt": now_str,
     }
-
     if request.priority:
         new_task["priority"] = request.priority
     if request.startDate:
@@ -106,15 +114,15 @@ async def create_plan_task(
     board["tasks"] = tasks
     _save_plans(state.bot_id, board)
 
-    return new_task
+    return PlanTaskResponse(**new_task)
 
 
-@router.put("/tasks/{task_id}")
+@router.put("/tasks/{task_id}", response_model=PlanTaskResponse)
 async def update_plan_task(
     task_id: str,
     request: PlanTaskUpdateRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> PlanTaskResponse:
     """Update an existing task in Plans."""
     state = _resolve_state(bot_id)
     if state.bot_id == "_empty":
@@ -151,14 +159,14 @@ async def update_plan_task(
     board["tasks"] = tasks
     _save_plans(state.bot_id, board)
 
-    return task
+    return PlanTaskResponse(**task)
 
 
-@router.delete("/tasks/{task_id}")
+@router.delete("/tasks/{task_id}", response_model=PlanTaskDeleteResponse)
 async def delete_plan_task(
     task_id: str,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> PlanTaskDeleteResponse:
     """Delete a task from Plans."""
     state = _resolve_state(bot_id)
     if state.bot_id == "_empty":
@@ -176,4 +184,4 @@ async def delete_plan_task(
     board["tasks"] = [t for t in tasks if t.get("id") != task_id]
     _save_plans(state.bot_id, board)
 
-    return {"status": "deleted", "task_id": task_id}
+    return PlanTaskDeleteResponse(task_id=task_id)

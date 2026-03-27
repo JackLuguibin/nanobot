@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
 
 from fastapi import APIRouter, Query
-from loguru import logger
 
 from console.server.api.state import get_state
+from console.server.models.activity import ActivityEntry, ActivityEntryType
 
 router = APIRouter(prefix="/activity")
 
@@ -17,14 +16,14 @@ def _resolve_state(bot_id: str | None = None):
     return get_state(bot_id)
 
 
-@router.get("")
+@router.get("", response_model=list[ActivityEntry])
 async def get_activity_feed(
     bot_id: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     activity_type: str | None = Query(
         None, description="Filter by activity type: message, tool_call, channel, session, error"
     ),
-) -> list[dict[str, Any]]:
+) -> list[ActivityEntry]:
     """Get activity feed with various event types."""
     state = _resolve_state(bot_id)
 
@@ -40,9 +39,8 @@ async def get_activity_feed(
         ts = entry.get("timestamp", 0)
         if isinstance(ts, (int, float)):
             dt = datetime.fromtimestamp(ts)
-            ts_str = dt.isoformat()
         else:
-            ts_str = str(ts)
+            dt = None
 
         data = entry.get("data") or {}
         entry_type = entry.get("type", "unknown")
@@ -68,14 +66,14 @@ async def get_activity_feed(
             description = data.get("error", "Unknown error")[:100]
 
         result.append(
-            {
-                "id": entry.get("id", ""),
-                "type": entry_type,
-                "title": title,
-                "description": description,
-                "timestamp": ts_str,
-                "metadata": data,
-            }
+            ActivityEntry(
+                id=entry.get("id", ""),
+                type=ActivityEntryType(entry_type) if entry_type in ActivityEntryType._value2member_map_ else ActivityEntryType.MESSAGE,
+                title=title,
+                description=description,
+                timestamp=dt,
+                metadata=data,
+            )
         )
 
     return result

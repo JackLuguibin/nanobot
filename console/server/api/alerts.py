@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 
 from console.server.api.state import get_state
+from console.server.models.alerts import AlertDismissResponse
 
 router = APIRouter(prefix="/alerts")
 
@@ -55,11 +56,11 @@ async def get_alerts(
     return _get_alerts(bid, include_dismissed=include_dismissed)
 
 
-@router.post("/{alert_id}/dismiss")
+@router.post("/{alert_id}/dismiss", response_model=AlertDismissResponse)
 async def dismiss_alert(
     alert_id: str,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> AlertDismissResponse:
     """Dismiss an alert."""
     state = _resolve_state(bot_id)
     from console.server.extension.alerts import dismiss_alert as _dismiss
@@ -67,4 +68,4 @@ async def dismiss_alert(
     ok = _dismiss(state.bot_id, alert_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Alert not found")
-    return {"status": "ok", "alert_id": alert_id}
+    return AlertDismissResponse(alert_id=alert_id)

@@ -4,22 +4,22 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
-from pydantic import BaseModel
 
-from console.server.models.base import SessionInfo
 from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager
+from console.server.models.base import SessionInfo
+from console.server.models.sessions import (
+    CreateSessionResponse,
+    DeleteSessionResponse,
+    GetSessionResponse,
+    SessionMessage,
+)
 
 router = APIRouter(prefix="/sessions")
 
 
 def _resolve_state(bot_id: str | None = None):
     return get_state(bot_id)
-
-
-# ---------------------------------------------------------------------------
-# Routes
-# ---------------------------------------------------------------------------
 
 
 @router.get("", response_model=list[SessionInfo])
@@ -30,18 +30,26 @@ async def list_sessions(bot_id: str | None = Query(None)) -> list[SessionInfo]:
     return [SessionInfo(**s) for s in sessions]
 
 
-@router.get("/{key}")
-async def get_session(key: str, bot_id: str | None = Query(None)) -> dict:
+@router.get("/{key}", response_model=GetSessionResponse)
+async def get_session(key: str, bot_id: str | None = Query(None)) -> GetSessionResponse:
     """Get a specific session with full history."""
     state = _resolve_state(bot_id)
     session = await state.get_session(key)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    messages = [SessionMessage(**m) for m in session.get("messages", [])]
+    return GetSessionResponse(
+        key=session["key"],
+        title=session["title"],
+        messages=messages,
+        message_count=session["message_count"],
+    )
 
 
 @router.post("", response_model=SessionInfo)
-async def create_session(key: str | None = None, bot_id: str | None = Query(None)) -> SessionInfo:
+async def create_session(
+    key: str | None = None, bot_id: str | None = Query(None)
+) -> SessionInfo:
     """Create a new session."""
     state = _resolve_state(bot_id)
     session = await state.create_session(key)
@@ -58,8 +66,8 @@ async def create_session(key: str | None = None, bot_id: str | None = Query(None
     return SessionInfo(**session)
 
 
-@router.delete("/{key}")
-async def delete_session(key: str, bot_id: str | None = Query(None)) -> dict[str, str]:
+@router.delete("/{key}", response_model=DeleteSessionResponse)
+async def delete_session(key: str, bot_id: str | None = Query(None)) -> DeleteSessionResponse:
     """Delete a session."""
     state = _resolve_state(bot_id)
     deleted = await state.delete_session(key)
@@ -75,4 +83,4 @@ async def delete_session(key: str, bot_id: str | None = Query(None)) -> dict[str
     except Exception as e:
         logger.warning("Failed to broadcast status update: {}", e)
 
-    return {"status": "deleted", "key": key}
+    return DeleteSessionResponse(key=key)

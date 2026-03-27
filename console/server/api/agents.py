@@ -11,10 +11,14 @@ from console.server.api.state import get_state_manager
 from console.server.extension.agents import AgentConfig, AgentManager
 from console.server.models.agents import (
     AgentCreateRequest,
+    AgentDeleteResponse,
     AgentResponse,
+    AgentStatusResponse,
     AgentUpdateRequest,
     BroadcastEventRequest,
+    BroadcastEventResponse,
     CategoryCreateRequest,
+    CategoryDeleteResponse,
     CategoryOverrideRequest,
     CategoryResponse,
     DelegateTaskRequest,
@@ -73,14 +77,14 @@ async def add_category(bot_id: str, request: CategoryCreateRequest) -> CategoryR
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.delete("/categories/{category_key}")
-async def remove_category(bot_id: str, category_key: str) -> dict[str, str]:
+@router.delete("/categories/{category_key}", response_model=CategoryDeleteResponse)
+async def remove_category(bot_id: str, category_key: str) -> CategoryDeleteResponse:
     """Delete a category."""
     manager = _resolve_agent_manager(bot_id)
     success = await manager.category_manager.remove_category(category_key)
     if not success:
         raise HTTPException(status_code=404, detail=f"Category '{category_key}' not found")
-    return {"status": "deleted", "key": category_key}
+    return CategoryDeleteResponse(key=category_key)
 
 
 @router.get("/categories/overrides", response_model=dict[str, str])
@@ -194,14 +198,14 @@ async def update_agent(bot_id: str, agent_id: str, request: AgentUpdateRequest) 
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.delete("/{agent_id}")
-async def delete_agent(bot_id: str, agent_id: str) -> dict[str, str]:
+@router.delete("/{agent_id}", response_model=AgentDeleteResponse)
+async def delete_agent(bot_id: str, agent_id: str) -> AgentDeleteResponse:
     """Delete an Agent."""
     agent_manager = _resolve_agent_manager(bot_id)
     success = await agent_manager.delete_agent(agent_id)
     if not success:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_id}' not found")
-    return {"status": "deleted", "agent_id": agent_id}
+    return AgentDeleteResponse(agent_id=agent_id)
 
 
 @router.post("/{agent_id}/enable")
@@ -248,10 +252,10 @@ async def delegate_task(
         raise HTTPException(status_code=404, detail=str(e))
 
 
-@router.post("/{agent_id}/broadcast")
+@router.post("/{agent_id}/broadcast", response_model=BroadcastEventResponse)
 async def broadcast_event(
     bot_id: str, agent_id: str, request: BroadcastEventRequest
-) -> dict[str, str]:
+) -> BroadcastEventResponse:
     """Broadcast an event to all Agents."""
     agent_manager = _resolve_agent_manager(bot_id)
     await agent_manager.broadcast_event(
@@ -260,7 +264,7 @@ async def broadcast_event(
         content=request.content,
         context=request.context,
     )
-    return {"status": "broadcasted", "topic": request.topic}
+    return BroadcastEventResponse(topic=request.topic)
 
 
 def _empty_system_status() -> dict[str, Any]:

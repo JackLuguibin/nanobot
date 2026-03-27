@@ -9,7 +9,13 @@ from loguru import logger
 
 from console.server.api.state import get_state_manager
 from console.server.api.websocket import get_connection_manager
-from console.server.models.bots import BotCreateRequest, BotInfoResponse, SetDefaultRequest
+from console.server.models.bots import (
+    BotCreateRequest,
+    BotDeleteResponse,
+    BotInfoResponse,
+    SetDefaultBotResponse,
+    SetDefaultRequest,
+)
 
 router = APIRouter(prefix="/bots")
 
@@ -95,8 +101,8 @@ async def create_bot(request: BotCreateRequest) -> BotInfoResponse:
     return _bot_to_response(bot, manager, registry)
 
 
-@router.delete("/{bot_id}")
-async def delete_bot(bot_id: str) -> dict[str, str]:
+@router.delete("/{bot_id}", response_model=BotDeleteResponse)
+async def delete_bot(bot_id: str) -> BotDeleteResponse:
     """Delete a bot and its workspace."""
     from console.server.bot_registry import get_registry
 
@@ -125,11 +131,11 @@ async def delete_bot(bot_id: str) -> dict[str, str]:
 
     await get_connection_manager().broadcast_bots_update()
 
-    return {"status": "deleted", "bot_id": bot_id}
+    return BotDeleteResponse(bot_id=bot_id)
 
 
-@router.put("/default")
-async def set_default_bot(request: SetDefaultRequest) -> dict[str, str]:
+@router.put("/default", response_model=SetDefaultBotResponse)
+async def set_default_bot(request: SetDefaultRequest) -> SetDefaultBotResponse:
     """Set the default bot."""
     from console.server.bot_registry import get_registry
 
@@ -141,7 +147,7 @@ async def set_default_bot(request: SetDefaultRequest) -> dict[str, str]:
 
     await get_connection_manager().broadcast_bots_update()
 
-    return {"status": "ok", "default_bot_id": request.bot_id}
+    return SetDefaultBotResponse(default_bot_id=request.bot_id)
 
 
 @router.post("/{bot_id}/start", response_model=BotInfoResponse)

@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from console.server.api.state import get_state
-from console.server.models.workspace import WorkspaceFileUpdateRequest
+from console.server.models.workspace import (
+    WorkspaceFileItem,
+    WorkspaceFileListResponse,
+    WorkspaceFileReadResponse,
+    WorkspaceFileUpdateRequest,
+    WorkspaceFileUpdateResponse,
+)
 
 router = APIRouter(prefix="/workspace")
 
@@ -30,12 +35,12 @@ def _resolve_workspace_path(workspace: Path, rel_path: str) -> Path | None:
         return None
 
 
-@router.get("/files")
+@router.get("/files", response_model=WorkspaceFileListResponse)
 async def list_workspace_files(
     path: str = Query("", description="Relative path from workspace root"),
     depth: int = Query(2, ge=1, le=5),
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> WorkspaceFileListResponse:
     """List workspace directory structure. depth limits recursion."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -46,7 +51,7 @@ async def list_workspace_files(
     if resolved is None or not resolved.exists():
         raise HTTPException(status_code=400, detail="Invalid path")
 
-    def _list_dir(p: Path, d: int) -> list[dict]:
+    def _list_dir(p: Path, d: int) -> list[WorkspaceFileItem]:
         if d <= 0:
             return []
         items = []
@@ -55,24 +60,27 @@ async def list_workspace_files(
             if name.startswith(".") and name != ".env":
                 continue
             rel = child.relative_to(workspace)
-            item = {
-                "name": name,
-                "path": str(rel).replace("\\", "/"),
-                "is_dir": child.is_dir(),
-            }
+            children = None
             if child.is_dir() and d > 1:
-                item["children"] = _list_dir(child, d - 1)
-            items.append(item)
+                children = _list_dir(child, d - 1)
+            items.append(
+                WorkspaceFileItem(
+                    name=name,
+                    path=str(rel).replace("\\", "/"),
+                    is_dir=child.is_dir(),
+                    children=children,
+                )
+            )
         return items
 
-    return {"path": path or ".", "items": _list_dir(resolved, depth)}
+    return WorkspaceFileListResponse(path=path or ".", items=_list_dir(resolved, depth))
 
 
-@router.get("/file")
+@router.get("/file", response_model=WorkspaceFileReadResponse)
 async def get_workspace_file(
     path: str = Query(..., description="Relative path from workspace root"),
     bot_id: str | None = Query(None),
-) -> dict[str, Any]:
+) -> WorkspaceFileReadResponse:
     """Read a file from workspace."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -88,14 +96,14 @@ async def get_workspace_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"path": path, "content": content}
+    return WorkspaceFileReadResponse(path=path, content=content)
 
 
-@router.put("/file")
+@router.put("/file", response_model=WorkspaceFileUpdateResponse)
 async def update_workspace_file(
     request: WorkspaceFileUpdateRequest,
     bot_id: str | None = Query(None),
-) -> dict[str, str]:
+) -> WorkspaceFileUpdateResponse:
     """Update a file in workspace."""
     state = _resolve_state(bot_id)
     workspace = state.workspace
@@ -111,4 +119,4 @@ async def update_workspace_file(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"status": "updated", "path": request.path}
+    return WorkspaceFileUpdateResponse(path=request.path)

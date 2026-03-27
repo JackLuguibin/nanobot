@@ -7,7 +7,7 @@ from loguru import logger
 
 from console.server.api.state import get_state
 from console.server.api.websocket import get_connection_manager
-from console.server.models.base import SessionInfo
+from console.server.models.status import SessionInfo
 from console.server.models.sessions import (
     CreateSessionResponse,
     DeleteSessionResponse,

@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .base import MessageRole
+from .enums import MessageRole
 
 
 class ToolCall(BaseModel):

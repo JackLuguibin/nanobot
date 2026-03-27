@@ -6,7 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .base import MessageRole, SessionInfo
+from .enums import MessageRole
+from .status import SessionInfo
 
 
 class SessionMessage(BaseModel):

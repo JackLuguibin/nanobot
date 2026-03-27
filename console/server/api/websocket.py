@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any
 from loguru import logger
 
 from console.server.models.chat import WSMessage
-from console.server.models.base import WSMessageType
+from console.server.models.enums import WSMessageType
 
 # Re-export from new module for backward compatibility
 from console.server.websocket import (

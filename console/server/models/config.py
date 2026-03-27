@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from .base import ConfigSection
+from .enums import ConfigSection
 
 
 class ConfigUpdateRequest(BaseModel):

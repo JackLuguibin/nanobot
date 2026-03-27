@@ -8,7 +8,7 @@ from fastapi import APIRouter, Query
 from loguru import logger
 
 from console.server.api.state import get_state
-from console.server.models.base import ToolCallLog
+from console.server.models.status import ToolCallLog
 
 router = APIRouter(prefix="/tools")
 

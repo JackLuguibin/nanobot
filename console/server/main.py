@@ -33,7 +33,21 @@ async def lifespan(app: FastAPI):
 
     await initialize_bot_state(app)
 
+    # 初始化 Facade 层（在 BotState 初始化完成后）
+    try:
+        from console.server.facade.init import initialize_facade_layer
+        initialize_facade_layer()
+    except Exception as e:
+        logger.warning("Facade layer initialization failed (non-fatal): {}", e)
+
     yield
+
+    # 关闭 Facade 层
+    try:
+        from console.server.facade.init import shutdown_facade_layer
+        shutdown_facade_layer()
+    except Exception as e:
+        logger.debug("Facade layer shutdown error: {}", e)
 
     logger.info("Shutting down nanobot console")
     await shutdown_bot_state()

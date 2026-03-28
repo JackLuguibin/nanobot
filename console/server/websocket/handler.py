@@ -23,7 +23,6 @@ from loguru import logger
 from console.server.api.state import get_state, get_state_manager
 from console.server.models.chat import WSMessage
 from console.server.models.enums import WSMessageType
-from console.server.websocket.rooms import RoomManager, get_room_manager
 
 
 def _bot_room(bot_id: str) -> str:
@@ -34,10 +33,15 @@ def _page_room(page: str) -> str:
     return f"page:{page}"
 
 
+def _resolve_state(bot_id: str | None = None):
+    """Resolve BotState from bot_id (via Facade or BotStateManager)."""
+    return get_state(bot_id)
+
+
 class WSConnection:
     """Encapsulates the state of a single WebSocket client."""
 
-    def __init__(self, ws: WebSocket, rooms: RoomManager) -> None:
+    def __init__(self, ws: WebSocket, rooms) -> None:
         self._ws = ws
         self._rooms = rooms
         self._rooms_joined: set[str] = set()
@@ -152,7 +156,6 @@ class WSConnection:
         the same WebSocket connection, then broadcasts status updates to all
         connected clients.
         """
-        from console.server.api.chat import _resolve_state, _agent_unavailable_detail
         from console.server.api.websocket import get_connection_manager
         from console.server.extension.message_source import (
             SOURCE_MAIN_AGENT,
@@ -172,10 +175,14 @@ class WSConnection:
         agent_loop = state.agent_loop
 
         if agent_loop is None:
-            await self.send_json({
-                "type": "error",
-                "error": _agent_unavailable_detail(state),
-            })
+            detail = (
+                "No bot available. Please create or select a bot first."
+                if state.bot_id == "_empty"
+                else "Agent not running. Please configure an API key in Console Settings "
+                "or in the config file (e.g. providers.openai.apiKey), "
+                "or set the key in .env next to your config."
+            )
+            await self.send_json({"type": "error", "error": detail})
             return
 
         session_key = request.session_key
@@ -308,6 +315,8 @@ Summarize this naturally for the user. Keep it brief (1-2 sentences). Do not men
 
 async def handle_websocket(websocket: WebSocket) -> None:
     """Main entry point: accept a connection, set up rooms, run the loop."""
+    from console.server.websocket import RoomManager, get_room_manager
+
     rooms = get_room_manager()
     conn = WSConnection(websocket, rooms)
 

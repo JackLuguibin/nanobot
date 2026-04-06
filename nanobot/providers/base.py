@@ -1,5 +1,7 @@
 """Base LLM provider interface."""
 
+from __future__ import annotations
+
 import asyncio
 import json
 import re
@@ -66,6 +68,9 @@ class LLMResponse:
     def has_tool_calls(self) -> bool:
         """Check if response contains tool calls."""
         return len(self.tool_calls) > 0
+
+
+LLMCompletionCallback = Callable[[LLMResponse, dict[str, Any]], Awaitable[None]]
 
 
 @dataclass(frozen=True)
@@ -151,6 +156,24 @@ class LLMProvider(ABC):
         self.api_key = api_key
         self.api_base = api_base
         self.generation: GenerationSettings = GenerationSettings()
+        self.on_completion: list[LLMCompletionCallback] = []
+
+    def add_on_completion(self, callback: LLMCompletionCallback) -> None:
+        """Append *callback*; invoked after each successful (non-error) completion."""
+
+        self.on_completion.append(callback)
+
+    async def _notify_on_completion(
+        self, response: LLMResponse, request_kw: dict[str, Any]
+    ) -> LLMResponse:
+        if response.finish_reason != "error" and self.on_completion:
+            meta = dict(request_kw)
+            for completion_callback in self.on_completion:
+                try:
+                    await completion_callback(response, meta)
+                except Exception:
+                    logger.exception("LLM on_completion: %s callback failed", completion_callback.__name__)
+        return response
 
     @staticmethod
     def _sanitize_empty_content(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -609,7 +632,7 @@ class LLMProvider(ABC):
             attempt += 1
             response = await call(**kw)
             if response.finish_reason != "error":
-                return response
+                return await self._notify_on_completion(response, kw)
             last_response = response
             error_key = ((response.content or "").strip().lower() or None)
             if error_key and error_key == last_error_key:
@@ -626,7 +649,8 @@ class LLMProvider(ABC):
                     )
                     retry_kw = dict(kw)
                     retry_kw["messages"] = stripped
-                    return await call(**retry_kw)
+                    retry_response = await call(**retry_kw)
+                    return await self._notify_on_completion(retry_response, retry_kw)
                 return response
 
             if persistent and identical_error_count >= self._PERSISTENT_IDENTICAL_ERROR_LIMIT:
@@ -659,7 +683,8 @@ class LLMProvider(ABC):
                 on_retry_wait=on_retry_wait,
             )
 
-        return last_response if last_response is not None else await call(**kw)
+        final = last_response if last_response is not None else await call(**kw)
+        return await self._notify_on_completion(final, kw)
 
     @abstractmethod
     def get_default_model(self) -> str:

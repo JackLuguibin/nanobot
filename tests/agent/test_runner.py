@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import time
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -12,7 +13,7 @@ import pytest
 from nanobot.config.schema import AgentDefaults
 from nanobot.agent.tools.base import Tool
 from nanobot.agent.tools.registry import ToolRegistry
-from nanobot.providers.base import LLMResponse, ToolCallRequest
+from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 _MAX_TOOL_RESULT_CHARS = AgentDefaults().max_tool_result_chars
 
@@ -999,3 +1000,205 @@ async def test_runner_passes_cached_tokens_to_hook_context():
 
     assert len(captured_usage) == 1
     assert captured_usage[0]["cached_tokens"] == 150
+
+
+# ---------------------------------------------------------------------------
+# finish_reason handling (runner does not auto-continue on "length")
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_finish_reason_length_does_not_trigger_auto_continue():
+    """Runner should not implicitly auto-continue when finish_reason == 'length'."""
+    from nanobot.agent.runner import AgentRunSpec, AgentRunner
+
+    provider = MagicMock()
+    call_count = {"n": 0}
+
+    async def chat_with_retry(*, messages, **kwargs):
+        call_count["n"] += 1
+        del messages, kwargs
+        return LLMResponse(content="part1 ", finish_reason="length", usage={})
+
+    provider.chat_with_retry = chat_with_retry
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+
+    runner = AgentRunner(provider)
+    result = await runner.run(AgentRunSpec(
+        initial_messages=[{"role": "user", "content": "write a long essay"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=10,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+    ))
+
+    assert result.stop_reason == "completed"
+    assert result.final_content == "part1 "
+    assert call_count["n"] == 1
+
+
+@pytest.mark.asyncio
+async def test_streaming_length_response_ends_stream_once():
+    """Streaming should still end once for a non-tool final response."""
+    from nanobot.agent.hook import AgentHook, AgentHookContext
+    from nanobot.agent.runner import AgentRunSpec, AgentRunner
+
+    provider = MagicMock()
+    call_count = {"n": 0}
+    stream_end_calls: list[bool] = []
+
+    class StreamHook(AgentHook):
+        def wants_streaming(self) -> bool:
+            return True
+
+        async def on_stream(self, context: AgentHookContext, delta: str) -> None:
+            pass
+
+        async def on_stream_end(self, context: AgentHookContext, resuming: bool = False) -> None:
+            stream_end_calls.append(resuming)
+
+    async def chat_stream_with_retry(*, messages, on_content_delta=None, **kwargs):
+        call_count["n"] += 1
+        del messages, on_content_delta, kwargs
+        return LLMResponse(content="partial ", finish_reason="length", usage={})
+
+    provider.chat_stream_with_retry = chat_stream_with_retry
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+
+    runner = AgentRunner(provider)
+    await runner.run(AgentRunSpec(
+        initial_messages=[{"role": "user", "content": "go"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=10,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        hook=StreamHook(),
+    ))
+
+    assert call_count["n"] == 1
+    assert stream_end_calls == [False]
+
+
+@pytest.mark.asyncio
+async def test_runner_does_not_retry_on_finish_reason_length():
+    """finish_reason == 'length' should not cause implicit retries."""
+    from nanobot.agent.runner import AgentRunSpec, AgentRunner
+
+    provider = MagicMock()
+    call_count = {"n": 0}
+
+    async def chat_with_retry(*, messages, **kwargs):
+        call_count["n"] += 1
+        del messages, kwargs
+        return LLMResponse(content="chunk", finish_reason="length", usage={})
+
+    provider.chat_with_retry = chat_with_retry
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+
+    runner = AgentRunner(provider)
+    result = await runner.run(AgentRunSpec(
+        initial_messages=[{"role": "user", "content": "go"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=20,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+    ))
+
+    assert call_count["n"] == 1
+    assert result.final_content == "chunk"
+
+
+# ---------------------------------------------------------------------------
+# Internal helpers removed (backfill/microcompact)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_runner_has_no_backfill_missing_tool_results_helper():
+    """We intentionally avoid depending on removed internal helpers."""
+    from nanobot.agent.runner import AgentRunner
+
+    assert not hasattr(AgentRunner, "_backfill_missing_tool_results")
+
+
+@pytest.mark.asyncio
+async def test_runner_has_no_microcompact_helper():
+    """We intentionally avoid depending on removed internal helpers."""
+    from nanobot.agent.runner import AgentRunner
+
+    assert not hasattr(AgentRunner, "_microcompact")
+
+
+@pytest.mark.asyncio
+async def test_token_usage_jsonl_records_each_llm_call(tmp_path):
+    """JSONL: one llm_call per successful provider completion."""
+    import json
+
+    from nanobot.agent.runner import AgentRunSpec, AgentRunner
+    from nanobot.utils.usage import attach_token_usage_jsonl
+
+    class SequenceProvider(LLMProvider):
+        def __init__(self) -> None:
+            super().__init__()
+            self._step = 0
+
+        async def chat(self, **kwargs) -> LLMResponse:
+            del kwargs
+            self._step += 1
+            if self._step == 1:
+                return LLMResponse(
+                    content="thinking",
+                    tool_calls=[ToolCallRequest(id="call_1", name="list_dir", arguments={"path": "."})],
+                    usage={"prompt_tokens": 100, "completion_tokens": 10, "cached_tokens": 80},
+                )
+            return LLMResponse(
+                content="done",
+                tool_calls=[],
+                usage={"prompt_tokens": 200, "completion_tokens": 20, "cached_tokens": 150},
+            )
+
+        def get_default_model(self) -> str:
+            return "test-model"
+
+    usage_dir = tmp_path / "usage"
+    log_path = usage_dir / f"token_usage_{datetime.now(timezone.utc).date().isoformat()}.jsonl"
+    provider = SequenceProvider()
+    attach_token_usage_jsonl(provider, tmp_path)
+    tools = MagicMock()
+    tools.get_definitions.return_value = []
+    tools.execute = AsyncMock(return_value="tool result")
+
+    runner = AgentRunner(provider)
+    result = await runner.run(AgentRunSpec(
+        initial_messages=[{"role": "user", "content": "do task"}],
+        tools=tools,
+        model="test-model",
+        max_iterations=3,
+        max_tool_result_chars=_MAX_TOOL_RESULT_CHARS,
+        session_key="cli:unit",
+    ))
+
+    lines = log_path.read_text(encoding="utf-8").strip().splitlines()
+    assert len(lines) == 2
+    first_row = json.loads(lines[0])
+    second_row = json.loads(lines[1])
+
+    assert first_row["event"] == "llm_call"
+    assert first_row["prompt_tokens"] == 100
+    assert first_row["completion_tokens"] == 10
+    assert first_row["cached_tokens"] == 80
+    assert first_row["model"] == "test-model"
+    assert first_row["finish_reason"] != "error"
+    assert "session_key" not in first_row
+    assert "run_id" not in first_row
+
+    assert second_row["event"] == "llm_call"
+    assert second_row["prompt_tokens"] == 200
+    assert second_row["completion_tokens"] == 20
+    assert second_row["cached_tokens"] == 150
+
+    assert result.usage["prompt_tokens"] == 300
+    assert result.usage["completion_tokens"] == 30

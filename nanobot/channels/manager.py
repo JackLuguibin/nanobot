@@ -68,8 +68,8 @@ class ChannelManager:
         """Pick the API key for the configured transcription provider."""
         try:
             if provider == "openai":
-                return self.config.providers.openai.api_key
-            return self.config.providers.groq.api_key
+                return self.config.providers.primary("openai").api_key
+            return self.config.providers.primary("groq").api_key
         except AttributeError:
             return ""
 

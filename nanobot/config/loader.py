@@ -117,4 +117,19 @@ def _migrate_config(data: dict) -> dict:
     exec_cfg = tools.get("exec", {})
     if "restrictToWorkspace" in exec_cfg and "restrictToWorkspace" not in tools:
         tools["restrictToWorkspace"] = exec_cfg.pop("restrictToWorkspace")
+    _migrate_providers_legacy_objects_to_lists(data)
     return data
+
+
+def _migrate_providers_legacy_objects_to_lists(data: dict) -> None:
+    """Turn legacy ``providers.<name>: { ... }`` into ``providers.<name>: [ { ... } ]``.
+
+    New configs use a list per key for multiple endpoints; old files used one
+    object per key. Idempotent if values are already lists.
+    """
+    prov = data.get("providers")
+    if not isinstance(prov, dict):
+        return
+    for key, val in list(prov.items()):
+        if isinstance(val, dict):
+            prov[key] = [val]

@@ -158,3 +158,35 @@ def test_load_config_resets_ssrf_whitelist_when_next_config_is_empty(tmp_path) -
     with patch("nanobot.security.network.socket.getaddrinfo", _fake_resolve("ts.local", ["100.100.1.1"])):
         ok, _ = validate_url_target("http://ts.local/api")
         assert not ok
+
+
+def test_migrate_config_wraps_legacy_provider_dict_as_list() -> None:
+    from nanobot.config.loader import _migrate_config
+
+    data = {"providers": {"groq": {"apiKey": "legacy-key"}}}
+    migrated = _migrate_config(data)
+    assert migrated["providers"]["groq"] == [{"apiKey": "legacy-key"}]
+
+
+def test_providers_legacy_object_and_new_list_load_equivalently(tmp_path) -> None:
+    """Old single-object and new array forms should parse to the same runtime shape."""
+    legacy = tmp_path / "legacy.json"
+    legacy.write_text(
+        json.dumps({"providers": {"groq": {"apiKey": "same", "apiBase": "https://x"}}}),
+        encoding="utf-8",
+    )
+    new_fmt = tmp_path / "new.json"
+    new_fmt.write_text(
+        json.dumps(
+            {"providers": {"groq": [{"apiKey": "same", "apiBase": "https://x"}]}}
+        ),
+        encoding="utf-8",
+    )
+
+    c1 = load_config(legacy)
+    c2 = load_config(new_fmt)
+
+    assert len(c1.providers.groq) == 1
+    assert c1.providers.groq[0].api_key == c2.providers.groq[0].api_key
+    assert c1.providers.groq[0].api_base == c2.providers.groq[0].api_base
+    assert c1.providers.primary("groq").api_key == c2.providers.primary("groq").api_key

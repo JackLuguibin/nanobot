@@ -1,9 +1,9 @@
 """Configuration schema using Pydantic."""
 
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, BeforeValidator, ConfigDict, Field
 from pydantic.alias_generators import to_camel
 from pydantic_settings import BaseSettings
 
@@ -99,38 +99,92 @@ class ProviderConfig(Base):
     api_key: str = ""
     api_base: str | None = None
     extra_headers: dict[str, str] | None = None  # Custom headers (e.g. APP-Code for AiHubMix)
+    models: list[str] = Field(default_factory=list)
+
+
+def _coerce_provider_entry_list(v: Any) -> Any:
+    """Normalize one provider object or a list per registry key (multi-endpoint).
+
+    Legacy JSON uses a single object; new JSON uses an array. Loader migration
+    may already wrap dicts in a list; this validator keeps both paths safe.
+    """
+    if v is None:
+        return [{}]
+    if isinstance(v, list):
+        return v if v else [{}]
+    return [v]
+
+
+ProviderEntryList = Annotated[
+    list[ProviderConfig],
+    BeforeValidator(_coerce_provider_entry_list),
+]
+
+
+def _provider_entries(providers: "ProvidersConfig", name: str) -> list[ProviderConfig]:
+    lst = getattr(providers, name, None)
+    return list(lst) if lst else []
 
 
 class ProvidersConfig(Base):
-    """Configuration for LLM providers."""
+    """Configuration for LLM providers.
 
-    custom: ProviderConfig = Field(default_factory=ProviderConfig)  # Any OpenAI-compatible endpoint
-    azure_openai: ProviderConfig = Field(default_factory=ProviderConfig)  # Azure OpenAI (model = deployment name)
-    anthropic: ProviderConfig = Field(default_factory=ProviderConfig)
-    openai: ProviderConfig = Field(default_factory=ProviderConfig)
-    openrouter: ProviderConfig = Field(default_factory=ProviderConfig)
-    deepseek: ProviderConfig = Field(default_factory=ProviderConfig)
-    groq: ProviderConfig = Field(default_factory=ProviderConfig)
-    zhipu: ProviderConfig = Field(default_factory=ProviderConfig)
-    dashscope: ProviderConfig = Field(default_factory=ProviderConfig)
-    vllm: ProviderConfig = Field(default_factory=ProviderConfig)
-    ollama: ProviderConfig = Field(default_factory=ProviderConfig)  # Ollama local models
-    ovms: ProviderConfig = Field(default_factory=ProviderConfig)  # OpenVINO Model Server (OVMS)
-    gemini: ProviderConfig = Field(default_factory=ProviderConfig)
-    moonshot: ProviderConfig = Field(default_factory=ProviderConfig)
-    minimax: ProviderConfig = Field(default_factory=ProviderConfig)
-    mistral: ProviderConfig = Field(default_factory=ProviderConfig)
-    stepfun: ProviderConfig = Field(default_factory=ProviderConfig)  # Step Fun (阶跃星辰)
-    xiaomi_mimo: ProviderConfig = Field(default_factory=ProviderConfig)  # Xiaomi MIMO (小米)
-    aihubmix: ProviderConfig = Field(default_factory=ProviderConfig)  # AiHubMix API gateway
-    siliconflow: ProviderConfig = Field(default_factory=ProviderConfig)  # SiliconFlow (硅基流动)
-    volcengine: ProviderConfig = Field(default_factory=ProviderConfig)  # VolcEngine (火山引擎)
-    volcengine_coding_plan: ProviderConfig = Field(default_factory=ProviderConfig)  # VolcEngine Coding Plan
-    byteplus: ProviderConfig = Field(default_factory=ProviderConfig)  # BytePlus (VolcEngine international)
-    byteplus_coding_plan: ProviderConfig = Field(default_factory=ProviderConfig)  # BytePlus Coding Plan
-    openai_codex: ProviderConfig = Field(default_factory=ProviderConfig, exclude=True)  # OpenAI Codex (OAuth)
-    github_copilot: ProviderConfig = Field(default_factory=ProviderConfig, exclude=True)  # Github Copilot (OAuth)
-    qianfan: ProviderConfig = Field(default_factory=ProviderConfig)  # Qianfan (百度千帆)
+    **New format:** each registry key is a JSON array of provider blocks, e.g.
+    ``"openrouter": [ {"apiKey": "...", "models": [...]}, {...} ]``.
+
+    **Legacy format (still supported):** a single object per key,
+    ``"openrouter": {"apiKey": "..."}``, is accepted in JSON and via
+    :func:`nanobot.config.loader._migrate_config`; it is normalized to a
+    one-element list. :class:`ProviderConfig` also runs the same coercion at
+    parse time.
+
+    Runtime matching walks each list in registry order and uses the first
+    eligible block (see :meth:`Config._match_provider`).
+    """
+
+    custom: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # Any OpenAI-compatible endpoint
+    azure_openai: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # Azure OpenAI (model = deployment name)
+    anthropic: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    openai: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    openrouter: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    deepseek: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    groq: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    zhipu: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    dashscope: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    vllm: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    ollama: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # Ollama local models
+    ovms: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # OpenVINO Model Server (OVMS)
+    gemini: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    moonshot: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    minimax: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    mistral: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])
+    stepfun: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # Step Fun (阶跃星辰)
+    xiaomi_mimo: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # Xiaomi MIMO (小米)
+    aihubmix: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # AiHubMix API gateway
+    siliconflow: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # SiliconFlow (硅基流动)
+    volcengine: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # VolcEngine (火山引擎)
+    volcengine_coding_plan: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # VolcEngine Coding Plan
+    byteplus: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # BytePlus (VolcEngine international)
+    byteplus_coding_plan: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # BytePlus Coding Plan
+    openai_codex: ProviderEntryList = Field(
+        default_factory=lambda: [ProviderConfig()], exclude=True
+    )  # OpenAI Codex (OAuth)
+    github_copilot: ProviderEntryList = Field(
+        default_factory=lambda: [ProviderConfig()], exclude=True
+    )  # Github Copilot (OAuth)
+    qianfan: ProviderEntryList = Field(default_factory=lambda: [ProviderConfig()])  # Qianfan (百度千帆)
+
+    def primary(self, registry_name: str) -> ProviderConfig:
+        """First provider block for *registry_name* (same as legacy single-object access).
+
+        Use this when you only need the default/first endpoint. For multiple
+        entries, access the list attribute (e.g. ``config.providers.groq``) or
+        iterate.
+        """
+        lst = getattr(self, registry_name, None)
+        if lst:
+            return lst[0]
+        return ProviderConfig()
 
 
 class HeartbeatConfig(Base):
@@ -233,8 +287,9 @@ class Config(BaseSettings):
         if forced != "auto":
             spec = find_by_name(forced)
             if spec:
-                p = getattr(self.providers, spec.name, None)
-                return (p, spec.name) if p else (None, None)
+                for p in _provider_entries(self.providers, spec.name):
+                    if p is not None:
+                        return p, spec.name
             return None, None
 
         model_lower = (model or self.agents.defaults.model).lower()
@@ -246,19 +301,46 @@ class Config(BaseSettings):
             kw = kw.lower()
             return kw in model_lower or kw.replace("-", "_") in model_normalized
 
+        def _models_list_matches(models: list[str]) -> bool:
+            """True if the requested model equals a configured entry (case-insensitive; -/_ normalized)."""
+            for entry in models:
+                e = entry.strip().lower()
+                if not e:
+                    continue
+                e_norm = e.replace("-", "_")
+                if model_lower == e or model_normalized == e_norm:
+                    return True
+                if "/" in model_lower:
+                    tail = model_lower.split("/", 1)[1]
+                    tail_norm = tail.replace("-", "_")
+                    if tail == e or tail_norm == e_norm:
+                        return True
+            return False
+
         # Explicit provider prefix wins — prevents `github-copilot/...codex` matching openai_codex.
         for spec in PROVIDERS:
-            p = getattr(self.providers, spec.name, None)
-            if p and model_prefix and normalized_prefix == spec.name:
-                if spec.is_oauth or spec.is_local or p.api_key:
-                    return p, spec.name
+            for p in _provider_entries(self.providers, spec.name):
+                if not p:
+                    continue
+                if model_prefix and normalized_prefix == spec.name:
+                    if spec.is_oauth or spec.is_local or p.api_key:
+                        return p, spec.name
+
+        # Prefer providers that explicitly list this model (providers.<name>[].models); registry order breaks ties.
+        for spec in PROVIDERS:
+            for p in _provider_entries(self.providers, spec.name):
+                if not (p and p.models):
+                    continue
+                if _models_list_matches(p.models):
+                    if spec.is_oauth or spec.is_local or p.api_key:
+                        return p, spec.name
 
         # Match by keyword (order follows PROVIDERS registry)
         for spec in PROVIDERS:
-            p = getattr(self.providers, spec.name, None)
-            if p and any(_kw_matches(kw) for kw in spec.keywords):
-                if spec.is_oauth or spec.is_local or p.api_key:
-                    return p, spec.name
+            for p in _provider_entries(self.providers, spec.name):
+                if p and any(_kw_matches(kw) for kw in spec.keywords):
+                    if spec.is_oauth or spec.is_local or p.api_key:
+                        return p, spec.name
 
         # Fallback: configured local providers can route models without
         # provider-specific keywords (for example plain "llama3.2" on Ollama).
@@ -268,13 +350,13 @@ class Config(BaseSettings):
         for spec in PROVIDERS:
             if not spec.is_local:
                 continue
-            p = getattr(self.providers, spec.name, None)
-            if not (p and p.api_base):
-                continue
-            if spec.detect_by_base_keyword and spec.detect_by_base_keyword in p.api_base:
-                return p, spec.name
-            if local_fallback is None:
-                local_fallback = (p, spec.name)
+            for p in _provider_entries(self.providers, spec.name):
+                if not (p and p.api_base):
+                    continue
+                if spec.detect_by_base_keyword and spec.detect_by_base_keyword in p.api_base:
+                    return p, spec.name
+                if local_fallback is None:
+                    local_fallback = (p, spec.name)
         if local_fallback:
             return local_fallback
 
@@ -283,9 +365,9 @@ class Config(BaseSettings):
         for spec in PROVIDERS:
             if spec.is_oauth:
                 continue
-            p = getattr(self.providers, spec.name, None)
-            if p and p.api_key:
-                return p, spec.name
+            for p in _provider_entries(self.providers, spec.name):
+                if p and p.api_key:
+                    return p, spec.name
         return None, None
 
     def get_provider(self, model: str | None = None) -> ProviderConfig | None:

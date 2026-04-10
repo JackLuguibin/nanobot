@@ -675,11 +675,12 @@ def _get_provider_names() -> dict[str, str]:
 
 
 def _configure_provider(config: Config, provider_name: str) -> None:
-    """Configure a single LLM provider."""
-    provider_config = getattr(config.providers, provider_name, None)
-    if provider_config is None:
+    """Configure a single LLM provider (edits the first entry in the list for that key)."""
+    entries = getattr(config.providers, provider_name, None)
+    if not entries:
         console.print(f"[red]Unknown provider: {provider_name}[/red]")
         return
+    provider_config = entries[0]
 
     display_name = _get_provider_names().get(provider_name, provider_name)
     info = _get_provider_info()
@@ -693,7 +694,9 @@ def _configure_provider(config: Config, provider_name: str) -> None:
         display_name,
     )
     if updated_provider is not None:
-        setattr(config.providers, provider_name, updated_provider)
+        new_entries = list(entries)
+        new_entries[0] = updated_provider
+        setattr(config.providers, provider_name, new_entries)
 
 
 def _configure_providers(config: Config) -> None:
@@ -704,7 +707,7 @@ def _configure_providers(config: Config) -> None:
         choices = []
         for name, display in _get_provider_names().items():
             provider = getattr(config.providers, name, None)
-            if provider and provider.api_key:
+            if provider and any(p.api_key for p in provider):
                 choices.append(f"{display} *")
             else:
                 choices.append(display)
@@ -892,7 +895,8 @@ def _show_summary(config: Config) -> None:
     provider_rows = []
     for name, display in _get_provider_names().items():
         provider = getattr(config.providers, name, None)
-        status = "[green]configured[/green]" if (provider and provider.api_key) else "[dim]not configured[/dim]"
+        configured = provider and any(p.api_key for p in provider)
+        status = "[green]configured[/green]" if configured else "[dim]not configured[/dim]"
         provider_rows.append((display, status))
     _print_summary_panel(provider_rows, "LLM Providers")
 

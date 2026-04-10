@@ -276,6 +276,132 @@ def test_config_auto_detects_ollama_from_local_api_base():
     assert config.get_api_base() == "http://localhost:11434/v1"
 
 
+def test_config_prefers_provider_when_model_listed_in_models_over_registry_order():
+    """Explicit models[] should win over default gateway ordering when both have api_key."""
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "auto", "model": "my-routed-model-xyz"}},
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-test"},
+                "aihubmix": {"apiKey": "k", "models": ["my-routed-model-xyz"]},
+            },
+        }
+    )
+
+    assert config.get_provider_name() == "aihubmix"
+
+
+def test_config_models_list_matches_tail_after_provider_slash():
+    """List entry can match the part after the first slash (not a registered provider prefix)."""
+    config = Config.model_validate(
+        {
+            "agents": {
+                "defaults": {
+                    "provider": "auto",
+                    "model": "gateway/anthropic/claude-3-haiku",
+                }
+            },
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-test"},
+                "aihubmix": {"apiKey": "k", "models": ["anthropic/claude-3-haiku"]},
+            },
+        }
+    )
+
+    assert config.get_provider_name() == "aihubmix"
+
+
+def test_config_models_list_normalizes_hyphen_and_underscore():
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "auto", "model": "MY-MODEL-ID"}},
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-test"},
+                "siliconflow": {"apiKey": "sf", "models": ["my_model_id"]},
+            },
+        }
+    )
+
+    assert config.get_provider_name() == "siliconflow"
+
+
+def test_config_models_list_registry_order_breaks_tie_when_same_model_configured_twice():
+    """Both list the same model and have keys; earlier PROVIDERS entry wins (openrouter before aihubmix)."""
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "auto", "model": "duplicate-route-model"}},
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-a"},
+                "aihubmix": {"apiKey": "k-b", "models": ["duplicate-route-model"]},
+            },
+        }
+    )
+    config.providers.openrouter[0].models = ["duplicate-route-model"]
+
+    assert config.get_provider_name() == "openrouter"
+
+
+def test_config_models_list_skips_provider_without_api_key():
+    """Match in models[] is ignored if that provider has no usable key; fallback applies."""
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "auto", "model": "only-on-empty-key-provider"}},
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-test"},
+                "aihubmix": {"apiKey": "", "models": ["only-on-empty-key-provider"]},
+            },
+        }
+    )
+
+    assert config.get_provider_name() == "openrouter"
+
+
+def test_config_explicit_model_prefix_wins_before_models_list_on_other_provider():
+    """provider/model prefix is resolved before models[] on a different provider."""
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "auto", "model": "openrouter/gpt-4o-mini"}},
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-test"},
+                "aihubmix": {"apiKey": "k", "models": ["openrouter/gpt-4o-mini"]},
+            },
+        }
+    )
+
+    assert config.get_provider_name() == "openrouter"
+
+
+def test_config_empty_models_array_does_not_trigger_explicit_model_routing():
+    """Empty models list is falsy; routing uses keyword/fallback as without models."""
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "auto", "model": "no-keyword-fallback-model-zz"}},
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-first"},
+                "aihubmix": {"apiKey": "k", "models": []},
+            },
+        }
+    )
+
+    assert config.get_provider_name() == "openrouter"
+
+
+def test_config_get_provider_name_accepts_model_override_argument():
+    """Per-call model overrides agents.defaults.model for models[] matching."""
+    config = Config.model_validate(
+        {
+            "agents": {"defaults": {"provider": "auto", "model": "ignored-default"}},
+            "providers": {
+                "openrouter": {"apiKey": "sk-or-test"},
+                "siliconflow": {"apiKey": "sf", "models": ["override-model"]},
+            },
+        }
+    )
+
+    assert config.get_provider_name("override-model") == "siliconflow"
+    assert config.get_provider_name() == "openrouter"
+
+
 def test_config_prefers_ollama_over_vllm_when_both_local_providers_configured():
     config = Config.model_validate(
         {

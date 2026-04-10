@@ -1307,19 +1307,20 @@ def status():
 
         # Check API keys from registry
         for spec in PROVIDERS:
-            p = getattr(config.providers, spec.name, None)
-            if p is None:
+            entries = getattr(config.providers, spec.name, None) or []
+            if not entries:
                 continue
             if spec.is_oauth:
                 console.print(f"{spec.label}: [green]✓ (OAuth)[/green]")
             elif spec.is_local:
                 # Local deployments show api_base instead of api_key
-                if p.api_base:
-                    console.print(f"{spec.label}: [green]✓ {p.api_base}[/green]")
+                bases = [p.api_base for p in entries if p.api_base]
+                if bases:
+                    console.print(f"{spec.label}: [green]✓ {bases[0]}[/green]")
                 else:
                     console.print(f"{spec.label}: [dim]not set[/dim]")
             else:
-                has_key = bool(p.api_key)
+                has_key = any(p.api_key for p in entries)
                 console.print(f"{spec.label}: {'[green]✓[/green]' if has_key else '[dim]not set[/dim]'}")
 
 

@@ -46,6 +46,10 @@ if TYPE_CHECKING:
     from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebToolsConfig
     from nanobot.cron.service import CronService
 
+# Distinguish "caller omitted auto_wiki_archive_at_context_fraction" (use schema default)
+# from "caller passed None" (disable; matches AgentDefaults field semantics).
+_AGENT_LOOP_UNSET = object()
+
 
 UNIFIED_SESSION_KEY = "unified:default"
 
@@ -157,16 +161,17 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         unified_session: bool = False,
         disabled_skills: list[str] | None = None,
-        auto_wiki_archive_at_context_fraction: float | None = None,
+        auto_wiki_archive_at_context_fraction: Any = _AGENT_LOOP_UNSET,
     ):
         from nanobot.config.schema import ExecToolConfig, WebToolsConfig
 
         defaults = AgentDefaults()
-        self.auto_wiki_archive_at_context_fraction = (
-            auto_wiki_archive_at_context_fraction
-            if auto_wiki_archive_at_context_fraction is not None
-            else defaults.auto_wiki_archive_at_context_fraction
-        )
+        if auto_wiki_archive_at_context_fraction is _AGENT_LOOP_UNSET:
+            self.auto_wiki_archive_at_context_fraction = (
+                defaults.auto_wiki_archive_at_context_fraction
+            )
+        else:
+            self.auto_wiki_archive_at_context_fraction = auto_wiki_archive_at_context_fraction
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider

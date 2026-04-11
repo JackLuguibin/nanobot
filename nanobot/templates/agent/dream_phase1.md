@@ -1,11 +1,11 @@
-Compare conversation history against current memory files. Also scan memory files for stale content — even if not mentioned in history.
+Compare conversation history against current memory files and wiki pages. Also scan memory files and `wiki/` for stale content — even if not mentioned in history.
 
 Output one line per finding:
 [FILE] atomic fact (not already in memory)
 [FILE-REMOVE] reason for removal
 [SKILL] kebab-case-name: one-line description of the reusable pattern
 
-Files: USER (identity, preferences), SOUL (bot behavior, tone), MEMORY (knowledge, project context)
+Files: USER (identity, preferences), SOUL (bot behavior, tone), MEMORY (knowledge, project context), wiki/schema.md (optional — structural rules for `wiki/`, prepended to wiki context when present), wiki/**/*.md including `wiki/entities/`, `wiki/concepts/`, `wiki/sources/` (use paths like `wiki/concepts/Topic.md` instead of [FILE] when adding to wiki)
 
 Rules:
 - Atomic facts: "has a cat named Luna" not "discussed pet care"

@@ -35,7 +35,11 @@ from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import AgentDefaults
 from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
-from nanobot.utils.helpers import image_placeholder_text, truncate_text as truncate_text_fn
+from nanobot.utils.helpers import (
+    estimate_prompt_tokens_chain,
+    image_placeholder_text,
+    truncate_text as truncate_text_fn,
+)
 from nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
@@ -153,10 +157,16 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         unified_session: bool = False,
         disabled_skills: list[str] | None = None,
+        auto_wiki_archive_at_context_fraction: float | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig, WebToolsConfig
 
         defaults = AgentDefaults()
+        self.auto_wiki_archive_at_context_fraction = (
+            auto_wiki_archive_at_context_fraction
+            if auto_wiki_archive_at_context_fraction is not None
+            else defaults.auto_wiki_archive_at_context_fraction
+        )
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
@@ -223,7 +233,7 @@ class AgentLoop:
             provider=provider,
             model=self.model,
             sessions=self.sessions,
-            context_window_tokens=context_window_tokens,
+            context_window_tokens=self.context_window_tokens,
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
             max_completion_tokens=provider.generation.max_tokens,
@@ -598,6 +608,60 @@ class AgentLoop:
         self._running = False
         logger.info("Agent loop stopping")
 
+    def _estimate_inbound_prompt_tokens(
+        self,
+        session: Session,
+        msg: InboundMessage,
+        pending_summary: str | None,
+    ) -> tuple[int, str]:
+        """Estimate prompt size for the upcoming turn (session history + this inbound message)."""
+        history = session.get_history(max_messages=0)
+        messages = self.context.build_messages(
+            history=history,
+            current_message=msg.content,
+            session_summary=pending_summary,
+            media=msg.media if msg.media else None,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+        )
+        return estimate_prompt_tokens_chain(
+            self.provider,
+            self.model,
+            messages,
+            self.tools.get_definitions(),
+        )
+
+    async def _maybe_auto_wiki_archive(
+        self,
+        msg: InboundMessage,
+        session: Session,
+        pending_summary: str | None,
+    ) -> OutboundMessage | None:
+        """If configured, run wiki-archive when estimated tokens reach the context fraction threshold."""
+        frac = self.auto_wiki_archive_at_context_fraction
+        if frac is None or frac <= 0:
+            return None
+        if self.context_window_tokens <= 0:
+            return None
+        est, _src = self._estimate_inbound_prompt_tokens(session, msg, pending_summary)
+        threshold = max(1, int(self.context_window_tokens * frac))
+        if est < threshold:
+            return None
+        from datetime import datetime
+
+        from nanobot.command.wiki_archive import run_wiki_archive_for_session
+
+        tail = [{"role": "user", "content": msg.content, "timestamp": datetime.now().isoformat()}]
+        return await run_wiki_archive_for_session(
+            self,
+            session,
+            msg,
+            append_transcript_messages=tail,
+            brief_success=True,
+            estimated_tokens=est,
+            threshold_tokens=threshold,
+        )
+
     async def _process_message(
         self,
         msg: InboundMessage,
@@ -661,6 +725,12 @@ class AgentLoop:
         ctx = CommandContext(msg=msg, session=session, key=key, raw=raw, loop=self)
         if result := await self.commands.dispatch(ctx):
             return result
+
+        frac = self.auto_wiki_archive_at_context_fraction
+        if frac is not None and frac > 0:
+            auto_note = await self._maybe_auto_wiki_archive(msg, session, pending)
+            if auto_note is not None:
+                await self.bus.publish_outbound(auto_note)
 
         await self.consolidator.maybe_consolidate_by_tokens(session)
 

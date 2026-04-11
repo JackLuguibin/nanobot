@@ -27,9 +27,32 @@ class CommitInfo:
 class GitStore:
     """Git-backed version control for memory files."""
 
-    def __init__(self, workspace: Path, tracked_files: list[str]):
+    def __init__(
+        self,
+        workspace: Path,
+        tracked_files: list[str],
+        *,
+        track_wiki_markdown: bool = True,
+    ):
         self._workspace = workspace
         self._tracked_files = tracked_files
+        self._track_wiki_markdown = track_wiki_markdown
+
+    def _expanded_tracked_files(self) -> list[str]:
+        """Base tracked files plus every ``wiki/**/*.md`` under the workspace."""
+        paths = {str(p).replace("\\", "/") for p in self._tracked_files}
+        if self._track_wiki_markdown:
+            wiki_root = self._workspace / "wiki"
+            if wiki_root.is_dir():
+                for p in wiki_root.rglob("*.md"):
+                    rel = p.relative_to(self._workspace)
+                    paths.add(str(rel).replace("\\", "/"))
+        return sorted(paths)
+
+    def _write_gitignore_file(self) -> None:
+        """Rewrite ``.gitignore`` from the current expanded tracked set."""
+        gi = self._workspace / ".gitignore"
+        gi.write_text(self._build_gitignore(), encoding="utf-8")
 
     def is_initialized(self) -> bool:
         """Check if the git repo has been initialized."""
@@ -51,20 +74,22 @@ class GitStore:
 
             porcelain.init(str(self._workspace))
 
-            # Write .gitignore
-            gitignore = self._workspace / ".gitignore"
-            gitignore.write_text(self._build_gitignore(), encoding="utf-8")
+            # Write .gitignore (includes wiki/**/*.md when present)
+            self._write_gitignore_file()
 
             # Ensure tracked files exist (touch them if missing) so the initial
             # commit has something to track.
-            for rel in self._tracked_files:
+            for rel in self._expanded_tracked_files():
                 p = self._workspace / rel
                 p.parent.mkdir(parents=True, exist_ok=True)
                 if not p.exists():
                     p.write_text("", encoding="utf-8")
 
             # Initial commit
-            porcelain.add(str(self._workspace), paths=[".gitignore"] + self._tracked_files)
+            porcelain.add(
+                str(self._workspace),
+                paths=[".gitignore"] + self._expanded_tracked_files(),
+            )
             porcelain.commit(
                 str(self._workspace),
                 message=b"init: nanobot memory store",
@@ -90,6 +115,9 @@ class GitStore:
         try:
             from dulwich import porcelain
 
+            # New wiki pages must be listed in .gitignore before `add` sees them.
+            self._write_gitignore_file()
+
             # .gitignore excludes everything except tracked files,
             # so any staged/unstaged change must be in our files.
             st = porcelain.status(str(self._workspace))
@@ -97,7 +125,7 @@ class GitStore:
                 return None
 
             msg_bytes = message.encode("utf-8") if isinstance(message, str) else message
-            porcelain.add(str(self._workspace), paths=self._tracked_files)
+            porcelain.add(str(self._workspace), paths=self._expanded_tracked_files())
             sha_bytes = porcelain.commit(
                 str(self._workspace),
                 message=msg_bytes,
@@ -140,14 +168,14 @@ class GitStore:
     def _build_gitignore(self) -> str:
         """Generate .gitignore content from tracked files."""
         dirs: set[str] = set()
-        for f in self._tracked_files:
+        for f in self._expanded_tracked_files():
             parent = str(Path(f).parent)
             if parent != ".":
                 dirs.add(parent)
         lines = ["/*"]
         for d in sorted(dirs):
             lines.append(f"!{d}/")
-        for f in self._tracked_files:
+        for f in self._expanded_tracked_files():
             lines.append(f"!{f}")
         lines.append("!.gitignore")
         return "\n".join(lines) + "\n"
@@ -270,7 +298,7 @@ class GitStore:
                 tree = repo[parent_obj.tree]
 
                 restored: list[str] = []
-                for filepath in self._tracked_files:
+                for filepath in self._expanded_tracked_files():
                     content = self._read_blob_from_tree(repo, tree, filepath)
                     if content is not None:
                         dest = self._workspace / filepath

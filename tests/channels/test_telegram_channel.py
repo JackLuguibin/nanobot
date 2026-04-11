@@ -1114,6 +1114,7 @@ async def test_on_help_includes_restart_command() -> None:
     assert "/dream" in help_text
     assert "/dream-log" in help_text
     assert "/dream-restore" in help_text
+    assert "/wiki-archive" in help_text
 
 
 @pytest.mark.asyncio

@@ -84,6 +84,7 @@ class Nanobot:
             unified_session=defaults.unified_session,
             disabled_skills=defaults.disabled_skills,
             session_ttl_minutes=defaults.session_ttl_minutes,
+            auto_wiki_archive_at_context_fraction=defaults.auto_wiki_archive_at_context_fraction,
         )
         return cls(loop)
 

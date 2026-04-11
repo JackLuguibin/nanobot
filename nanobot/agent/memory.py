@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import difflib
+import hashlib
 import json
 import re
 import weakref
@@ -12,6 +14,13 @@ from typing import TYPE_CHECKING, Any, Callable
 
 from loguru import logger
 
+from nanobot.llm_wiki import (
+    WIKI_DIR_NAME,
+    build_wiki_context,
+    ensure_standard_wiki_dirs,
+    list_wiki_page_paths,
+    read_schema,
+)
 from nanobot.utils.prompt_templates import render_template
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain, strip_think
 
@@ -49,9 +58,11 @@ class MemoryStore:
         self.user_file = workspace / "USER.md"
         self._cursor_file = self.memory_dir / ".cursor"
         self._dream_cursor_file = self.memory_dir / ".dream_cursor"
-        self._git = GitStore(workspace, tracked_files=[
-            "SOUL.md", "USER.md", "memory/MEMORY.md",
-        ])
+        self._git = GitStore(
+            workspace,
+            tracked_files=["SOUL.md", "USER.md", "memory/MEMORY.md"],
+            track_wiki_markdown=True,
+        )
         self._maybe_migrate_legacy_history()
 
     @property
@@ -218,6 +229,81 @@ class MemoryStore:
         long_term = self.read_memory()
         return f"## Long-term Memory\n{long_term}" if long_term else ""
 
+    # -- wiki/ — multi-page LLM-compiled knowledge ---------------------------
+
+    WIKI_DIR = WIKI_DIR_NAME
+    WIKI_LOG_FILENAME = "log.md"
+
+    @property
+    def wiki_dir(self) -> Path:
+        return self.workspace / self.WIKI_DIR
+
+    def append_wiki_log_line(self, kind: str, summary: str, *, when: str | None = None) -> None:
+        """Append one section to ``wiki/log.md`` (append-only human timeline)."""
+        ts = when or datetime.now().strftime("%Y-%m-%d %H:%M")
+        one_line = re.sub(r"\s+", " ", summary.strip())
+        if len(one_line) > 400:
+            one_line = one_line[:397] + "…"
+        line = f"## [{ts}] {kind} | {one_line}\n\n"
+        self.wiki_dir.mkdir(parents=True, exist_ok=True)
+        ensure_standard_wiki_dirs(self.workspace, wiki_dir=self.WIKI_DIR)
+        path = self.wiki_dir / self.WIKI_LOG_FILENAME
+        if not path.is_file():
+            path.write_text(
+                "# Wiki log\n\n"
+                "Append-only timeline of wiki actions (`/wiki-archive`, Dream, `/wiki-lint`, …).\n\n"
+                "---\n\n",
+                encoding="utf-8",
+            )
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(line)
+
+    def read_wiki_schema(self) -> str:
+        """Return ``wiki/schema.md`` text, or empty string if missing."""
+        return read_schema(self.workspace, wiki_dir=self.WIKI_DIR)
+
+    def list_wiki_page_paths(self) -> list[str]:
+        """Sorted relative paths ``wiki/**/*.md`` (posix). ``wiki/index.md`` first if present."""
+        return list_wiki_page_paths(self.workspace, wiki_dir=self.WIKI_DIR)
+
+    def get_wiki_context(
+        self,
+        max_total_chars: int = 24_000,
+        *,
+        relevance_query: str | None = None,
+    ) -> str:
+        """Concatenate wiki markdown for system prompt injection (token-bounded).
+
+        Delegates to :func:`nanobot.llm_wiki.build_wiki_context` (schema first).
+        When *relevance_query* is set, pages are ranked by token overlap before truncation.
+        """
+        return build_wiki_context(
+            self.workspace,
+            wiki_dir=self.WIKI_DIR,
+            max_total_chars=max_total_chars,
+            relevance_query=relevance_query,
+        )
+
+    def merge_wiki_entries_from_archive(
+        self,
+        entries: list[tuple[str, str, str, str]],
+        when: str,
+    ) -> list[str]:
+        """Merge archivable wiki entries (merge files + topic index lines). Returns written paths under ``wiki/``."""
+        written: list[str] = []
+        for slug, display_title, entry_md, page_kind in entries:
+            idx_title, idx_blurb = MemoryStore.summarize_wiki_topic_entry_for_index(
+                entry_md, display_title,
+            )
+            fname = self.merge_wiki_category_document(
+                slug, display_title, entry_md, when, page_kind=page_kind,
+            )
+            self.append_session_archive_to_index(
+                fname, when, title=idx_title, blurb=idx_blurb,
+            )
+            written.append(fname)
+        return written
+
     # -- history.jsonl — append-only, JSONL format ---------------------------
 
     def append_history(self, entry: str) -> int:
@@ -325,6 +411,541 @@ class MemoryStore:
                 f"[{message.get('timestamp', '?')[:16]}] {message['role'].upper()}{tools}: {message['content']}"
             )
         return "\n".join(lines)
+
+    @staticmethod
+    def _textify_message_content(content: Any) -> str:
+        if content is None:
+            return ""
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts: list[str] = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    parts.append(str(block.get("text", "")))
+            return "\n".join(parts)
+        return str(content)
+
+    @staticmethod
+    def format_messages_for_archive(messages: list[dict[str, Any]]) -> str:
+        """Flatten session messages to plain text for wiki archiving (includes tools)."""
+        lines: list[str] = []
+        for message in messages:
+            role = message.get("role", "?")
+            ts = str(message.get("timestamp", ""))[:19]
+            extra = ""
+            if role == "assistant" and message.get("tool_calls"):
+                names: list[str] = []
+                for tc in message.get("tool_calls") or []:
+                    if isinstance(tc, dict):
+                        names.append(str(tc.get("name", "?")))
+                    else:
+                        names.append(str(getattr(tc, "name", "?")))
+                extra = f" [tools: {', '.join(names)}]"
+            body = MemoryStore._textify_message_content(message.get("content"))
+            if role == "tool":
+                name = message.get("name", "tool")
+                clipped = body if len(body) <= 12_000 else body[:12_000] + "\n… *(truncated)*"
+                lines.append(f"[{ts}] TOOL {name}: {clipped}")
+                continue
+            if not body.strip():
+                if role == "assistant" and message.get("tool_calls"):
+                    lines.append(f"[{ts}] ASSISTANT{extra}: *(no text)*")
+                continue
+            lines.append(f"[{ts}] {role.upper()}{extra}: {body}")
+        return "\n".join(lines)
+
+    def write_wiki_page(self, relative_path: str, content: str) -> Path:
+        """Write ``content`` to ``wiki/<relative_path>`` (creates parent dirs)."""
+        rel = relative_path.replace("\\", "/").lstrip("/")
+        if any(part == ".." for part in rel.split("/")):
+            raise ValueError("Invalid wiki path")
+        ensure_standard_wiki_dirs(self.workspace, wiki_dir=self.WIKI_DIR)
+        path = self.wiki_dir / rel
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+        return path
+
+    @staticmethod
+    def parse_wiki_archive_response(text: str) -> tuple[str, str, str]:
+        """Parse legacy ``CATEGORY_SLUG`` / ``DISPLAY_TITLE`` headers. Returns ``(slug, display_title, entry_md)``."""
+        t = text.strip().replace("\r\n", "\n")
+        if not t:
+            return "", "", ""
+        lines = t.split("\n")
+        slug = ""
+        display = ""
+        i = 0
+        while i < len(lines):
+            s = lines[i].strip()
+            if not s:
+                i += 1
+                continue
+            m = re.match(r"^CATEGORY_SLUG:\s*([a-z0-9][a-z0-9-]{0,78})\s*$", s, re.I)
+            if m:
+                slug = m.group(1).lower()
+                i += 1
+                continue
+            m = re.match(r"^DISPLAY_TITLE:\s*(.+)$", s, re.I)
+            if m:
+                display = m.group(1).strip()
+                i += 1
+                continue
+            break
+        entry = "\n".join(lines[i:]).strip()
+        return slug, display, entry
+
+    @staticmethod
+    def _extract_json_wiki_payload(text: str) -> Any | None:
+        """Parse JSON array/object from model output (optionally inside a ```json fence)."""
+        t = text.strip()
+        m = re.search(r"```(?:json)?\s*([\s\S]*?)```", t, re.IGNORECASE)
+        candidate = m.group(1).strip() if m else t
+        try:
+            return json.loads(candidate)
+        except json.JSONDecodeError:
+            pass
+        i = t.find("[")
+        j = t.rfind("]")
+        if i >= 0 and j > i:
+            try:
+                return json.loads(t[i : j + 1])
+            except json.JSONDecodeError:
+                return None
+        return None
+
+    @staticmethod
+    def _normalize_wiki_page_kind(raw: Any) -> str:
+        """Map model output to ``topic`` | ``entity`` | ``concept`` | ``source``."""
+        if raw is None:
+            return "topic"
+        s = str(raw).strip().lower()
+        aliases = {
+            "entities": "entity",
+            "concepts": "concept",
+            "sources": "source",
+            "topics": "topic",
+            "general": "topic",
+            "root": "topic",
+            "mixed": "topic",
+        }
+        s = aliases.get(s, s)
+        if s in ("topic", "entity", "concept", "source"):
+            return s
+        return "topic"
+
+    @staticmethod
+    def _wiki_entries_from_json(data: Any) -> list[tuple[str, str, str, str]]:
+        """Build entry tuples from parsed JSON: ``(slug, display_title, entry_md, page_kind)``."""
+        if isinstance(data, dict):
+            if isinstance(data.get("entries"), list):
+                data = data["entries"]
+            elif data.get("category_slug") is not None or data.get("category") is not None:
+                data = [data]
+            else:
+                return []
+        if not isinstance(data, list):
+            return []
+        out: list[tuple[str, str, str, str]] = []
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            slug = str(
+                item.get("category_slug") or item.get("category") or "",
+            ).strip()
+            title = str(
+                item.get("display_title") or item.get("title") or "",
+            ).strip()
+            em = str(
+                item.get("entry_markdown") or item.get("body") or item.get("content") or "",
+            ).strip()
+            kind_raw = (
+                item.get("page_kind")
+                or item.get("kind")
+                or item.get("wiki_kind")
+                or item.get("archive_kind")
+            )
+            kind = MemoryStore._normalize_wiki_page_kind(kind_raw)
+            if not slug:
+                continue
+            out.append((slug.lower(), title, em, kind))
+        return out
+
+    @staticmethod
+    def parse_wiki_archive_entries(text: str) -> list[tuple[str, str, str, str]]:
+        """Parse JSON (preferred) or legacy header format.
+
+        Returns ``(slug, display_title, entry_md, page_kind)``; *page_kind* is
+        ``topic`` for legacy text format (wiki root) or when omitted in JSON.
+        """
+        t = text.strip().replace("\r\n", "\n")
+        if not t:
+            return []
+        blob = MemoryStore._extract_json_wiki_payload(t)
+        if blob is not None:
+            return MemoryStore._wiki_entries_from_json(blob)
+        slug, display, entry = MemoryStore.parse_wiki_archive_response(t)
+        if slug:
+            return [(slug, display, entry, "topic")]
+        return []
+
+    @staticmethod
+    def _wiki_entry_is_empty_session_marker(entry_md: str) -> bool:
+        for line in entry_md.split("\n"):
+            s = line.strip()
+            if not s:
+                continue
+            m = re.match(r"^#\s+(.+)$", s)
+            if m:
+                return m.group(1).strip().lower() in ("(empty session)", "empty session")
+            break
+        return False
+
+    @staticmethod
+    def filter_archivable_wiki_entries(
+        entries: list[tuple[str, str, str, str]],
+    ) -> list[tuple[str, str, str, str]]:
+        """Drop empty-session markers and blank entries."""
+        out: list[tuple[str, str, str, str]] = []
+        for slug, title, em, kind in entries:
+            if slug.strip().lower() in ("empty-session", "empty-ingest"):
+                continue
+            if not em.strip():
+                continue
+            if MemoryStore._wiki_entry_is_empty_session_marker(em):
+                continue
+            out.append((slug, title, em, kind))
+        return out
+
+    @staticmethod
+    def normalize_wiki_category_slug(slug: str) -> str:
+        """Sanitize category slug for ``wiki/<slug>.md`` filenames."""
+        s = slug.strip().lower()
+        s = re.sub(r"[^a-z0-9-]+", "-", s)
+        s = re.sub(r"-+", "-", s).strip("-")
+        if not s:
+            s = "general"
+        if s in ("index",):
+            s = "index-notes"
+        if len(s) > 80:
+            s = s[:80].rstrip("-")
+        return s
+
+    def merge_wiki_category_document(
+        self,
+        slug: str,
+        display_title: str,
+        entry_markdown: str,
+        when: str,
+        *,
+        page_kind: str = "topic",
+    ) -> str:
+        """Append an entry into a wiki page. Returns relative path under ``wiki/``.
+
+        *page_kind* ``topic`` → ``wiki/<slug>.md``; ``entity`` | ``concept`` | ``source``
+        → ``wiki/{entities|concepts|sources}/<slug>.md``.
+        """
+        safe = MemoryStore.normalize_wiki_category_slug(slug)
+        kind = MemoryStore._normalize_wiki_page_kind(page_kind)
+        self.wiki_dir.mkdir(parents=True, exist_ok=True)
+        ensure_standard_wiki_dirs(self.workspace, wiki_dir=self.WIKI_DIR)
+        subdir = {"entity": "entities", "concept": "concepts", "source": "sources"}.get(kind)
+        if subdir:
+            dest = self.wiki_dir / subdir
+            dest.mkdir(parents=True, exist_ok=True)
+            path = dest / f"{safe}.md"
+            rel_return = f"{subdir}/{safe}.md"
+        else:
+            path = self.wiki_dir / f"{safe}.md"
+            rel_return = f"{safe}.md"
+        entry = entry_markdown.strip()
+        block = f"\n\n---\n\n## {when}\n\n{entry}\n"
+        title_line = (display_title.strip() or safe.replace("-", " ").title())
+        if path.is_file():
+            existing = path.read_text(encoding="utf-8", errors="replace").rstrip()
+            path.write_text(existing + block, encoding="utf-8")
+        else:
+            header = (
+                f"# {title_line}\n\n"
+                "> One wiki file per knowledge category; new `/wiki-archive` runs append below.\n\n"
+                f"---{block}"
+            )
+            path.write_text(header, encoding="utf-8")
+        return rel_return
+
+    @staticmethod
+    def summarize_wiki_topic_entry_for_index(
+        entry_markdown: str,
+        display_title: str,
+        *,
+        blurb_max: int = 180,
+    ) -> tuple[str, str]:
+        """Index link label + blurb from a category entry (uses ``## Summary`` in *entry_markdown*)."""
+        title = display_title.strip() or "(untitled)"
+        blurb = MemoryStore._extract_index_blurb(entry_markdown.strip(), blurb_max)
+        return title, blurb
+
+    @staticmethod
+    def is_wiki_archive_body_insufficient(body: str) -> bool:
+        """True when there is nothing worth writing (empty output or only empty-session markers)."""
+        return (
+            len(
+                MemoryStore.filter_archivable_wiki_entries(
+                    MemoryStore.parse_wiki_archive_entries(body),
+                ),
+            )
+            == 0
+        )
+
+    @staticmethod
+    def summarize_wiki_archive_for_index(
+        body: str,
+        *,
+        title_max: int = 100,
+        blurb_max: int = 180,
+    ) -> tuple[str, str]:
+        """Derive (link title, one-line blurb) from archived wiki markdown for index.md."""
+        text = body.strip().replace("\r\n", "\n")
+        if not text:
+            return "(empty)", ""
+
+        lines = text.split("\n")
+        title = ""
+        start_idx = 0
+        for i, raw in enumerate(lines):
+            s = raw.strip()
+            if not s:
+                continue
+            m = re.match(r"^#\s+(.+)$", s)
+            if m:
+                title = m.group(1).strip()
+                start_idx = i + 1
+                break
+            if s.startswith("#"):
+                title = s.lstrip("#").strip()
+                start_idx = i + 1
+                break
+
+        if not title:
+            title = "(untitled)"
+        if len(title) > title_max:
+            title = title[: title_max - 1] + "…"
+
+        remainder = "\n".join(lines[start_idx:])
+        blurb = MemoryStore._extract_index_blurb(remainder, blurb_max)
+        return title, blurb
+
+    @staticmethod
+    def _extract_summary_section_after_h1(remainder: str) -> str | None:
+        """Return body under ``## Summary`` until the next ``##`` heading at level 2."""
+        lines = remainder.split("\n")
+        for i, line in enumerate(lines):
+            if re.match(r"^##\s+summary\s*$", line.strip(), re.IGNORECASE):
+                parts: list[str] = []
+                for j in range(i + 1, len(lines)):
+                    L = lines[j].strip()
+                    if re.match(r"^##\s+", L):
+                        break
+                    parts.append(lines[j])
+                block = "\n".join(parts).strip()
+                return block or None
+        return None
+
+    @staticmethod
+    def _extract_index_blurb(remainder: str, max_len: int) -> str:
+        """First substantive lines after the H1, flattened to one line."""
+        summary_block = MemoryStore._extract_summary_section_after_h1(remainder)
+        scan = summary_block if summary_block is not None else remainder
+
+        chunks: list[str] = []
+        total = 0
+        for raw in scan.split("\n"):
+            s = raw.strip()
+            if not s or s == "---":
+                continue
+            if s.startswith("#"):
+                continue
+            if s.startswith(("- ", "* ")):
+                s = re.sub(r"^[\-\*]\s+", "", s)
+            elif re.match(r"^\d+\.\s+", s):
+                s = re.sub(r"^\d+\.\s+", "", s)
+            s = re.sub(r"\s+", " ", s).strip()
+            if not s:
+                continue
+            chunks.append(s)
+            total += len(s) + 2
+            if total >= max_len:
+                break
+
+        if not chunks:
+            for raw in remainder.split("\n"):
+                s = raw.strip()
+                if s and not s.startswith("#"):
+                    chunks.append(re.sub(r"\s+", " ", s))
+                    break
+
+        if not chunks:
+            return ""
+
+        out = " · ".join(chunks)
+        if len(out) > max_len:
+            return out[: max_len - 1] + "…"
+        return out
+
+    def append_session_archive_to_index(
+        self,
+        wiki_filename: str,
+        when: str,
+        *,
+        title: str = "",
+        blurb: str = "",
+    ) -> None:
+        """Append a bullet under ``## Topic archives`` (or legacy ``## Session archives``).
+
+        *title* is the link label. *blurb* is a short plain-text summary for search.
+        """
+        self.wiki_dir.mkdir(parents=True, exist_ok=True)
+        ensure_standard_wiki_dirs(self.workspace, wiki_dir=self.WIKI_DIR)
+        index_path = self.wiki_dir / "index.md"
+        label = title.strip() or wiki_filename
+        line = f"- {when} — [{label}]({wiki_filename})"
+        if blurb.strip():
+            line += f" — {blurb.strip()}"
+        marker_primary = "## Topic archives"
+        marker_legacy = "## Session archives"
+        if not index_path.exists():
+            index_path.write_text(
+                "# Wiki index\n\n"
+                "Multi-page knowledge.\n\n"
+                "---\n\n"
+                f"{marker_primary}\n\n"
+                f"{line}\n",
+                encoding="utf-8",
+            )
+            return
+        text = index_path.read_text(encoding="utf-8")
+        for marker in (marker_primary, marker_legacy):
+            if marker in text:
+                head, sep, tail = text.partition(marker)
+                new_text = head + sep + tail.rstrip() + "\n" + line + "\n"
+                index_path.write_text(new_text, encoding="utf-8")
+                return
+        new_text = text.rstrip() + "\n\n---\n\n" + marker_primary + "\n\n" + line + "\n"
+        index_path.write_text(new_text, encoding="utf-8")
+
+    def read_wiki_index(self) -> str:
+        """Return ``wiki/index.md`` text, or empty string if missing."""
+        p = self.wiki_dir / "index.md"
+        if not p.is_file():
+            return ""
+        try:
+            return p.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+
+    _WIKI_ARCHIVE_DEDUP_FILE = "wiki_archive_dedup.json"
+    _WIKI_ARCHIVE_DEDUP_CAP = 4000
+
+    def _wiki_archive_dedup_path(self) -> Path:
+        return self.memory_dir / self._WIKI_ARCHIVE_DEDUP_FILE
+
+    def _load_wiki_archive_dedup(self) -> dict[str, Any]:
+        p = self._wiki_archive_dedup_path()
+        if not p.is_file():
+            return {"transcript_sha256": [], "body_sha256": []}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {"transcript_sha256": [], "body_sha256": []}
+        data.setdefault("transcript_sha256", [])
+        data.setdefault("body_sha256", [])
+        return data
+
+    def _save_wiki_archive_dedup(self, data: dict[str, Any]) -> None:
+        p = self._wiki_archive_dedup_path()
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
+
+    @staticmethod
+    def _normalize_wiki_body_for_dedup(text: str) -> str:
+        t = text.strip().lower()
+        return re.sub(r"\s+", " ", t)
+
+    def wiki_archive_transcript_already_archived(self, transcript_sha256: str) -> bool:
+        """True if this exact session transcript was already successfully archived."""
+        return transcript_sha256 in self._load_wiki_archive_dedup().get("transcript_sha256", [])
+
+    def wiki_archive_should_skip_duplicate_body(
+        self,
+        body: str,
+        *,
+        similarity_threshold: float = 0.94,
+    ) -> bool:
+        """True when generated markdown matches a prior archive (hash or high similarity)."""
+        norm = MemoryStore._normalize_wiki_body_for_dedup(body)
+        if len(norm) < 32:
+            return False
+        digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+        if digest in self._load_wiki_archive_dedup().get("body_sha256", []):
+            return True
+        return self._wiki_archive_near_duplicate_file(norm, similarity_threshold=similarity_threshold)
+
+    def _wiki_archive_near_duplicate_file(self, norm_new: str, *, similarity_threshold: float) -> bool:
+        root = self.wiki_dir
+        if not root.is_dir():
+            return False
+        candidates: list[Path] = []
+        for p in root.rglob("*.md"):
+            rel = p.relative_to(root)
+            if rel.name.lower() == "index.md":
+                continue
+            if rel.parts == ("schema.md",):
+                continue
+            candidates.append(p)
+        paths = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)[:40]
+        for path in paths:
+            try:
+                raw = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            norm_o = MemoryStore._normalize_wiki_body_for_dedup(raw)
+            if len(norm_o) < 32:
+                continue
+            # Avoid comparing a short new entry to a long accumulated category page.
+            if len(norm_o) > max(3500, len(norm_new) * 12):
+                continue
+            ratio = difflib.SequenceMatcher(None, norm_new, norm_o).ratio()
+            if ratio >= similarity_threshold:
+                return True
+        return False
+
+    def wiki_archive_remember_success(self, transcript_sha256: str, body: str) -> None:
+        """Record transcript and body fingerprints after a successful wiki-archive write."""
+        data = self._load_wiki_archive_dedup()
+        ts: list[str] = data.setdefault("transcript_sha256", [])
+        if transcript_sha256 not in ts:
+            ts.append(transcript_sha256)
+        while len(ts) > self._WIKI_ARCHIVE_DEDUP_CAP:
+            ts.pop(0)
+
+        norm = MemoryStore._normalize_wiki_body_for_dedup(body)
+        bh = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+        bs: list[str] = data.setdefault("body_sha256", [])
+        if bh not in bs:
+            bs.append(bh)
+        while len(bs) > self._WIKI_ARCHIVE_DEDUP_CAP:
+            bs.pop(0)
+
+        self._save_wiki_archive_dedup(data)
+
+    def wiki_archive_remember_transcript_only(self, transcript_sha256: str) -> None:
+        """Remember transcript hash when skipping duplicate body so the same window is not reprocessed."""
+        data = self._load_wiki_archive_dedup()
+        ts: list[str] = data.setdefault("transcript_sha256", [])
+        if transcript_sha256 not in ts:
+            ts.append(transcript_sha256)
+        while len(ts) > self._WIKI_ARCHIVE_DEDUP_CAP:
+            ts.pop(0)
+        self._save_wiki_archive_dedup(data)
 
     def raw_archive(self, messages: list[dict]) -> None:
         """Fallback: dump raw messages to history.jsonl without LLM summarization."""
@@ -657,12 +1278,18 @@ class Dream:
         current_memory = self.store.read_memory() or "(empty)"
         current_soul = self.store.read_soul() or "(empty)"
         current_user = self.store.read_user() or "(empty)"
-
+        wiki_snapshot = self.store.get_wiki_context(max_total_chars=32_000)
+        wiki_block = (
+            f"\n\n## Wiki (`{MemoryStore.WIKI_DIR}/`) — {len(wiki_snapshot)} chars\n{wiki_snapshot}"
+            if wiki_snapshot
+            else ""
+        )
         file_context = (
             f"## Current Date\n{current_date}\n\n"
             f"## Current MEMORY.md ({len(current_memory)} chars)\n{current_memory}\n\n"
             f"## Current SOUL.md ({len(current_soul)} chars)\n{current_soul}\n\n"
             f"## Current USER.md ({len(current_user)} chars)\n{current_user}"
+            f"{wiki_block}"
         )
 
         # Phase 1: Analyze (no skills list — dedup is Phase 2's job)
@@ -762,5 +1389,11 @@ class Dream:
             sha = self.store.git.auto_commit(f"dream: {ts}, {len(changelog)} change(s)")
             if sha:
                 logger.info("Dream commit: {}", sha)
+
+        if changelog:
+            dream_summary = f"{len(changelog)} change(s): " + "; ".join(changelog[:6])
+            if len(changelog) > 6:
+                dream_summary += " …"
+            self.store.append_wiki_log_line("dream", dream_summary)
 
         return True

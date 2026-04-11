@@ -94,6 +94,16 @@ class TestAutoCommit:
         git_ready.auto_commit("nothing 2")
         assert len(git_ready.log()) == 1  # only init commit
 
+    def test_commits_new_wiki_page(self, git_ready):
+        ws = git_ready._workspace
+        wiki = ws / "wiki"
+        wiki.mkdir(parents=True)
+        (wiki / "note.md").write_text("hello wiki", encoding="utf-8")
+        sha = git_ready.auto_commit("add wiki page")
+        assert sha is not None
+        gi = (ws / ".gitignore").read_text(encoding="utf-8")
+        assert "!wiki/note.md" in gi
+
 
 class TestLog:
     def test_empty_when_not_initialized(self, git):

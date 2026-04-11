@@ -16,7 +16,7 @@ It separates memory into layers, because different kinds of remembering deserve 
 
 - `session.messages` holds the living short-term conversation.
 - `memory/history.jsonl` is the running archive of compressed past turns.
-- `SOUL.md`, `USER.md`, and `memory/MEMORY.md` are the durable knowledge files.
+- `SOUL.md`, `USER.md`, `memory/MEMORY.md`, and `wiki/*.md` are the durable knowledge files (multi-page topics live under `wiki/`).
 - `GitStore` records how those durable files change over time.
 
 This keeps the system light in the moment, but reflective over time.
@@ -69,9 +69,20 @@ This is why nanobot's memory is not just archival. It is interpretive.
 workspace/
 ├── SOUL.md              # The bot's long-term voice and communication style
 ├── USER.md              # Stable knowledge about the user
+├── raw/                 # Optional immutable sources (read-only for the agent)
+│   ├── sources/         # Documents for `/wiki-ingest` (.md, .txt, …)
+│   └── assets/          # Optional images / attachments
+├── wiki/                # Optional multi-page knowledge (index + topic pages)
+│   ├── index.md
+│   ├── log.md           # Append-only timeline (wiki-archive, Dream, wiki-lint, …)
+│   ├── schema.md        # Optional: structural rules for wiki pages; injected first when present
+│   ├── entities/        # People, orgs, products (typed pages)
+│   ├── concepts/        # Theories, methods, patterns
+│   └── sources/         # Source-backed summaries
 └── memory/
     ├── MEMORY.md        # Project facts, decisions, and durable context
     ├── history.jsonl    # Append-only history summaries
+    ├── wiki_archive_dedup.json  # Fingerprints for /wiki-archive (skip duplicate transcript/body)
     ├── .cursor          # Consolidator write cursor
     ├── .dream_cursor    # Dream consumption cursor
     └── .git/            # Version history for long-term memory files
@@ -82,6 +93,8 @@ These files play different roles:
 - `SOUL.md` remembers how nanobot should sound.
 - `USER.md` remembers who the user is and what they prefer.
 - `MEMORY.md` remembers what remains true about the work itself.
+- `wiki/` holds structured, cross-linked topic pages when a single file is not enough.
+- `wiki/log.md` is a human-readable, append-only timeline of wiki actions (complementary to Git history).
 - `history.jsonl` remembers what happened on the way there.
 
 ## Why `history.jsonl`
@@ -125,8 +138,24 @@ Memory is not hidden behind the curtain. Users can inspect and guide it.
 | `/dream-log <sha>` | Show a specific Dream change |
 | `/dream-restore` | List recent Dream memory versions |
 | `/dream-restore <sha>` | Restore memory to the state before a specific change |
+| `/wiki-archive` | Model outputs JSON: **one or more** `{category_slug, display_title, page_kind, entry_markdown}` — **`page_kind`** routes to `wiki/<slug>.md` (`topic`) or `wiki/entities|concepts|sources/<slug>.md`. Updates **Topic archives** in `wiki/index.md`, appends **`wiki/log.md`**, clears session, injects full index |
+| `/wiki-ingest` | Read file(s) from `raw/sources/` (immutable) and merge structured notes into `wiki/` via the model |
+| `/wiki-lint` | Scan `wiki/` for broken `[[wikilinks]]` and optional orphan pages; appends **`wiki/log.md`** |
+| `/wiki-save-answer` | Save the last assistant reply under `wiki/queries/` (optional knowledge compounding) |
 
 These commands exist for a reason: automatic memory is powerful, but users should always retain the right to inspect, understand, and restore it.
+
+## Wiki revision strategy
+
+Canonical wiki pages are not write-once. Updates are intentional and map to different inputs:
+
+- **Chat-derived corrections or new facts** — Run **`/wiki-archive`** again with the same `category_slug`. The store **appends** a new dated section to the existing file; earlier sections remain for traceability.
+- **Source-of-truth in `raw/sources/`** — Add or change files there, then **`/wiki-ingest`**. Raw stays immutable; only `wiki/` is updated.
+- **Broad consistency** (several pages, or alignment with `history.jsonl` / `MEMORY.md`) — **Dream** (`/dream` or scheduled).
+- **Precise local edits** — Edit markdown in the workspace; **`/wiki-lint`** after link or structure changes.
+- **Saving a standalone Q&A artifact** — **`/wiki-save-answer`** writes under `wiki/queries/`, not under `entities/` / `concepts/` / `sources/`.
+
+`/wiki-archive` and `/wiki-ingest` use **merge** semantics (additive). Replacing a block without keeping history is a **manual** or **Dream** edit.
 
 ## Versioned Memory
 

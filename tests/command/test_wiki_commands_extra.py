@@ -8,6 +8,7 @@ import pytest
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.command.builtin import cmd_wiki_ingest, cmd_wiki_lint, cmd_wiki_save_answer
+from nanobot.command.wiki_ingest import compute_wiki_ingest_bundle_sha256, run_wiki_ingest
 from nanobot.command.router import CommandContext
 from nanobot.session.manager import Session
 
@@ -93,3 +94,70 @@ async def test_cmd_wiki_ingest_from_raw_sources(tmp_path: Path) -> None:
     assert (tmp_path / "wiki" / "ingest-note.md").is_file()
     log = (tmp_path / "wiki" / "log.md").read_text(encoding="utf-8")
     assert "wiki-ingest" in log
+
+
+@pytest.mark.asyncio
+async def test_run_wiki_ingest_skips_model_when_raw_bundle_unchanged(tmp_path: Path) -> None:
+    raw = tmp_path / "raw" / "sources"
+    raw.mkdir(parents=True)
+    (raw / "n.md").write_text("hello bundle", encoding="utf-8")
+
+    paths = ["raw/sources/n.md"]
+    bundle_sha = compute_wiki_ingest_bundle_sha256(tmp_path, paths)
+    (tmp_path / "memory").mkdir(exist_ok=True)
+    (tmp_path / "memory" / "wiki_ingest_state.json").write_text(
+        json.dumps({"last_success_bundle_sha256": bundle_sha, "body_sha256": []}),
+        encoding="utf-8",
+    )
+
+    store = MemoryStore(tmp_path)
+    loop = MagicMock()
+    loop.consolidator.store = store
+    loop.model = "x"
+    chat = AsyncMock()
+    loop.provider.chat_with_retry = chat
+
+    result = await run_wiki_ingest(loop, workspace=tmp_path)
+    assert result.ok
+    assert not result.called_model
+    chat.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_wiki_ingest_force_bypasses_bundle_skip(tmp_path: Path) -> None:
+    raw = tmp_path / "raw" / "sources"
+    raw.mkdir(parents=True)
+    (raw / "n.md").write_text("hello bundle", encoding="utf-8")
+
+    paths = ["raw/sources/n.md"]
+    bundle_sha = compute_wiki_ingest_bundle_sha256(tmp_path, paths)
+    (tmp_path / "memory").mkdir(exist_ok=True)
+    (tmp_path / "memory" / "wiki_ingest_state.json").write_text(
+        json.dumps({"last_success_bundle_sha256": bundle_sha, "body_sha256": []}),
+        encoding="utf-8",
+    )
+
+    store = MemoryStore(tmp_path)
+    loop = MagicMock()
+    loop.consolidator.store = store
+    loop.model = "x"
+    payload = [
+        {
+            "category_slug": "force-ingest",
+            "display_title": "Force",
+            "page_kind": "topic",
+            "entry_markdown": "## Summary\n\nforced run unique.",
+        },
+    ]
+
+    async def chat_with_retry(**kwargs):
+        r = MagicMock()
+        r.content = "```json\n" + json.dumps(payload, ensure_ascii=False) + "\n```"
+        return r
+
+    loop.provider.chat_with_retry = AsyncMock(side_effect=chat_with_retry)
+
+    result = await run_wiki_ingest(loop, workspace=tmp_path, force_refresh=True)
+    assert result.called_model
+    assert result.ok
+    assert (tmp_path / "wiki" / "force-ingest.md").is_file()

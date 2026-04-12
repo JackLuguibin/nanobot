@@ -11,8 +11,8 @@ always: true
 - `SOUL.md` — Bot personality and communication style. **Managed by Dream.** Do NOT edit.
 - `USER.md` — User profile and preferences. **Managed by Dream.** Do NOT edit.
 - `memory/MEMORY.md` — Long-term facts (project context, important events). **Managed by Dream.** Do NOT edit.
-- **`raw/sources/`** — Immutable source files for **`/wiki-ingest`**; the agent must not modify `raw/`. Optional **`raw/assets/`** for attachments.
-- `wiki/` — Multi-page compiled knowledge (`wiki/index.md`, optional **`wiki/log.md`** timeline, topic pages). Standard subdirs **`wiki/entities/`**, **`wiki/concepts/`**, **`wiki/sources/`** (created on first wiki write). Optional **`wiki/schema.md`** defines structure; when present it is injected first into wiki context (Dream, agent, `/wiki-archive`). Layout helpers: **`nanobot.llm_wiki`**. **Managed by Dream** (except user-driven commands). Do NOT edit wiki unless the user explicitly asks you to change a page.
+- **`raw/sources/`** (and optional **`raw/articles/`**, **`raw/papers/`**, **`raw/transcripts/`**) — Immutable source files for **`/wiki-ingest`**; the agent must not modify `raw/`. Optional **`raw/assets/`** for attachments.
+- `wiki/` — Multi-page compiled knowledge (`wiki/index.md`, optional **`wiki/log.md`** timeline, topic pages). Standard subdirs **`wiki/entities/`**, **`wiki/concepts/`**, **`wiki/sources/`**, **`wiki/comparisons/`** (created on first wiki write). Optional **`wiki/schema.md`** defines structure; when present it is injected first into wiki context (Dream, agent, `/wiki-archive`). Layout helpers: **`nanobot.llm_wiki`**. **Managed by Dream** (except user-driven commands). Do NOT edit wiki unless the user explicitly asks you to change a page.
 - `memory/history.jsonl` — append-only JSONL, not loaded into context. Prefer the built-in `grep` tool to search it.
 
 ## Search Past Events
@@ -33,7 +33,20 @@ Examples (replace `keyword`):
 
 ## Manual archive
 
-- **`/wiki-archive`** — Model returns **JSON** (array of `{ category_slug, display_title, page_kind, entry_markdown }`). **`page_kind`** routes into `wiki/` subdirs or root. Updates **Topic archives** and **`wiki/log.md`**, then **clears** the session and injects the full index. Dedup: `memory/wiki_archive_dedup.json`. Legacy plain-text `CATEGORY_SLUG:` lines still imply **topic** (root).
+- **`/wiki-archive`** — Model returns **JSON** (array of `{ category_slug, display_title, page_kind, entry_markdown }`). **`page_kind`** routes into `wiki/` subdirs (`entity` / `concept` / `source` / `comparison`) or root (`topic`). Updates **Topic archives** and **`wiki/log.md`**, then **clears** the session and injects the full index. Dedup: `memory/wiki_archive_dedup.json`. Legacy plain-text `CATEGORY_SLUG:` lines still imply **topic** (root).
+
+## Automatic wiki (gateway / `nanobot agent` interactive)
+
+Configured under **`agents.defaults`** in config (JSON / YAML):
+
+| Key | Meaning |
+|-----|---------|
+| `autoWikiArchiveAtContextFraction` | Already default `0.8` — auto **`/wiki-archive`** when estimated prompt tokens exceed this fraction of the context window. Set `null` to disable. |
+| `autoWikiIngestIntervalMinutes` | When set (e.g. `15`), the loop polls every ~60s; if **`raw/`** text fingerprint changed and the cooldown elapsed, runs **`/wiki-ingest`** once. State: `memory/wiki_automation.json`. `null` = off (default). |
+| `autoWikiLintIntervalMinutes` | When set (e.g. `1440`), scheduled **`wiki-lint`** on that interval; appends **`wiki/log.md`** only if broken links or orphans exist. First run waits one full interval after gateway start. `null` = off (default). |
+| `autoWikiLintAfterWikiWrite` | Default `false` — set `true` to run lint after successful **wiki-archive** or **wiki-ingest** (manual or auto) and append `wiki/log.md` only if there are issues. |
+
+**`/wiki-save-answer`** is not automated (you must choose what to save). OpenAI-compatible **API-only** mode does not run the long-lived `agent.run()` loop, so these automations apply to **gateway** and **CLI interactive** sessions.
 - **`/wiki-ingest`** — Reads text files from **`raw/sources/`** (optional filter substring) and merges model output into `wiki/` the same way as archive. Appends **`wiki/log.md`**.
 - **`/wiki-lint`** — Reports broken `[[wikilinks]]` and orphan pages; appends **`wiki/log.md`**.
 - **`/wiki-save-answer`** — Saves the last assistant reply under **`wiki/queries/<slug>.md`** (optional slug argument).

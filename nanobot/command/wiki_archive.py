@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from nanobot.agent.memory import MemoryStore
 from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.llm_wiki import read_schema
+from nanobot.llm_wiki.automation import maybe_lint_after_wiki_write
 
 if TYPE_CHECKING:
     from nanobot.agent.loop import AgentLoop
@@ -165,6 +166,12 @@ async def run_wiki_archive_for_session(
     if brief_success:
         log_summary = f"auto threshold: {log_summary}"
     store.append_wiki_log_line("wiki-archive", log_summary, when=when)
+
+    maybe_lint_after_wiki_write(
+        store,
+        enabled=getattr(loop, "auto_wiki_lint_after_wiki_write", False),
+        source="wiki-archive",
+    )
 
     files_list = ", ".join(f"`wiki/{f}`" for f in written_fnames)
     index_text = store.read_wiki_index()

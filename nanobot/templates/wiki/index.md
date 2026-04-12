@@ -1,11 +1,11 @@
 # Wiki index
 
-- **Raw sources** — Put immutable documents in `raw/sources/` (see `nanobot/templates/raw/sources/`) and run **`/wiki-ingest`** to compile into `wiki/` without modifying `raw/`.
-- **Layout** — `wiki/entities/` (people, orgs, products), `wiki/concepts/` (theories, methods), `wiki/sources/` (source-backed summaries). These dirs are created automatically on first wiki write; copy `README.md` stubs from `nanobot/templates/wiki/<dir>/` if you want the same hints in your vault.
+- **Raw sources** — Put immutable documents in `raw/sources/` and/or `raw/articles/`, `raw/papers/`, `raw/transcripts/` (see `nanobot/templates/raw/`) and run **`/wiki-ingest`** to compile into `wiki/` without modifying `raw/`.
+- **Layout** — `wiki/entities/` (people, orgs, products), `wiki/concepts/` (theories, methods), `wiki/sources/` (source-backed summaries), `wiki/comparisons/` (side-by-side analyses). These dirs are created automatically on first wiki write; copy `README.md` stubs from `nanobot/templates/wiki/<dir>/` if you want the same hints in your vault.
 - **Queries** — Optional `wiki/queries/` holds answers saved with **`/wiki-save-answer`**.
 - **Log** — `wiki/log.md` is append-only: each `/wiki-archive`, Dream run (with edits), `/wiki-lint`, etc. adds a short `## [date] kind | summary` line. Use it as a human timeline alongside Git.
 - **Schema (optional)** — `wiki/schema.md` defines how pages should be shaped (linking, frontmatter). When present, it is loaded before other wiki files for Dream, the agent, and `/wiki-archive`. Start from `nanobot/templates/wiki/schema.md` if you need a template.
-- **Topic archives** — `/wiki-archive` asks the model for **`page_kind`** per entry (`entity` / `concept` / `source` / `topic`) so files go under `wiki/entities/`, `wiki/concepts/`, `wiki/sources/`, or wiki root automatically. Entries in each file are separated by `---` and `## YYYY-MM-DD HH:MM`.
+- **Topic archives** — `/wiki-archive` asks the model for **`page_kind`** per entry (`entity` / `concept` / `source` / `comparison` / `topic`) so files go under `wiki/entities/`, `wiki/concepts/`, `wiki/sources/`, `wiki/comparisons/`, or wiki root automatically. Entries in each file are separated by `---` and `## YYYY-MM-DD HH:MM`.
 - **Dream** may add or edit pages under `wiki/`, including `entities/`, `concepts/`, and `sources/`.
 
 ## Revision strategy

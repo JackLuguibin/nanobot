@@ -42,6 +42,7 @@ def _resolve_wikilink_to_page(slug: str, wiki_paths: set[str]) -> str | None:
         f"entities/{slug}.md",
         f"concepts/{slug}.md",
         f"sources/{slug}.md",
+        f"comparisons/{slug}.md",
         f"queries/{slug}.md",
     )
     for c in candidates:

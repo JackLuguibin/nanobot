@@ -52,6 +52,20 @@ def test_build_wiki_context_prepends_schema_before_other_pages(tmp_path: Path) -
     assert out.count("wiki/schema.md") == 1
 
 
+def test_build_wiki_context_orientation_schema_index_log_before_rest(tmp_path: Path) -> None:
+    (tmp_path / "wiki").mkdir(parents=True)
+    (tmp_path / "wiki" / "schema.md").write_text("SCHEMA-XYZ\n", encoding="utf-8")
+    (tmp_path / "wiki" / "index.md").write_text("INDEX-ABC\n", encoding="utf-8")
+    (tmp_path / "wiki" / "log.md").write_text("old\n" * 40 + "RECENT-TAIL-LINE\n", encoding="utf-8")
+    (tmp_path / "wiki" / "zebra.md").write_text("z" * 400, encoding="utf-8")
+
+    out = build_wiki_context(tmp_path, max_total_chars=4000)
+    assert out.find("SCHEMA-XYZ") < out.find("wiki/index.md")
+    assert out.find("wiki/index.md") < out.find("wiki/log.md (recent)")
+    assert "RECENT-TAIL-LINE" in out
+    assert out.find("wiki/log.md (recent)") < out.find("wiki/zebra.md")
+
+
 def test_read_schema_empty_when_missing(tmp_path: Path) -> None:
     assert read_schema(tmp_path / "ws") == ""
 

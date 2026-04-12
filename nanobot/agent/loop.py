@@ -162,6 +162,9 @@ class AgentLoop:
         unified_session: bool = False,
         disabled_skills: list[str] | None = None,
         auto_wiki_archive_at_context_fraction: Any = _AGENT_LOOP_UNSET,
+        auto_wiki_ingest_interval_minutes: Any = _AGENT_LOOP_UNSET,
+        auto_wiki_lint_interval_minutes: Any = _AGENT_LOOP_UNSET,
+        auto_wiki_lint_after_wiki_write: Any = _AGENT_LOOP_UNSET,
     ):
         from nanobot.config.schema import ExecToolConfig, WebToolsConfig
 
@@ -172,6 +175,18 @@ class AgentLoop:
             )
         else:
             self.auto_wiki_archive_at_context_fraction = auto_wiki_archive_at_context_fraction
+        if auto_wiki_ingest_interval_minutes is _AGENT_LOOP_UNSET:
+            self.auto_wiki_ingest_interval_minutes = defaults.auto_wiki_ingest_interval_minutes
+        else:
+            self.auto_wiki_ingest_interval_minutes = auto_wiki_ingest_interval_minutes
+        if auto_wiki_lint_interval_minutes is _AGENT_LOOP_UNSET:
+            self.auto_wiki_lint_interval_minutes = defaults.auto_wiki_lint_interval_minutes
+        else:
+            self.auto_wiki_lint_interval_minutes = auto_wiki_lint_interval_minutes
+        if auto_wiki_lint_after_wiki_write is _AGENT_LOOP_UNSET:
+            self.auto_wiki_lint_after_wiki_write = defaults.auto_wiki_lint_after_wiki_write
+        else:
+            self.auto_wiki_lint_after_wiki_write = auto_wiki_lint_after_wiki_write
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
@@ -223,6 +238,7 @@ class AgentLoop:
         self._mcp_connecting = False
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._background_tasks: list[asyncio.Task] = []
+        self._wiki_automation_task: asyncio.Task | None = None
         self._session_locks: dict[str, asyncio.Lock] = {}
         # Per-session pending queues for mid-turn message injection.
         # When a session has an active task, new messages for that session
@@ -438,10 +454,41 @@ class AgentLoop:
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
         return result.final_content, result.tools_used, result.messages, result.stop_reason, result.had_injections
 
+    async def _wiki_automation_loop(self) -> None:
+        """Poll raw/ and optionally run scheduled wiki-lint (gateway / long-running loops)."""
+        from nanobot.llm_wiki.automation import tick_wiki_automation
+
+        while self._running:
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                break
+            if not self._running:
+                break
+            try:
+                await tick_wiki_automation(
+                    self,
+                    ingest_interval_minutes=self.auto_wiki_ingest_interval_minutes,
+                    lint_interval_minutes=self.auto_wiki_lint_interval_minutes,
+                )
+            except Exception:
+                logger.exception("Wiki automation tick failed")
+
     async def run(self) -> None:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
         self._running = True
         await self._connect_mcp()
+        if self.auto_wiki_ingest_interval_minutes is not None or self.auto_wiki_lint_interval_minutes is not None:
+            self._wiki_automation_task = asyncio.create_task(self._wiki_automation_loop())
+            self._background_tasks.append(self._wiki_automation_task)
+
+            def _drop_wiki_task(t: asyncio.Task) -> None:
+                try:
+                    self._background_tasks.remove(t)
+                except ValueError:
+                    pass
+
+            self._wiki_automation_task.add_done_callback(_drop_wiki_task)
         logger.info("Agent loop started")
 
         while self._running:
@@ -611,6 +658,8 @@ class AgentLoop:
     def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
+        if self._wiki_automation_task and not self._wiki_automation_task.done():
+            self._wiki_automation_task.cancel()
         logger.info("Agent loop stopping")
 
     def _estimate_inbound_prompt_tokens(

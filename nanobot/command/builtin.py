@@ -9,7 +9,6 @@ from datetime import datetime
 
 from nanobot import __version__
 from nanobot.agent.memory import MemoryStore
-from nanobot.llm_wiki import read_schema
 from nanobot.bus.events import OutboundMessage
 from nanobot.command.router import CommandContext, CommandRouter
 from nanobot.utils.helpers import build_status_content
@@ -325,9 +324,9 @@ async def cmd_dream_restore(ctx: CommandContext) -> OutboundMessage:
 
 
 async def cmd_wiki_ingest(ctx: CommandContext) -> OutboundMessage:
-    """Read text files from ``raw/sources/`` and merge structured notes into ``wiki/``."""
-    from nanobot.utils.helpers import strip_think
-    from nanobot.utils.prompt_templates import render_template
+    """Read text files from ``raw/`` and merge structured notes into ``wiki/``."""
+    from nanobot.command.wiki_ingest import run_wiki_ingest
+    from nanobot.llm_wiki.automation import maybe_lint_after_wiki_write
     from nanobot.llm_wiki.raw import ensure_raw_directories, list_raw_source_files
 
     loop = ctx.loop
@@ -336,7 +335,10 @@ async def cmd_wiki_ingest(ctx: CommandContext) -> OutboundMessage:
     ws = store.workspace
     ensure_raw_directories(ws)
     paths = list_raw_source_files(ws)
-    arg = (ctx.args or "").strip()
+    raw_arg = (ctx.args or "").strip()
+    parts = raw_arg.split(None, 1)
+    force = bool(parts and parts[0].lower() in ("force", "--force"))
+    arg = parts[1].strip() if force and len(parts) > 1 else ("" if force else raw_arg)
     if arg:
         paths = [p for p in paths if arg.lower() in p.lower()]
     if not paths:
@@ -344,89 +346,30 @@ async def cmd_wiki_ingest(ctx: CommandContext) -> OutboundMessage:
             channel=msg.channel,
             chat_id=msg.chat_id,
             content=(
-                "No ingestable text files (.md/.txt, etc.) under `raw/sources/`. "
+                "No ingestable text files (.md/.txt, etc.) under `raw/sources/`, `raw/articles/`, "
+                "`raw/papers/`, or `raw/transcripts/`. "
                 "Add sources there (immutable), or use `/wiki-ingest <keyword>` to filter by path."
             ),
             metadata=dict(msg.metadata or {}),
         )
 
-    max_files, max_chars = 12, 100_000
-    chunks: list[str] = []
-    for rel in paths[:max_files]:
-        p = ws / rel
-        try:
-            body = p.read_text(encoding="utf-8", errors="replace")
-        except OSError as e:
-            chunks.append(f"## {rel}\n\n*(unreadable: {e})*")
-            continue
-        if len(body) > max_chars:
-            body = body[:max_chars] + "\n\n… *(truncated)*\n"
-        chunks.append(f"## {rel}\n\n{body}")
-    bundle = "\n\n---\n\n".join(chunks)
-
-    wiki_schema = read_schema(ws).strip()
-    try:
-        response = await loop.provider.chat_with_retry(
-            model=loop.model,
-            messages=[
-                {
-                    "role": "system",
-                    "content": render_template(
-                        "agent/wiki_ingest.md",
-                        strip=True,
-                        wiki_schema=wiki_schema,
-                    ),
-                },
-                {"role": "user", "content": f"## Raw files\n\n{bundle}"},
-            ],
-            tools=None,
-            tool_choice=None,
-        )
-    except Exception as e:
+    result = await run_wiki_ingest(loop, workspace=ws, path_filter=arg, force_refresh=force)
+    if not result.ok:
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,
-            content=f"wiki-ingest: model call failed: {e}",
+            content=result.message,
             metadata=dict(msg.metadata or {}),
         )
-
-    body = strip_think(response.content or "").strip()
-    if body.startswith("```"):
-        lines = body.split("\n")
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        body = "\n".join(lines).strip()
-
-    entries = MemoryStore.filter_archivable_wiki_entries(
-        MemoryStore.parse_wiki_archive_entries(body),
+    maybe_lint_after_wiki_write(
+        store,
+        enabled=getattr(loop, "auto_wiki_lint_after_wiki_write", False),
+        source="wiki-ingest",
     )
-    if not entries:
-        return OutboundMessage(
-            channel=msg.channel,
-            chat_id=msg.chat_id,
-            content="wiki-ingest: the model did not return any writable entries.",
-            metadata=dict(msg.metadata or {}),
-        )
-
-    when = datetime.now().strftime("%Y-%m-%d %H:%M")
-    written_fnames = store.merge_wiki_entries_from_archive(entries, when)
-    slug_set = {MemoryStore.normalize_wiki_category_slug(sl) for sl, _, _, _ in entries}
-    log_summary = f"{len(written_fnames)} page(s): {', '.join(sorted(written_fnames))}"
-    store.append_wiki_log_line("wiki-ingest", log_summary, when=when)
-
-    git = store.git
-    if git.is_initialized():
-        git.auto_commit(f"wiki-ingest: {', '.join(sorted(slug_set))}")
-
-    files_list = ", ".join(f"`wiki/{f}`" for f in written_fnames)
     return OutboundMessage(
         channel=msg.channel,
         chat_id=msg.chat_id,
-        content=(
-            f"Ingested {len(written_fnames)} wiki page(s) from raw/sources: {files_list}."
-        ),
+        content=result.message,
         metadata=dict(msg.metadata or {}),
     )
 
@@ -531,7 +474,7 @@ def build_help_text() -> str:
         "/dream-log — Show what the last Dream changed",
         "/dream-restore — Revert memory to a previous state",
         "/wiki-archive — Write the current session to wiki and replace session context with the index",
-        "/wiki-ingest — Import text from raw/sources/ into wiki (optional `/wiki-ingest <keyword>` path filter)",
+        "/wiki-ingest — Import text from raw/sources/ into wiki (`<keyword>` path filter; `force` re-runs if raw unchanged)",
         "/wiki-lint — Report broken [[wikilinks]] and orphan pages in wiki/",
         "/wiki-save-answer — Save the last assistant reply under wiki/queries/ (optional `/wiki-save-answer <slug>`)",
         "/help — Show available commands",

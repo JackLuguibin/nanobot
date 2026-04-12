@@ -30,6 +30,47 @@ def test_merge_wiki_entries_from_archive_writes_index(tmp_path: Path) -> None:
     assert "Alpha" in idx and "Beta" in idx
 
 
+def test_coalesce_wiki_archive_entries_merges_same_slug_in_batch() -> None:
+    entries = [
+        ("dup", "D", "## Summary\n\nOne", "topic"),
+        ("dup", "D", "## Summary\n\nTwo", "topic"),
+    ]
+    out = MemoryStore.coalesce_wiki_archive_entries(entries)
+    assert len(out) == 1
+    assert out[0][0] == "dup"
+    assert "One" in out[0][2] and "Two" in out[0][2]
+
+
+def test_merge_wiki_entries_single_index_line_for_batch_duplicate_slug(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    when = "2026-04-11 12:00"
+    entries = [
+        ("dup-topic", "Dup", "## Summary\n\nOne", "topic"),
+        ("dup-topic", "Dup", "## Summary\n\nTwo", "topic"),
+    ]
+    store.merge_wiki_entries_from_archive(entries, when)
+    idx = (tmp_path / "wiki" / "index.md").read_text(encoding="utf-8")
+    assert idx.count("dup-topic.md") == 1
+
+
+def test_remap_wiki_slug_to_existing_h1(tmp_path: Path) -> None:
+    store = MemoryStore(tmp_path)
+    store.wiki_dir.mkdir(parents=True)
+    (store.wiki_dir / "concepts").mkdir(parents=True)
+    (store.wiki_dir / "concepts" / "tensorflow.md").write_text(
+        "# TensorFlow\n\n> notes\n",
+        encoding="utf-8",
+    )
+    when = "2026-04-11 12:00"
+    entries = [
+        ("tensorflow-alt-slug", "TensorFlow", "## Summary\n\nExtra.", "concept"),
+    ]
+    store.merge_wiki_entries_from_archive(entries, when)
+    assert not (store.wiki_dir / "concepts" / "tensorflow-alt-slug.md").is_file()
+    text = (store.wiki_dir / "concepts" / "tensorflow.md").read_text(encoding="utf-8")
+    assert "Extra." in text
+
+
 def test_append_wiki_log_line_creates_file(tmp_path: Path) -> None:
     store = MemoryStore(tmp_path)
     store.append_wiki_log_line("test-kind", "short summary", when="2026-01-01 00:00")
@@ -106,6 +147,10 @@ def test_merge_wiki_category_document_respects_page_kind(tmp_path: Path) -> None
         "oauth", "OAuth", "## Summary\n\ny", "2026-04-11 11:00", page_kind="concept",
     )
     assert (tmp_path / "wiki" / "concepts" / "oauth.md").is_file()
+    store.merge_wiki_category_document(
+        "pg-vs-mysql", "Postgres vs MySQL", "## Summary\n\nz", "2026-04-11 12:00", page_kind="comparison",
+    )
+    assert (tmp_path / "wiki" / "comparisons" / "pg-vs-mysql.md").is_file()
 
 
 def test_merge_wiki_category_document_appends_same_file(tmp_path: Path) -> None:

@@ -21,6 +21,7 @@ from nanobot.llm_wiki import (
     list_wiki_page_paths,
     read_schema,
 )
+from nanobot.llm_wiki.catalog import extract_markdown_h1
 from nanobot.utils.prompt_templates import render_template
 from nanobot.utils.helpers import ensure_dir, estimate_message_tokens, estimate_prompt_tokens_chain, strip_think
 
@@ -233,6 +234,11 @@ class MemoryStore:
 
     WIKI_DIR = WIKI_DIR_NAME
     WIKI_LOG_FILENAME = "log.md"
+    WIKI_TITLE_REMAP_MIN_RATIO = 0.92
+    WIKI_TITLE_REMAP_MIN_LEN = 8
+    _WIKI_INGEST_STATE_FILE = "wiki_ingest_state.json"
+    _WIKI_INGEST_BODY_HASH_CAP = 4000
+    _WIKI_ROOT_PAGE_SKIP_STEMS = frozenset({"index", "schema", "log"})
 
     @property
     def wiki_dir(self) -> Path:
@@ -284,14 +290,139 @@ class MemoryStore:
             relevance_query=relevance_query,
         )
 
+    @staticmethod
+    def coalesce_wiki_archive_entries(
+        entries: list[tuple[str, str, str, str]],
+    ) -> list[tuple[str, str, str, str]]:
+        """Merge same-batch rows that share normalized slug + ``page_kind`` (single index line per page)."""
+        groups: dict[tuple[str, str], list[tuple[str, str, str, str]]] = {}
+        order: list[tuple[str, str]] = []
+        for slug, display_title, entry_md, page_kind in entries:
+            safe = MemoryStore.normalize_wiki_category_slug(slug)
+            kind = MemoryStore._normalize_wiki_page_kind(page_kind)
+            key = (safe, kind)
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append((slug, display_title, entry_md, kind))
+        out: list[tuple[str, str, str, str]] = []
+        for key in order:
+            bucket = groups[key]
+            merged_slug = key[0]
+            titles = [t for _, t, _, _ in bucket if str(t).strip()]
+            display_title = titles[0] if titles else ""
+            parts = [em for _, _, em, _ in bucket]
+            merged_md = "\n\n---\n\n".join(p.strip() for p in parts if p and str(p).strip())
+            kind = key[1]
+            out.append((merged_slug, display_title, merged_md, kind))
+        return out
+
+    @staticmethod
+    def _wiki_rel_path_for_kind(kind: str, safe_slug: str) -> str:
+        kind_n = MemoryStore._normalize_wiki_page_kind(kind)
+        subdir = {
+            "entity": "entities",
+            "concept": "concepts",
+            "source": "sources",
+            "comparison": "comparisons",
+        }.get(kind_n)
+        if subdir:
+            return f"{subdir}/{safe_slug}.md"
+        return f"{safe_slug}.md"
+
+    def _wiki_page_exists_for_kind_slug(self, kind: str, safe_slug: str) -> bool:
+        rel = MemoryStore._wiki_rel_path_for_kind(kind, safe_slug)
+        return (self.wiki_dir / rel).is_file()
+
+    def _load_wiki_titles_by_kind(self) -> dict[str, list[tuple[str, str]]]:
+        """Map page kind to ``(stem_slug, h1)`` for existing markdown files."""
+        out: dict[str, list[tuple[str, str]]] = {
+            "topic": [],
+            "entity": [],
+            "concept": [],
+            "source": [],
+            "comparison": [],
+        }
+        root = self.wiki_dir
+        if not root.is_dir():
+            return out
+        for p in root.glob("*.md"):
+            stem = p.stem.lower()
+            if stem in self._WIKI_ROOT_PAGE_SKIP_STEMS:
+                continue
+            try:
+                text = p.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            out["topic"].append((stem, extract_markdown_h1(text)))
+        submap = {
+            "entities": "entity",
+            "concepts": "concept",
+            "sources": "source",
+            "comparisons": "comparison",
+        }
+        for sub, kind in submap.items():
+            d = root / sub
+            if not d.is_dir():
+                continue
+            for p in d.glob("*.md"):
+                try:
+                    text = p.read_text(encoding="utf-8", errors="replace")
+                except OSError:
+                    continue
+                out[kind].append((p.stem.lower(), extract_markdown_h1(text)))
+        return out
+
+    def remap_wiki_archive_slugs_by_existing_titles(
+        self,
+        entries: list[tuple[str, str, str, str]],
+    ) -> tuple[list[tuple[str, str, str, str]], list[str]]:
+        """When a new slug has no file but ``display_title`` matches an existing page H1, reuse that slug."""
+        titles_by_kind = self._load_wiki_titles_by_kind()
+        logs: list[str] = []
+        out: list[tuple[str, str, str, str]] = []
+        for slug, display_title, em, page_kind in entries:
+            kind = MemoryStore._normalize_wiki_page_kind(page_kind)
+            safe = MemoryStore.normalize_wiki_category_slug(slug)
+            if self._wiki_page_exists_for_kind_slug(kind, safe):
+                out.append((slug, display_title, em, kind))
+                continue
+            title_norm = MemoryStore._normalize_wiki_body_for_dedup(display_title or "")
+            if len(title_norm) < self.WIKI_TITLE_REMAP_MIN_LEN:
+                out.append((slug, display_title, em, kind))
+                continue
+            best_slug: str | None = None
+            best_r = 0.0
+            for cand_slug, h1_raw in titles_by_kind.get(kind, []):
+                if cand_slug == safe:
+                    continue
+                h1_norm = MemoryStore._normalize_wiki_body_for_dedup(h1_raw)
+                if len(h1_norm) < self.WIKI_TITLE_REMAP_MIN_LEN:
+                    continue
+                r = difflib.SequenceMatcher(None, title_norm, h1_norm).ratio()
+                if r > best_r:
+                    best_r = r
+                    best_slug = cand_slug
+            if best_slug is not None and best_r >= self.WIKI_TITLE_REMAP_MIN_RATIO:
+                logs.append(f"title-remap {kind} {safe}->{best_slug} sim={best_r:.2f}")
+                out.append((best_slug, display_title, em, kind))
+            else:
+                out.append((slug, display_title, em, kind))
+        return out, logs
+
     def merge_wiki_entries_from_archive(
         self,
         entries: list[tuple[str, str, str, str]],
         when: str,
     ) -> list[str]:
         """Merge archivable wiki entries (merge files + topic index lines). Returns written paths under ``wiki/``."""
+        merged = MemoryStore.coalesce_wiki_archive_entries(entries)
+        merged, remap_logs = self.remap_wiki_archive_slugs_by_existing_titles(merged)
+        merged = MemoryStore.coalesce_wiki_archive_entries(merged)
+        for line in remap_logs:
+            self.append_wiki_log_line("wiki-dedup", line, when=when)
         written: list[str] = []
-        for slug, display_title, entry_md, page_kind in entries:
+        for slug, display_title, entry_md, page_kind in merged:
             idx_title, idx_blurb = MemoryStore.summarize_wiki_topic_entry_for_index(
                 entry_md, display_title,
             )
@@ -524,13 +655,14 @@ class MemoryStore:
             "entities": "entity",
             "concepts": "concept",
             "sources": "source",
+            "comparisons": "comparison",
             "topics": "topic",
             "general": "topic",
             "root": "topic",
             "mixed": "topic",
         }
         s = aliases.get(s, s)
-        if s in ("topic", "entity", "concept", "source"):
+        if s in ("topic", "entity", "concept", "source", "comparison"):
             return s
         return "topic"
 
@@ -643,13 +775,18 @@ class MemoryStore:
         """Append an entry into a wiki page. Returns relative path under ``wiki/``.
 
         *page_kind* ``topic`` → ``wiki/<slug>.md``; ``entity`` | ``concept`` | ``source``
-        → ``wiki/{entities|concepts|sources}/<slug>.md``.
+        | ``comparison`` → ``wiki/{entities|concepts|sources|comparisons}/<slug>.md``.
         """
         safe = MemoryStore.normalize_wiki_category_slug(slug)
         kind = MemoryStore._normalize_wiki_page_kind(page_kind)
         self.wiki_dir.mkdir(parents=True, exist_ok=True)
         ensure_standard_wiki_dirs(self.workspace, wiki_dir=self.WIKI_DIR)
-        subdir = {"entity": "entities", "concept": "concepts", "source": "sources"}.get(kind)
+        subdir = {
+            "entity": "entities",
+            "concept": "concepts",
+            "source": "sources",
+            "comparison": "comparisons",
+        }.get(kind)
         if subdir:
             dest = self.wiki_dir / subdir
             dest.mkdir(parents=True, exist_ok=True)
@@ -946,6 +1083,75 @@ class MemoryStore:
         while len(ts) > self._WIKI_ARCHIVE_DEDUP_CAP:
             ts.pop(0)
         self._save_wiki_archive_dedup(data)
+
+    def _wiki_ingest_state_path(self) -> Path:
+        return self.memory_dir / self._WIKI_INGEST_STATE_FILE
+
+    def _load_wiki_ingest_state(self) -> dict[str, Any]:
+        p = self._wiki_ingest_state_path()
+        if not p.is_file():
+            return {"last_success_bundle_sha256": "", "body_sha256": []}
+        try:
+            data = json.loads(p.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {"last_success_bundle_sha256": "", "body_sha256": []}
+        if not isinstance(data, dict):
+            return {"last_success_bundle_sha256": "", "body_sha256": []}
+        data.setdefault("last_success_bundle_sha256", "")
+        data.setdefault("body_sha256", [])
+        return data
+
+    def _save_wiki_ingest_state(self, data: dict[str, Any]) -> None:
+        p = self._wiki_ingest_state_path()
+        p.write_text(json.dumps(data, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
+
+    def wiki_ingest_bundle_matches_last_success(self, bundle_sha256: str) -> bool:
+        """True when raw file bundle matches the last successful wiki-ingest."""
+        if not bundle_sha256:
+            return False
+        prev = str(self._load_wiki_ingest_state().get("last_success_bundle_sha256") or "")
+        return prev != "" and prev == bundle_sha256
+
+    def wiki_ingest_should_skip_duplicate_body(
+        self,
+        body: str,
+        *,
+        similarity_threshold: float = 0.94,
+    ) -> bool:
+        """True when ingest JSON output matches a prior ingest or existing wiki (hash or high similarity)."""
+        norm = MemoryStore._normalize_wiki_body_for_dedup(body)
+        if len(norm) < 32:
+            return False
+        digest = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+        if digest in self._load_wiki_ingest_state().get("body_sha256", []):
+            return True
+        return self._wiki_archive_near_duplicate_file(norm, similarity_threshold=similarity_threshold)
+
+    def wiki_ingest_remember_success(self, bundle_sha256: str, body: str) -> None:
+        """Record bundle + body fingerprints after a successful wiki-ingest write."""
+        data = self._load_wiki_ingest_state()
+        data["last_success_bundle_sha256"] = bundle_sha256
+        norm = MemoryStore._normalize_wiki_body_for_dedup(body)
+        bh = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+        bs: list[str] = data.setdefault("body_sha256", [])
+        if bh not in bs:
+            bs.append(bh)
+        while len(bs) > self._WIKI_INGEST_BODY_HASH_CAP:
+            bs.pop(0)
+        self._save_wiki_ingest_state(data)
+
+    def wiki_ingest_remember_duplicate_body_skip(self, bundle_sha256: str, body: str) -> None:
+        """Record state when skipping ingest because output is a near-duplicate."""
+        data = self._load_wiki_ingest_state()
+        data["last_success_bundle_sha256"] = bundle_sha256
+        norm = MemoryStore._normalize_wiki_body_for_dedup(body)
+        bh = hashlib.sha256(norm.encode("utf-8")).hexdigest()
+        bs: list[str] = data.setdefault("body_sha256", [])
+        if bh not in bs:
+            bs.append(bh)
+        while len(bs) > self._WIKI_INGEST_BODY_HASH_CAP:
+            bs.pop(0)
+        self._save_wiki_ingest_state(data)
 
     def raw_archive(self, messages: list[dict]) -> None:
         """Fallback: dump raw messages to history.jsonl without LLM summarization."""

@@ -71,18 +71,25 @@ workspace/
 ├── USER.md              # Stable knowledge about the user
 ├── raw/                 # Optional immutable sources (read-only for the agent)
 │   ├── sources/         # Documents for `/wiki-ingest` (.md, .txt, …)
+│   ├── articles/        # Optional web clippings / articles (same ingest rules)
+│   ├── papers/          # Optional papers / long reads
+│   ├── transcripts/     # Optional transcripts / interview notes
 │   └── assets/          # Optional images / attachments
 ├── wiki/                # Optional multi-page knowledge (index + topic pages)
 │   ├── index.md
 │   ├── log.md           # Append-only timeline (wiki-archive, Dream, wiki-lint, …)
-│   ├── schema.md        # Optional: structural rules for wiki pages; injected first when present
+│   ├── schema.md        # Optional: structural rules; injected first, then index, then recent log tail
 │   ├── entities/        # People, orgs, products (typed pages)
 │   ├── concepts/        # Theories, methods, patterns
-│   └── sources/         # Source-backed summaries
+│   ├── sources/         # Source-backed summaries
+│   ├── comparisons/     # Side-by-side analyses
+│   └── queries/         # Optional: `/wiki-save-answer` snapshots
 └── memory/
     ├── MEMORY.md        # Project facts, decisions, and durable context
     ├── history.jsonl    # Append-only history summaries
     ├── wiki_archive_dedup.json  # Fingerprints for /wiki-archive (skip duplicate transcript/body)
+    ├── wiki_ingest_state.json   # Last successful /wiki-ingest raw bundle hash + body fingerprints
+    ├── wiki_automation.json     # Optional: auto wiki-ingest/lint scheduler state (gateway)
     ├── .cursor          # Consolidator write cursor
     ├── .dream_cursor    # Dream consumption cursor
     └── .git/            # Version history for long-term memory files
@@ -95,6 +102,7 @@ These files play different roles:
 - `MEMORY.md` remembers what remains true about the work itself.
 - `wiki/` holds structured, cross-linked topic pages when a single file is not enough.
 - `wiki/log.md` is a human-readable, append-only timeline of wiki actions (complementary to Git history).
+- Optional **automatic wiki** (gateway / interactive CLI): see `agents.defaults.autoWikiIngestIntervalMinutes`, `autoWikiLintIntervalMinutes`, `autoWikiLintAfterWikiWrite` in config; state in `memory/wiki_automation.json`.
 - `history.jsonl` remembers what happened on the way there.
 
 ## Why `history.jsonl`

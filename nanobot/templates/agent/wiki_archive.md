@@ -13,6 +13,7 @@ You classify lines from a chat transcript into **one or more knowledge categorie
 | `entity` | `wiki/entities/<category-slug>.md` — people, organizations, products, named tools |
 | `concept` | `wiki/concepts/<category-slug>.md` — methods, patterns, theories, technical ideas |
 | `source` | `wiki/sources/<category-slug>.md` — digest of a specific document, paper, or transcript line of inquiry |
+| `comparison` | `wiki/comparisons/<category-slug>.md` — side-by-side analyses, A-vs-B, tradeoff tables |
 | `topic` | `wiki/<category-slug>.md` — mixed notes, procedures, or when classification is unclear |
 
 One slug still maps to **one file over time** (append-only within that file). Choose the best `page_kind` from the transcript; use `topic` if unsure.
@@ -27,7 +28,7 @@ Each element must be an object with:
 |-------|---------|
 | `category_slug` | `kebab-case`, English: lowercase letters, digits, hyphens only (e.g. `auth-oauth`, `db-postgres`). One slug = one wiki file over time. |
 | `display_title` | Short human-readable title (Chinese or English) for `wiki/index.md`. |
-| `page_kind` | One of `entity`, `concept`, `source`, `topic` (see table above). |
+| `page_kind` | One of `entity`, `concept`, `source`, `comparison`, `topic` (see table above). |
 | `entry_markdown` | Markdown for **this archive only** for that category: start with `## Summary` (1–2 factual sentences for the index blurb), then optional `## Details`, bullets, etc. No level-1 `#` heading inside the entry. |
 
 ### Multiple topics

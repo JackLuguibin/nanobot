@@ -19,7 +19,8 @@ from pydantic import Field, field_validator, model_validator
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.datastructures import Headers
 from websockets.exceptions import ConnectionClosed
-from websockets.http11 import Request as WsRequest, Response
+from websockets.http11 import Request as WsRequest
+from websockets.http11 import Response
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
@@ -55,6 +56,9 @@ class WebSocketConfig(Base):
     - Each connection has its own session: a unique ``chat_id`` maps to the agent session internally.
     - ``media`` field in outbound messages contains local filesystem paths; remote clients need a
       shared filesystem or an HTTP file server to access these files.
+    - Tool rounds can emit JSON frames with ``event: "tool_event"`` (``tool_calls`` before execution,
+      ``tool_results`` after). This is gated by global config ``channels.sendToolEvents`` / ``send_tool_events``
+      (default off).
     """
 
     enabled: bool = False
@@ -424,16 +428,19 @@ class WebSocketChannel(BaseChannel):
         if connection is None:
             logger.warning("websocket: no active connection for chat_id={}", msg.chat_id)
             return
-        payload: dict[str, Any] = {
-            "event": "message",
-            "text": msg.content,
-        }
-        if msg.media:
-            payload["media"] = msg.media
-        if msg.reply_to:
-            payload["reply_to"] = msg.reply_to
-        raw = json.dumps(payload, ensure_ascii=False)
-        await self._safe_send(msg.chat_id, raw, label=" ")
+        metadata = msg.metadata
+        if metadata.get("_tool_event"):
+            payload = {"event": "tool_event"}
+            for key in ("tool_calls", "tool_results"):
+                if key in metadata:
+                    payload[key] = metadata[key]
+        else:
+            payload = {"event": "message", "text": msg.content}
+            if msg.media:
+                payload["media"] = msg.media
+            if msg.reply_to:
+                payload["reply_to"] = msg.reply_to
+        await self._safe_send(msg.chat_id, json.dumps(payload, ensure_ascii=False), label=" ")
 
     async def send_delta(
         self,

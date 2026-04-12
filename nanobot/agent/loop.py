@@ -17,10 +17,10 @@ from nanobot.agent.autocompact import AutoCompact
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
 from nanobot.agent.memory import Consolidator, Dream
-from nanobot.agent.runner import _MAX_INJECTIONS_PER_TURN, AgentRunSpec, AgentRunner
+from nanobot.agent.runner import _MAX_INJECTIONS_PER_TURN, AgentRunner, AgentRunSpec
+from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
-from nanobot.agent.skills import BUILTIN_SKILLS_DIR
 from nanobot.agent.tools.filesystem import EditFileTool, ListDirTool, ReadFileTool, WriteFileTool
 from nanobot.agent.tools.message import MessageTool
 from nanobot.agent.tools.notebook import NotebookEditTool
@@ -30,12 +30,13 @@ from nanobot.agent.tools.shell import ExecTool
 from nanobot.agent.tools.spawn import SpawnTool
 from nanobot.agent.tools.web import WebFetchTool, WebSearchTool
 from nanobot.bus.events import InboundMessage, OutboundMessage
-from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
 from nanobot.bus.queue import MessageBus
+from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
 from nanobot.config.schema import AgentDefaults
 from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
-from nanobot.utils.helpers import image_placeholder_text, truncate_text as truncate_text_fn
+from nanobot.utils.helpers import image_placeholder_text
+from nanobot.utils.helpers import truncate_text as truncate_text_fn
 from nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
@@ -55,6 +56,7 @@ class _LoopHook(AgentHook):
         on_progress: Callable[..., Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
+        on_tool_event: Callable[..., Awaitable[None]] | None = None,
         *,
         channel: str = "cli",
         chat_id: str = "direct",
@@ -65,6 +67,7 @@ class _LoopHook(AgentHook):
         self._on_progress = on_progress
         self._on_stream = on_stream
         self._on_stream_end = on_stream_end
+        self._on_tool_event = on_tool_event
         self._channel = channel
         self._chat_id = chat_id
         self._message_id = message_id
@@ -98,12 +101,31 @@ class _LoopHook(AgentHook):
                     await self._on_progress(thought)
             tool_hint = self._loop._strip_think(self._loop._tool_hint(context.tool_calls))
             await self._on_progress(tool_hint, tool_hint=True)
+        if self._on_tool_event:
+            await self._on_tool_event(
+                tool_calls=[tc.to_openai_tool_call() for tc in context.tool_calls],
+            )
         for tc in context.tool_calls:
             args_str = json.dumps(tc.arguments, ensure_ascii=False)
             logger.info("Tool call: {}({})", tc.name, args_str[:200])
         self._loop._set_tool_context(self._channel, self._chat_id, self._message_id)
 
     async def after_iteration(self, context: AgentHookContext) -> None:
+        tr, tc = context.tool_results, context.tool_calls
+        if self._on_tool_event and tr and len(tr) == len(tc):
+            tail = context.messages[-len(tr) :]
+            if all(m.get("role") == "tool" for m in tail):
+                trunc = self._loop._truncate_for_tool_payload
+                await self._on_tool_event(
+                    tool_results=[
+                        {
+                            "tool_call_id": m.get("tool_call_id"),
+                            "name": m.get("name"),
+                            "content": trunc(m.get("content")),
+                        }
+                        for m in tail
+                    ]
+                )
         u = context.usage or {}
         logger.debug(
             "LLM usage: prompt={} completion={} cached={}",
@@ -326,6 +348,17 @@ class AgentLoop:
 
         return format_tool_hints(tool_calls)
 
+    def _truncate_for_tool_payload(self, content: Any) -> str:
+        """Bound tool result size for tool_event metadata (string or JSON-serialized)."""
+        max_chars = min(65_536, max(4_096, self.max_tool_result_chars))
+        if isinstance(content, str):
+            return truncate_text_fn(content, max_chars)
+        try:
+            text = json.dumps(content, ensure_ascii=False)
+        except (TypeError, ValueError):
+            text = str(content)
+        return truncate_text_fn(text, max_chars)
+
     def _effective_session_key(self, msg: InboundMessage) -> str:
         """Return the session key used for task routing and mid-turn injections."""
         if self._unified_session and not msg.session_key_override:
@@ -338,6 +371,7 @@ class AgentLoop:
         on_progress: Callable[..., Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
+        on_tool_event: Callable[..., Awaitable[None]] | None = None,
         *,
         session: Session | None = None,
         channel: str = "cli",
@@ -351,6 +385,7 @@ class AgentLoop:
         *on_stream_end(resuming)*: called when a streaming session finishes.
         ``resuming=True`` means tool calls follow (spinner should restart);
         ``resuming=False`` means this is the final response.
+        *on_tool_event*: optional ``tool_calls`` / ``tool_results`` callback (e.g. WebSocket).
 
         Returns (final_content, tools_used, messages, stop_reason, had_injections).
         """
@@ -359,6 +394,7 @@ class AgentLoop:
             on_progress=on_progress,
             on_stream=on_stream,
             on_stream_end=on_stream_end,
+            on_tool_event=on_tool_event,
             channel=channel,
             chat_id=chat_id,
             message_id=message_id,
@@ -680,24 +716,37 @@ class AgentLoop:
             chat_id=msg.chat_id,
         )
 
-        async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:
-            meta = dict(msg.metadata or {})
-            meta["_progress"] = True
-            meta["_tool_hint"] = tool_hint
+        async def _publish(**meta: Any) -> None:
             await self.bus.publish_outbound(
                 OutboundMessage(
                     channel=msg.channel,
                     chat_id=msg.chat_id,
-                    content=content,
-                    metadata=meta,
+                    content=meta.pop("content", ""),
+                    metadata={**(msg.metadata or {}), **meta},
                 )
             )
+
+        async def _bus_progress(content: str, *, tool_hint: bool = False) -> None:
+            await _publish(content=content, _progress=True, _tool_hint=tool_hint)
+
+        async def _bus_tool_event(
+            *,
+            tool_calls: list[dict[str, Any]] | None = None,
+            tool_results: list[dict[str, Any]] | None = None,
+        ) -> None:
+            extra: dict[str, Any] = {"_tool_event": True}
+            if tool_calls is not None:
+                extra["tool_calls"] = tool_calls
+            if tool_results is not None:
+                extra["tool_results"] = tool_results
+            await _publish(**extra)
 
         final_content, _, all_msgs, stop_reason, had_injections = await self._run_agent_loop(
             initial_messages,
             on_progress=on_progress or _bus_progress,
             on_stream=on_stream,
             on_stream_end=on_stream_end,
+            on_tool_event=_bus_tool_event,
             session=session,
             channel=msg.channel,
             chat_id=msg.chat_id,

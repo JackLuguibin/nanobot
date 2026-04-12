@@ -1,23 +1,11 @@
 """Console CLI - nanobot web console启动命令。
 
 用法:
-    console run dev   - 启动开发环境 (gateway + console + 前端热更新)
-    console run build - 构建前端静态文件
+    console dev   - 启动开发环境 (gateway + console + 前端热更新)
+    console build - 构建前端静态文件
 """
 
 from __future__ import annotations
-
-import sys
-from pathlib import Path
-
-_repo_root = Path(__file__).resolve().parent.parent
-_repo_root_str = str(_repo_root)
-while _repo_root_str in sys.path:
-    sys.path.remove(_repo_root_str)
-sys.path.insert(0, _repo_root_str)
-for key in list(sys.modules.keys()):
-    if key == "console" or key.startswith("console."):
-        del sys.modules[key]
 
 import typer
 

@@ -128,6 +128,7 @@ def test_workspace_override(tmp_path):
 def test_sdk_make_provider_uses_github_copilot_backend():
     from nanobot.config.schema import Config
     from nanobot.nanobot import _make_provider
+    from nanobot.utils.usage import make_token_usage_jsonl_handler
 
     config = Config.model_validate(
         {
@@ -140,10 +141,22 @@ def test_sdk_make_provider_uses_github_copilot_backend():
         }
     )
 
-    with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
-        provider = _make_provider(config)
+    captured_usage_dirs: list[Path] = []
+
+    def traced_make_token_usage_jsonl_handler(usage_dir):
+        captured_usage_dirs.append(Path(usage_dir).expanduser().resolve())
+        return make_token_usage_jsonl_handler(usage_dir)
+
+    with patch(
+        "nanobot.utils.usage.make_token_usage_jsonl_handler",
+        side_effect=traced_make_token_usage_jsonl_handler,
+    ):
+        with patch("nanobot.providers.openai_compat_provider.AsyncOpenAI"):
+            provider = _make_provider(config)
 
     assert provider.__class__.__name__ == "GitHubCopilotProvider"
+    assert len(provider.on_completion) == 1
+    assert captured_usage_dirs == [config.workspace_path.resolve() / "usage"]
 
 
 @pytest.mark.asyncio
@@ -166,3 +179,74 @@ def test_import_from_top_level():
     from nanobot import Nanobot as N, RunResult as R
     assert N is Nanobot
     assert R is RunResult
+
+
+@pytest.mark.asyncio
+async def test_attach_token_usage_jsonl_registers_callback_on_provider(tmp_path):
+    from datetime import datetime, timezone
+
+    from nanobot.providers.base import LLMResponse
+    from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+    from nanobot.utils.usage import attach_token_usage_jsonl
+
+    provider = OpenAICompatProvider(default_model="gpt-4o")
+    handler = attach_token_usage_jsonl(provider, tmp_path)
+    assert len(provider.on_completion) == 1
+    assert provider.on_completion[0] is handler
+
+    response = LLMResponse(
+        content="ok", finish_reason="stop", usage={"prompt_tokens": 3, "completion_tokens": 1}
+    )
+    await handler(response, {"model": "gpt-4o"})
+    date_str = datetime.now(timezone.utc).date().isoformat()
+    jsonl_path = tmp_path.resolve() / "usage" / f"token_usage_{date_str}.jsonl"
+    assert jsonl_path.is_file()
+    payload = json.loads(jsonl_path.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert payload["model"] == "gpt-4o"
+    assert payload["prompt_tokens"] == 3
+    assert payload["completion_tokens"] == 1
+
+
+def test_add_on_completion_appends_in_order():
+    from nanobot.providers.base import LLMResponse
+    from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(default_model="gpt-4o")
+
+    async def first_callback(response: LLMResponse, request_meta: dict) -> None:
+        del response, request_meta
+
+    async def second_callback(response: LLMResponse, request_meta: dict) -> None:
+        del response, request_meta
+
+    provider.add_on_completion(first_callback)
+    provider.add_on_completion(second_callback)
+
+    assert provider.on_completion == [first_callback, second_callback]
+
+
+@pytest.mark.asyncio
+async def test_notify_on_completion_invokes_each_callback_in_order():
+    from nanobot.providers.base import LLMResponse
+    from nanobot.providers.openai_compat_provider import OpenAICompatProvider
+
+    provider = OpenAICompatProvider(default_model="gpt-4o")
+    invocation_order: list[str] = []
+
+    async def first_callback(response: LLMResponse, request_meta: dict) -> None:
+        invocation_order.append("first")
+        assert request_meta.get("model") == "test-model"
+        assert response.usage.get("prompt_tokens") == 5
+
+    async def second_callback(response: LLMResponse, request_meta: dict) -> None:
+        invocation_order.append("second")
+        assert request_meta.get("model") == "test-model"
+        assert response.usage.get("prompt_tokens") == 5
+
+    provider.add_on_completion(first_callback)
+    provider.add_on_completion(second_callback)
+
+    response = LLMResponse(content="ok", usage={"prompt_tokens": 5})
+    await provider._notify_on_completion(response, {"model": "test-model"})
+
+    assert invocation_order == ["first", "second"]

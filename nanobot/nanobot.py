@@ -84,6 +84,7 @@ class Nanobot:
             unified_session=defaults.unified_session,
             disabled_skills=defaults.disabled_skills,
             session_ttl_minutes=defaults.session_ttl_minutes,
+            defer_dream_when_agent_turn_active=defaults.defer_dream_when_agent_turn_active,
         )
         return cls(loop)
 

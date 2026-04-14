@@ -84,6 +84,10 @@ class AgentDefaults(Base):
         validation_alias=AliasChoices("idleCompactAfterMinutes", "sessionTtlMinutes"),
         serialization_alias="idleCompactAfterMinutes",
     )  # Auto-compact idle threshold in minutes (0 = disabled)
+    defer_dream_when_agent_turn_active: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("deferDreamWhenAgentTurnActive", "defer_dream_when_agent_turn_active"),
+    )  # Skip Dream while any agent dispatch is in flight (same workspace)
     dream: DreamConfig = Field(default_factory=DreamConfig)
 
 

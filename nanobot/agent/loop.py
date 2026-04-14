@@ -16,7 +16,9 @@ from loguru import logger
 from nanobot.agent.autocompact import AutoCompact
 from nanobot.agent.context import ContextBuilder
 from nanobot.agent.hook import AgentHook, AgentHookContext, CompositeHook
+from nanobot.agent.interrupts import SessionInterruptController
 from nanobot.agent.memory import Consolidator, Dream
+from nanobot.agent.pending_followup import PendingFollowupBuffer
 from nanobot.agent.runner import _MAX_INJECTIONS_PER_TURN, AgentRunSpec, AgentRunner
 from nanobot.agent.subagent import SubagentManager
 from nanobot.agent.tools.cron import CronTool
@@ -59,6 +61,7 @@ class _LoopHook(AgentHook):
         channel: str = "cli",
         chat_id: str = "direct",
         message_id: str | None = None,
+        session_key: str | None = None,
     ) -> None:
         super().__init__(reraise=True)
         self._loop = agent_loop
@@ -68,10 +71,15 @@ class _LoopHook(AgentHook):
         self._channel = channel
         self._chat_id = chat_id
         self._message_id = message_id
+        self._session_key = session_key
         self._stream_buf = ""
 
     def wants_streaming(self) -> bool:
         return self._on_stream is not None
+
+    async def before_iteration(self, context: AgentHookContext) -> None:
+        if self._session_key:
+            self._loop.interrupt_controller.mark_llm_streaming(self._session_key)
 
     async def on_stream(self, context: AgentHookContext, delta: str) -> None:
         from nanobot.utils.helpers import strip_think
@@ -89,6 +97,8 @@ class _LoopHook(AgentHook):
         self._stream_buf = ""
 
     async def before_execute_tools(self, context: AgentHookContext) -> None:
+        if self._session_key:
+            self._loop.interrupt_controller.mark_tool_executing(self._session_key)
         if self._on_progress:
             if not self._on_stream:
                 thought = self._loop._strip_think(
@@ -111,6 +121,8 @@ class _LoopHook(AgentHook):
             u.get("completion_tokens", 0),
             u.get("cached_tokens", 0),
         )
+        if self._session_key:
+            self._loop.interrupt_controller.mark_turn_running(self._session_key)
 
     def finalize_content(self, context: AgentHookContext, content: str | None) -> str | None:
         return self._loop._strip_think(content)
@@ -154,6 +166,7 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         unified_session: bool = False,
         disabled_skills: list[str] | None = None,
+        defer_dream_when_agent_turn_active: bool | None = None,
     ):
         from nanobot.config.schema import ExecToolConfig, WebToolsConfig
 
@@ -202,6 +215,12 @@ class AgentLoop:
             disabled_skills=disabled_skills,
         )
         self._unified_session = unified_session
+        self.defer_dream_when_agent_turn_active = (
+            defer_dream_when_agent_turn_active
+            if defer_dream_when_agent_turn_active is not None
+            else defaults.defer_dream_when_agent_turn_active
+        )
+        self.interrupt_controller = SessionInterruptController()
         self._running = False
         self._mcp_servers = mcp_servers or {}
         self._mcp_stacks: dict[str, AsyncExitStack] = {}
@@ -213,7 +232,7 @@ class AgentLoop:
         # Per-session pending queues for mid-turn message injection.
         # When a session has an active task, new messages for that session
         # are routed here instead of creating a new task.
-        self._pending_queues: dict[str, asyncio.Queue] = {}
+        self._pending_queues: dict[str, PendingFollowupBuffer] = {}
         # NANOBOT_MAX_CONCURRENT_REQUESTS: <=0 means unlimited; default 3.
         _max = int(os.environ.get("NANOBOT_MAX_CONCURRENT_REQUESTS", "3"))
         self._concurrency_gate: asyncio.Semaphore | None = (
@@ -344,7 +363,7 @@ class AgentLoop:
         channel: str = "cli",
         chat_id: str = "direct",
         message_id: str | None = None,
-        pending_queue: asyncio.Queue | None = None,
+        pending_queue: PendingFollowupBuffer | None = None,
     ) -> tuple[str | None, list[str], list[dict], str, bool]:
         """Run the agent iteration loop.
 
@@ -363,6 +382,7 @@ class AgentLoop:
             channel=channel,
             chat_id=chat_id,
             message_id=message_id,
+            session_key=session.key if session else None,
         )
         hook: AgentHook = (
             CompositeHook([loop_hook] + self._extra_hooks) if self._extra_hooks else loop_hook
@@ -371,18 +391,15 @@ class AgentLoop:
         async def _checkpoint(payload: dict[str, Any]) -> None:
             if session is None:
                 return
-            self._set_runtime_checkpoint(session, payload)
+            async with self.interrupt_controller.interrupt_mask(session.key):
+                self._set_runtime_checkpoint(session, payload)
 
         async def _drain_pending(*, limit: int = _MAX_INJECTIONS_PER_TURN) -> list[dict[str, Any]]:
-            """Non-blocking drain of follow-up messages from the pending queue."""
+            """Non-blocking drain of follow-up messages; newest backlog entries are taken first."""
             if pending_queue is None:
                 return []
             items: list[dict[str, Any]] = []
-            while len(items) < limit:
-                try:
-                    pending_msg = pending_queue.get_nowait()
-                except asyncio.QueueEmpty:
-                    break
+            for pending_msg in pending_queue.pop_batch_newest_priority_chrono(limit):
                 user_content = self.context._build_user_content(
                     pending_msg.content,
                     pending_msg.media if pending_msg.media else None,
@@ -398,6 +415,13 @@ class AgentLoop:
                     merged = [{"type": "text", "text": runtime_ctx}] + user_content
                 items.append({"role": "user", "content": merged})
             return items
+
+        def _abort_check() -> bool:
+            if session is None:
+                return False
+            if self.interrupt_controller.interrupts_masked(session.key):
+                return False
+            return self.interrupt_controller.should_abort(session.key)
 
         result = await self.runner.run(AgentRunSpec(
             initial_messages=initial_messages,
@@ -416,6 +440,7 @@ class AgentLoop:
             progress_callback=on_progress,
             checkpoint_callback=_checkpoint,
             injection_callback=_drain_pending,
+            abort_check=_abort_check if session else None,
         ))
         self._last_usage = result.usage
         if result.stop_reason == "max_iterations":
@@ -499,13 +524,14 @@ class AgentLoop:
         lock = self._session_locks.setdefault(session_key, asyncio.Lock())
         gate = self._concurrency_gate or nullcontext()
 
-        # Register a pending queue so follow-up messages for this session are
+        # Register a pending buffer so follow-up messages for this session are
         # routed here (mid-turn injection) instead of spawning a new task.
-        pending = asyncio.Queue(maxsize=20)
+        pending = PendingFollowupBuffer(maxsize=20)
         self._pending_queues[session_key] = pending
 
         try:
             async with lock, gate:
+                self.interrupt_controller.on_dispatch_begin(session_key)
                 try:
                     on_stream = on_stream_end = None
                     if msg.metadata.get("_wants_stream"):
@@ -559,24 +585,21 @@ class AgentLoop:
                         channel=msg.channel, chat_id=msg.chat_id,
                         content="Sorry, I encountered an error.",
                     ))
+                finally:
+                    self.interrupt_controller.on_dispatch_end(session_key)
         finally:
             # Drain any messages still in the pending queue and re-publish
             # them to the bus so they are processed as fresh inbound messages
             # rather than silently lost.
-            queue = self._pending_queues.pop(session_key, None)
-            if queue is not None:
-                leftover = 0
-                while True:
-                    try:
-                        item = queue.get_nowait()
-                    except asyncio.QueueEmpty:
-                        break
+            buf = self._pending_queues.pop(session_key, None)
+            if buf is not None:
+                leftover_msgs = buf.drain_all_oldest_first()
+                for item in leftover_msgs:
                     await self.bus.publish_inbound(item)
-                    leftover += 1
-                if leftover:
+                if leftover_msgs:
                     logger.info(
                         "Re-published {} leftover message(s) to bus for session {}",
-                        leftover, session_key,
+                        len(leftover_msgs), session_key,
                     )
 
     async def close_mcp(self) -> None:
@@ -597,6 +620,14 @@ class AgentLoop:
         self._background_tasks.append(task)
         task.add_done_callback(self._background_tasks.remove)
 
+    async def _consolidate_tracked(self, session: Session) -> None:
+        """Run token consolidation with memory-subsystem phase tracking."""
+        self.interrupt_controller.begin_memory_consolidating()
+        try:
+            await self.consolidator.maybe_consolidate_by_tokens(session)
+        finally:
+            self.interrupt_controller.end_memory_consolidating()
+
     def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
@@ -609,7 +640,7 @@ class AgentLoop:
         on_progress: Callable[[str], Awaitable[None]] | None = None,
         on_stream: Callable[[str], Awaitable[None]] | None = None,
         on_stream_end: Callable[..., Awaitable[None]] | None = None,
-        pending_queue: asyncio.Queue | None = None,
+        pending_queue: PendingFollowupBuffer | None = None,
     ) -> OutboundMessage | None:
         """Process a single inbound message and return the response."""
         # System messages: parse origin from chat_id ("channel:chat_id")
@@ -627,7 +658,7 @@ class AgentLoop:
 
             session, pending = self.auto_compact.prepare_session(session, key)
 
-            await self.consolidator.maybe_consolidate_by_tokens(session)
+            await self._consolidate_tracked(session)
             self._set_tool_context(channel, chat_id, msg.metadata.get("message_id"))
             history = session.get_history(max_messages=0)
             current_role = "assistant" if msg.sender_id == "subagent" else "user"
@@ -645,7 +676,7 @@ class AgentLoop:
             self._save_turn(session, all_msgs, 1 + len(history))
             self._clear_runtime_checkpoint(session)
             self.sessions.save(session)
-            self._schedule_background(self.consolidator.maybe_consolidate_by_tokens(session))
+            self._schedule_background(self._consolidate_tracked(session))
             return OutboundMessage(
                 channel=channel,
                 chat_id=chat_id,
@@ -670,7 +701,7 @@ class AgentLoop:
         if result := await self.commands.dispatch(ctx):
             return result
 
-        await self.consolidator.maybe_consolidate_by_tokens(session)
+        await self._consolidate_tracked(session)
 
         self._set_tool_context(msg.channel, msg.chat_id, msg.metadata.get("message_id"))
         if message_tool := self.tools.get("message"):
@@ -735,7 +766,7 @@ class AgentLoop:
         self._clear_pending_user_turn(session)
         self._clear_runtime_checkpoint(session)
         self.sessions.save(session)
-        self._schedule_background(self.consolidator.maybe_consolidate_by_tokens(session))
+        self._schedule_background(self._consolidate_tracked(session))
 
         # When follow-up messages were injected mid-turn, a later natural
         # language reply may address those follow-ups and should not be

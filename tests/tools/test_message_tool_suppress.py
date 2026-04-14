@@ -1,6 +1,5 @@
 """Test message tool suppress logic for final replies."""
 
-import asyncio
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
@@ -111,8 +110,10 @@ class TestMessageToolSuppressLogic:
         if isinstance(mt, MessageTool):
             mt.set_send_callback(AsyncMock(side_effect=lambda m: sent.append(m)))
 
-        pending_queue = asyncio.Queue()
-        await pending_queue.put(
+        from nanobot.agent.pending_followup import PendingFollowupBuffer
+
+        pending_queue = PendingFollowupBuffer(maxsize=20)
+        pending_queue.put_nowait(
             InboundMessage(channel="feishu", sender_id="user1", chat_id="chat123", content="follow-up")
         )
 

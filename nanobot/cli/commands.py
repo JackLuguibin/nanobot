@@ -593,6 +593,7 @@ def serve(
         unified_session=runtime_config.agents.defaults.unified_session,
         disabled_skills=runtime_config.agents.defaults.disabled_skills,
         session_ttl_minutes=runtime_config.agents.defaults.session_ttl_minutes,
+        defer_dream_when_agent_turn_active=runtime_config.agents.defaults.defer_dream_when_agent_turn_active,
     )
 
     model_name = runtime_config.agents.defaults.model
@@ -687,6 +688,7 @@ def gateway(
         unified_session=config.agents.defaults.unified_session,
         disabled_skills=config.agents.defaults.disabled_skills,
         session_ttl_minutes=config.agents.defaults.session_ttl_minutes,
+        defer_dream_when_agent_turn_active=config.agents.defaults.defer_dream_when_agent_turn_active,
     )
 
     # Set cron callback (needs agent)
@@ -695,8 +697,18 @@ def gateway(
         # Dream is an internal job — run directly, not through the agent loop.
         if job.name == "dream":
             try:
-                await agent.dream.run()
-                logger.info("Dream cron job completed")
+                if (
+                    getattr(agent, "defer_dream_when_agent_turn_active", True)
+                    and agent.interrupt_controller.any_turn_active()
+                ):
+                    logger.info("Dream cron job deferred: agent turn in progress")
+                else:
+                    agent.interrupt_controller.begin_dreaming()
+                    try:
+                        await agent.dream.run()
+                    finally:
+                        agent.interrupt_controller.end_dreaming()
+                    logger.info("Dream cron job completed")
             except Exception:
                 logger.exception("Dream cron job failed")
             return None
@@ -921,6 +933,7 @@ def agent(
         unified_session=config.agents.defaults.unified_session,
         disabled_skills=config.agents.defaults.disabled_skills,
         session_ttl_minutes=config.agents.defaults.session_ttl_minutes,
+        defer_dream_when_agent_turn_active=config.agents.defaults.defer_dream_when_agent_turn_active,
     )
     restart_notice = consume_restart_notice_from_env()
     if restart_notice and should_show_cli_restart_notice(restart_notice, session_id):

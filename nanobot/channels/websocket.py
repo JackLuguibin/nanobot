@@ -147,6 +147,9 @@ def _parse_inbound_payload(raw: str) -> str | None:
         except json.JSONDecodeError:
             return text
         if isinstance(data, dict):
+            type_v = data.get("type")
+            if isinstance(type_v, str) and type_v.lower() in ("interrupt", "stop"):
+                return "/stop"
             for key in ("content", "text", "message"):
                 value = data.get(key)
                 if isinstance(value, str) and value.strip():

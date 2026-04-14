@@ -2067,8 +2067,10 @@ async def test_loop_injected_followup_preserves_image_media(tmp_path):
     loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path, model="test-model")
     loop.tools.get_definitions = MagicMock(return_value=[])
 
-    pending_queue = asyncio.Queue()
-    await pending_queue.put(InboundMessage(
+    from nanobot.agent.pending_followup import PendingFollowupBuffer
+
+    pending_queue = PendingFollowupBuffer(maxsize=20)
+    pending_queue.put_nowait(InboundMessage(
         channel="cli",
         sender_id="u",
         chat_id="c",
@@ -2260,7 +2262,9 @@ async def test_followup_routed_to_pending_queue(tmp_path):
     loop._unified_session = True
     loop._dispatch = AsyncMock()  # type: ignore[method-assign]
 
-    pending = asyncio.Queue(maxsize=20)
+    from nanobot.agent.pending_followup import PendingFollowupBuffer
+
+    pending = PendingFollowupBuffer(maxsize=20)
     loop._pending_queues[UNIFIED_SESSION_KEY] = pending
 
     run_task = asyncio.create_task(loop.run())
@@ -2304,10 +2308,12 @@ async def test_pending_queue_preserves_overflow_for_next_injection_cycle(tmp_pat
     loop = AgentLoop(bus=bus, provider=provider, workspace=tmp_path, model="test-model")
     loop.tools.get_definitions = MagicMock(return_value=[])
 
-    pending_queue = asyncio.Queue()
+    from nanobot.agent.pending_followup import PendingFollowupBuffer
+
+    pending_queue = PendingFollowupBuffer(maxsize=20)
     total_followups = _MAX_INJECTIONS_PER_TURN + 2
     for idx in range(total_followups):
-        await pending_queue.put(InboundMessage(
+        pending_queue.put_nowait(InboundMessage(
             channel="cli",
             sender_id="u",
             chat_id="c",
@@ -2342,7 +2348,9 @@ async def test_pending_queue_full_falls_back_to_queued_task(tmp_path):
     loop = _make_loop(tmp_path)
     loop._dispatch = AsyncMock()  # type: ignore[method-assign]
 
-    pending = asyncio.Queue(maxsize=1)
+    from nanobot.agent.pending_followup import PendingFollowupBuffer
+
+    pending = PendingFollowupBuffer(maxsize=1)
     pending.put_nowait(InboundMessage(channel="cli", sender_id="u", chat_id="c", content="already queued"))
     loop._pending_queues["cli:c"] = pending
 
@@ -2378,21 +2386,19 @@ async def test_dispatch_republishes_leftover_queue_messages(tmp_path):
 
     # Simulate a completed dispatch by manually registering a queue
     # with leftover messages, then running the cleanup logic directly.
-    pending = asyncio.Queue(maxsize=20)
+    from nanobot.agent.pending_followup import PendingFollowupBuffer
+
+    pending = PendingFollowupBuffer(maxsize=20)
     session_key = "cli:c"
     loop._pending_queues[session_key] = pending
     pending.put_nowait(InboundMessage(channel="cli", sender_id="u", chat_id="c", content="leftover-1"))
     pending.put_nowait(InboundMessage(channel="cli", sender_id="u", chat_id="c", content="leftover-2"))
 
     # Execute the cleanup logic from the finally block
-    queue = loop._pending_queues.pop(session_key, None)
-    assert queue is not None
+    buf = loop._pending_queues.pop(session_key, None)
+    assert buf is not None
     leftover = 0
-    while True:
-        try:
-            item = queue.get_nowait()
-        except asyncio.QueueEmpty:
-            break
+    for item in buf.drain_all_oldest_first():
         await bus.publish_inbound(item)
         leftover += 1
 

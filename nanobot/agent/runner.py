@@ -73,6 +73,7 @@ class AgentRunSpec:
     progress_callback: Any | None = None
     checkpoint_callback: Any | None = None
     injection_callback: Any | None = None
+    abort_check: Any | None = None  # Callable[[], bool] — cooperative cancel between iterations
 
 
 @dataclass(slots=True)
@@ -239,6 +240,8 @@ class AgentRunner:
         injection_cycles = 0
 
         for iteration in range(spec.max_iterations):
+            if spec.abort_check and spec.abort_check():
+                raise asyncio.CancelledError()
             try:
                 # Keep the persisted conversation untouched. Context governance
                 # may repair or compact historical messages for the model, but
@@ -298,6 +301,9 @@ class AgentRunner:
                 )
 
                 await hook.before_execute_tools(context)
+
+                if spec.abort_check and spec.abort_check():
+                    raise asyncio.CancelledError()
 
                 results, new_events, fatal_error = await self._execute_tools(
                     spec,

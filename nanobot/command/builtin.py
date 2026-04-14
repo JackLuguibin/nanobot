@@ -17,14 +17,13 @@ async def cmd_stop(ctx: CommandContext) -> OutboundMessage:
     """Cancel all active tasks and subagents for the session."""
     loop = ctx.loop
     msg = ctx.msg
-    tasks = loop._active_tasks.pop(msg.session_key, [])
-    cancelled = sum(1 for t in tasks if not t.done() and t.cancel())
-    for t in tasks:
-        try:
-            await t
-        except (asyncio.CancelledError, Exception):
-            pass
-    sub_cancelled = await loop.subagents.cancel_by_session(msg.session_key)
+    key = loop._effective_session_key(msg)
+    tasks = loop._active_tasks.pop(key, [])
+    cancelled, sub_cancelled = await loop.interrupt_controller.dispatch_stop(
+        key,
+        tasks,
+        loop.subagents.cancel_by_session,
+    )
     total = cancelled + sub_cancelled
     content = f"Stopped {total} task(s)." if total else "No active task to stop."
     return OutboundMessage(
@@ -116,12 +115,22 @@ async def cmd_dream(ctx: CommandContext) -> OutboundMessage:
     async def _run_dream():
         t0 = time.monotonic()
         try:
-            did_work = await loop.dream.run()
-            elapsed = time.monotonic() - t0
-            if did_work:
-                content = f"Dream completed in {elapsed:.1f}s."
+            if (
+                getattr(loop, "defer_dream_when_agent_turn_active", True)
+                and loop.interrupt_controller.any_turn_active()
+            ):
+                content = "Dream deferred: an agent turn is in progress."
             else:
-                content = "Dream: nothing to process."
+                loop.interrupt_controller.begin_dreaming()
+                try:
+                    did_work = await loop.dream.run()
+                finally:
+                    loop.interrupt_controller.end_dreaming()
+                elapsed = time.monotonic() - t0
+                if did_work:
+                    content = f"Dream completed in {elapsed:.1f}s."
+                else:
+                    content = "Dream: nothing to process."
         except Exception as e:
             elapsed = time.monotonic() - t0
             content = f"Dream failed after {elapsed:.1f}s: {e}"

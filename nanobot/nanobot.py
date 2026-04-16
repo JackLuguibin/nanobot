@@ -85,6 +85,10 @@ class Nanobot:
             disabled_skills=defaults.disabled_skills,
             session_ttl_minutes=defaults.session_ttl_minutes,
             tools_config=config.tools,
+            auto_wiki_archive_at_context_fraction=defaults.auto_wiki_archive_at_context_fraction,
+            auto_wiki_ingest_interval_minutes=defaults.auto_wiki_ingest_interval_minutes,
+            auto_wiki_lint_interval_minutes=defaults.auto_wiki_lint_interval_minutes,
+            auto_wiki_lint_after_wiki_write=defaults.auto_wiki_lint_after_wiki_write,
         )
         return cls(loop)
 

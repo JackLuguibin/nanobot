@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 from pydantic_settings import BaseSettings
 
@@ -85,6 +85,53 @@ class AgentDefaults(Base):
         serialization_alias="idleCompactAfterMinutes",
     )  # Auto-compact idle threshold in minutes (0 = disabled)
     dream: DreamConfig = Field(default_factory=DreamConfig)
+    auto_wiki_archive_at_context_fraction: float | None = Field(
+        default=0.8,
+        description=(
+            "If set (e.g. 0.8), run wiki-archive automatically when the estimated prompt tokens "
+            "(including the current inbound message) reach this fraction of context_window_tokens. "
+            "None disables automatic wiki-archive."
+        ),
+    )
+    auto_wiki_ingest_interval_minutes: float | None = Field(
+        default=None,
+        description=(
+            "When set (e.g. 15), the gateway polls raw/ for changes; after a fingerprint change, "
+            "runs wiki-ingest at most once per this many minutes. None disables auto ingest."
+        ),
+    )
+    auto_wiki_lint_interval_minutes: float | None = Field(
+        default=None,
+        description=(
+            "When set (e.g. 1440), run wiki-lint on this interval and append wiki/log.md if issues "
+            "are found. None disables scheduled lint."
+        ),
+    )
+    auto_wiki_lint_after_wiki_write: bool = Field(
+        default=False,
+        description=(
+            "If true, run a lightweight wiki-lint after successful wiki-archive, wiki-ingest "
+            "(manual or auto), and append wiki/log.md only when broken links or orphans exist."
+        ),
+    )
+
+    @field_validator("auto_wiki_archive_at_context_fraction")
+    @classmethod
+    def _auto_wiki_frac_in_range(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if not (0.0 < v <= 1.0):
+            raise ValueError("auto_wiki_archive_at_context_fraction must be in (0, 1] or None")
+        return v
+
+    @field_validator("auto_wiki_ingest_interval_minutes", "auto_wiki_lint_interval_minutes")
+    @classmethod
+    def _auto_wiki_interval_positive(cls, v: float | None) -> float | None:
+        if v is None:
+            return None
+        if v <= 0:
+            raise ValueError("wiki automation intervals must be > 0 or None")
+        return v
 
 
 class AgentsConfig(Base):

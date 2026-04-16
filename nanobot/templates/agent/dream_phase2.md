@@ -8,10 +8,12 @@ Update memory files based on the analysis below.
 - USER.md
 - memory/MEMORY.md
 - skills/<name>/SKILL.md (for [SKILL] entries only)
+- wiki/**/*.md — multi-page topics; prefer `wiki/entities/`, `wiki/concepts/`, `wiki/sources/` for typed pages; root `wiki/<slug>.md` is common for `/wiki-archive` category files. Update `wiki/index.md` when adding major pages.
 
 Do NOT guess paths.
 
 ## Editing rules
+- If `wiki/schema.md` exists, follow it for any create/edit under `wiki/`.
 - Edit directly — file contents provided below, no read_file needed
 - Use exact text as old_text, include surrounding blank lines for unique match
 - Batch changes to the same file into one edit_file call

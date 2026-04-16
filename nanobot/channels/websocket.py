@@ -84,7 +84,7 @@ class WebSocketConfig(Base):
     streaming: bool = True
     # When > 0, coalesce outgoing stream text into delta frames of at most this many Unicode scalars
     # per frame (remainder is flushed on stream_end). When 0, pass through provider chunks unchanged.
-    delta_chunk_chars: int = Field(default=0, ge=0, le=1_048_576)
+    delta_chunk_chars: int = Field(default=20, ge=0, le=1_048_576)
     max_message_bytes: int = Field(default=1_048_576, ge=1024, le=16_777_216)
     ping_interval_s: float = Field(default=20.0, ge=5.0, le=300.0)
     ping_timeout_s: float = Field(default=20.0, ge=5.0, le=300.0)

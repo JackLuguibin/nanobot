@@ -330,6 +330,48 @@ async def test_send_delta_emits_delta_and_stream_end() -> None:
 
 
 @pytest.mark.asyncio
+async def test_send_delta_respects_delta_chunk_chars() -> None:
+    bus = MagicMock()
+    channel = WebSocketChannel(
+        {"enabled": True, "allowFrom": ["*"], "streaming": True, "deltaChunkChars": 2},
+        bus,
+    )
+    mock_ws = AsyncMock()
+    channel._connections["chat-1"] = mock_ws
+
+    await channel.send_delta("chat-1", "abcd", {"_stream_delta": True, "_stream_id": "sid"})
+    await channel.send_delta("chat-1", "", {"_stream_end": True, "_stream_id": "sid"})
+
+    assert mock_ws.send.await_count == 3
+    d1 = json.loads(mock_ws.send.call_args_list[0][0][0])
+    d2 = json.loads(mock_ws.send.call_args_list[1][0][0])
+    end = json.loads(mock_ws.send.call_args_list[2][0][0])
+    assert d1 == {"event": "delta", "text": "ab", "stream_id": "sid"}
+    assert d2 == {"event": "delta", "text": "cd", "stream_id": "sid"}
+    assert end == {"event": "stream_end", "stream_id": "sid"}
+
+
+@pytest.mark.asyncio
+async def test_send_delta_chunk_flushes_remainder_on_stream_end() -> None:
+    bus = MagicMock()
+    channel = WebSocketChannel(
+        {"enabled": True, "allowFrom": ["*"], "streaming": True, "deltaChunkChars": 3},
+        bus,
+    )
+    mock_ws = AsyncMock()
+    channel._connections["chat-1"] = mock_ws
+
+    await channel.send_delta("chat-1", "ab", {"_stream_delta": True, "_stream_id": "x"})
+    await channel.send_delta("chat-1", "", {"_stream_end": True, "_stream_id": "x"})
+
+    assert mock_ws.send.await_count == 2
+    d1 = json.loads(mock_ws.send.call_args_list[0][0][0])
+    end = json.loads(mock_ws.send.call_args_list[1][0][0])
+    assert d1 == {"event": "delta", "text": "ab", "stream_id": "x"}
+    assert end == {"event": "stream_end", "stream_id": "x"}
+
+
+@pytest.mark.asyncio
 async def test_send_non_connection_closed_exception_is_raised() -> None:
     bus = MagicMock()
     channel = WebSocketChannel({"enabled": True, "allowFrom": ["*"]}, bus)

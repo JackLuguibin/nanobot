@@ -82,6 +82,9 @@ class WebSocketConfig(Base):
     websocket_requires_token: bool = True
     allow_from: list[str] = Field(default_factory=lambda: ["*"])
     streaming: bool = True
+    # When > 0, coalesce outgoing stream text into delta frames of at most this many Unicode scalars
+    # per frame (remainder is flushed on stream_end). When 0, pass through provider chunks unchanged.
+    delta_chunk_chars: int = Field(default=0, ge=0, le=1_048_576)
     max_message_bytes: int = Field(default=1_048_576, ge=1024, le=16_777_216)
     ping_interval_s: float = Field(default=20.0, ge=5.0, le=300.0)
     ping_timeout_s: float = Field(default=20.0, ge=5.0, le=300.0)
@@ -210,6 +213,7 @@ class WebSocketChannel(BaseChannel):
         super().__init__(config, bus)
         self.config: WebSocketConfig = config
         self._connections: dict[str, Any] = {}
+        self._delta_buffers: dict[tuple[str, Any], str] = {}
         self._issued_tokens: dict[str, float] = {}
         self._stop_event: asyncio.Event | None = None
         self._server_task: asyncio.Task[None] | None = None
@@ -440,6 +444,7 @@ class WebSocketChannel(BaseChannel):
         finally:
             if self._connections.get(chat_id) is connection:
                 self._connections.pop(chat_id, None)
+                self._clear_delta_buffers_for_chat(chat_id)
 
     async def stop(self) -> None:
         if not self._running:
@@ -454,7 +459,17 @@ class WebSocketChannel(BaseChannel):
                 logger.warning("websocket: server task error during shutdown: {}", e)
             self._server_task = None
         self._connections.clear()
+        self._delta_buffers.clear()
         self._issued_tokens.clear()
+
+    @staticmethod
+    def _delta_buffer_key(chat_id: str, metadata: dict[str, Any]) -> tuple[str, Any]:
+        return (chat_id, metadata.get("_stream_id"))
+
+    def _clear_delta_buffers_for_chat(self, chat_id: str) -> None:
+        for key in list(self._delta_buffers):
+            if key[0] == chat_id:
+                self._delta_buffers.pop(key, None)
 
     async def _safe_send(self, chat_id: str, raw: str, *, label: str = "") -> None:
         """Send a raw frame, cleaning up dead connections on ConnectionClosed."""
@@ -465,6 +480,7 @@ class WebSocketChannel(BaseChannel):
             await connection.send(raw)
         except ConnectionClosed:
             self._connections.pop(chat_id, None)
+            self._clear_delta_buffers_for_chat(chat_id)
             logger.warning("websocket{}connection gone for chat_id={}", label, chat_id)
         except Exception as e:
             logger.error("websocket{}send failed: {}", label, e)
@@ -511,6 +527,18 @@ class WebSocketChannel(BaseChannel):
                 payload["reasoning_content"] = rc
         await self._safe_send(msg.chat_id, json.dumps(payload, ensure_ascii=False), label=" ")
 
+    async def _send_delta_frame(
+        self,
+        chat_id: str,
+        text: str,
+        meta: dict[str, Any],
+    ) -> None:
+        body: dict[str, Any] = {"event": "delta", "text": text}
+        if meta.get("_stream_id") is not None:
+            body["stream_id"] = meta["_stream_id"]
+        raw = json.dumps(body, ensure_ascii=False)
+        await self._safe_send(chat_id, raw, label=" stream ")
+
     async def send_delta(
         self,
         chat_id: str,
@@ -520,14 +548,34 @@ class WebSocketChannel(BaseChannel):
         if self._connections.get(chat_id) is None:
             return
         meta = metadata or {}
+        chunk = self.config.delta_chunk_chars
+
         if meta.get("_stream_end"):
+            if chunk > 0:
+                key = self._delta_buffer_key(chat_id, meta)
+                remainder = self._delta_buffers.pop(key, "") + delta
+                while len(remainder) >= chunk:
+                    await self._send_delta_frame(chat_id, remainder[:chunk], meta)
+                    remainder = remainder[chunk:]
+                if remainder:
+                    await self._send_delta_frame(chat_id, remainder, meta)
+            else:
+                key = self._delta_buffer_key(chat_id, meta)
+                self._delta_buffers.pop(key, None)
             body: dict[str, Any] = {"event": "stream_end"}
-        else:
-            body = {
-                "event": "delta",
-                "text": delta,
-            }
-        if meta.get("_stream_id") is not None:
-            body["stream_id"] = meta["_stream_id"]
-        raw = json.dumps(body, ensure_ascii=False)
-        await self._safe_send(chat_id, raw, label=" stream ")
+            if meta.get("_stream_id") is not None:
+                body["stream_id"] = meta["_stream_id"]
+            raw = json.dumps(body, ensure_ascii=False)
+            await self._safe_send(chat_id, raw, label=" stream ")
+            return
+
+        if chunk <= 0:
+            await self._send_delta_frame(chat_id, delta, meta)
+            return
+
+        key = self._delta_buffer_key(chat_id, meta)
+        buf = self._delta_buffers.get(key, "") + delta
+        while len(buf) >= chunk:
+            await self._send_delta_frame(chat_id, buf[:chunk], meta)
+            buf = buf[chunk:]
+        self._delta_buffers[key] = buf

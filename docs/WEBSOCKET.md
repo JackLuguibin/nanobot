@@ -183,6 +183,7 @@ All fields go under `channels.websocket` in `config.json`.
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `streaming` | bool | `true` | Enable streaming mode. The agent sends `delta` + `stream_end` frames instead of a single `message`. |
+| `deltaChunkChars` | int | `0` | Max Unicode characters per `delta` `text` field. Incoming model chunks are merged and re-split to this size; remainder is sent before `stream_end`. `0` keeps the provider’s chunk sizes unchanged. |
 
 ### Keep-alive
 

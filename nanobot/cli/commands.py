@@ -593,6 +593,10 @@ def serve(
         unified_session=runtime_config.agents.defaults.unified_session,
         disabled_skills=runtime_config.agents.defaults.disabled_skills,
         session_ttl_minutes=runtime_config.agents.defaults.session_ttl_minutes,
+        auto_wiki_archive_at_context_fraction=runtime_config.agents.defaults.auto_wiki_archive_at_context_fraction,
+        auto_wiki_ingest_interval_minutes=runtime_config.agents.defaults.auto_wiki_ingest_interval_minutes,
+        auto_wiki_lint_interval_minutes=runtime_config.agents.defaults.auto_wiki_lint_interval_minutes,
+        auto_wiki_lint_after_wiki_write=runtime_config.agents.defaults.auto_wiki_lint_after_wiki_write,
     )
 
     model_name = runtime_config.agents.defaults.model
@@ -687,6 +691,10 @@ def gateway(
         unified_session=config.agents.defaults.unified_session,
         disabled_skills=config.agents.defaults.disabled_skills,
         session_ttl_minutes=config.agents.defaults.session_ttl_minutes,
+        auto_wiki_archive_at_context_fraction=config.agents.defaults.auto_wiki_archive_at_context_fraction,
+        auto_wiki_ingest_interval_minutes=config.agents.defaults.auto_wiki_ingest_interval_minutes,
+        auto_wiki_lint_interval_minutes=config.agents.defaults.auto_wiki_lint_interval_minutes,
+        auto_wiki_lint_after_wiki_write=config.agents.defaults.auto_wiki_lint_after_wiki_write,
     )
 
     # Set cron callback (needs agent)
@@ -921,6 +929,10 @@ def agent(
         unified_session=config.agents.defaults.unified_session,
         disabled_skills=config.agents.defaults.disabled_skills,
         session_ttl_minutes=config.agents.defaults.session_ttl_minutes,
+        auto_wiki_archive_at_context_fraction=config.agents.defaults.auto_wiki_archive_at_context_fraction,
+        auto_wiki_ingest_interval_minutes=config.agents.defaults.auto_wiki_ingest_interval_minutes,
+        auto_wiki_lint_interval_minutes=config.agents.defaults.auto_wiki_lint_interval_minutes,
+        auto_wiki_lint_after_wiki_write=config.agents.defaults.auto_wiki_lint_after_wiki_write,
     )
     restart_notice = consume_restart_notice_from_env()
     if restart_notice and should_show_cli_restart_notice(restart_notice, session_id):

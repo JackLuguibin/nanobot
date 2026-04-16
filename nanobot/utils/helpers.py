@@ -460,6 +460,7 @@ def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]
         if item.name.endswith(".md") and not item.name.startswith("."):
             _write(item, workspace / item.name)
     _write(tpl / "memory" / "MEMORY.md", workspace / "memory" / "MEMORY.md")
+    _write(tpl / "wiki" / "index.md", workspace / "wiki" / "index.md")
     _write(None, workspace / "memory" / "history.jsonl")
     (workspace / "skills").mkdir(exist_ok=True)
 
@@ -471,9 +472,11 @@ def sync_workspace_templates(workspace: Path, silent: bool = False) -> list[str]
     # Initialize git for memory version control
     try:
         from nanobot.utils.gitstore import GitStore
-        gs = GitStore(workspace, tracked_files=[
-            "SOUL.md", "USER.md", "memory/MEMORY.md",
-        ])
+        gs = GitStore(
+            workspace,
+            tracked_files=["SOUL.md", "USER.md", "memory/MEMORY.md"],
+            track_wiki_markdown=True,
+        )
         gs.init()
     except Exception:
         logger.warning("Failed to initialize git store for {}", workspace)

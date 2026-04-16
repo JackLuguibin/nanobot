@@ -35,12 +35,20 @@ from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import AgentDefaults
 from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
-from nanobot.utils.helpers import image_placeholder_text, truncate_text as truncate_text_fn
+from nanobot.utils.helpers import (
+    estimate_prompt_tokens_chain,
+    image_placeholder_text,
+    truncate_text as truncate_text_fn,
+)
 from nanobot.utils.runtime import EMPTY_FINAL_RESPONSE_MESSAGE
 
 if TYPE_CHECKING:
     from nanobot.config.schema import ChannelsConfig, ExecToolConfig, WebToolsConfig
     from nanobot.cron.service import CronService
+
+# Distinguish "caller omitted auto_wiki_archive_at_context_fraction" (use schema default)
+# from "caller passed None" (disable; matches AgentDefaults field semantics).
+_AGENT_LOOP_UNSET = object()
 
 
 UNIFIED_SESSION_KEY = "unified:default"
@@ -153,10 +161,32 @@ class AgentLoop:
         hooks: list[AgentHook] | None = None,
         unified_session: bool = False,
         disabled_skills: list[str] | None = None,
+        auto_wiki_archive_at_context_fraction: Any = _AGENT_LOOP_UNSET,
+        auto_wiki_ingest_interval_minutes: Any = _AGENT_LOOP_UNSET,
+        auto_wiki_lint_interval_minutes: Any = _AGENT_LOOP_UNSET,
+        auto_wiki_lint_after_wiki_write: Any = _AGENT_LOOP_UNSET,
     ):
         from nanobot.config.schema import ExecToolConfig, WebToolsConfig
 
         defaults = AgentDefaults()
+        if auto_wiki_archive_at_context_fraction is _AGENT_LOOP_UNSET:
+            self.auto_wiki_archive_at_context_fraction = (
+                defaults.auto_wiki_archive_at_context_fraction
+            )
+        else:
+            self.auto_wiki_archive_at_context_fraction = auto_wiki_archive_at_context_fraction
+        if auto_wiki_ingest_interval_minutes is _AGENT_LOOP_UNSET:
+            self.auto_wiki_ingest_interval_minutes = defaults.auto_wiki_ingest_interval_minutes
+        else:
+            self.auto_wiki_ingest_interval_minutes = auto_wiki_ingest_interval_minutes
+        if auto_wiki_lint_interval_minutes is _AGENT_LOOP_UNSET:
+            self.auto_wiki_lint_interval_minutes = defaults.auto_wiki_lint_interval_minutes
+        else:
+            self.auto_wiki_lint_interval_minutes = auto_wiki_lint_interval_minutes
+        if auto_wiki_lint_after_wiki_write is _AGENT_LOOP_UNSET:
+            self.auto_wiki_lint_after_wiki_write = defaults.auto_wiki_lint_after_wiki_write
+        else:
+            self.auto_wiki_lint_after_wiki_write = auto_wiki_lint_after_wiki_write
         self.bus = bus
         self.channels_config = channels_config
         self.provider = provider
@@ -208,6 +238,7 @@ class AgentLoop:
         self._mcp_connecting = False
         self._active_tasks: dict[str, list[asyncio.Task]] = {}  # session_key -> tasks
         self._background_tasks: list[asyncio.Task] = []
+        self._wiki_automation_task: asyncio.Task | None = None
         self._session_locks: dict[str, asyncio.Lock] = {}
         # Per-session pending queues for mid-turn message injection.
         # When a session has an active task, new messages for that session
@@ -223,7 +254,7 @@ class AgentLoop:
             provider=provider,
             model=self.model,
             sessions=self.sessions,
-            context_window_tokens=context_window_tokens,
+            context_window_tokens=self.context_window_tokens,
             build_messages=self.context.build_messages,
             get_tool_definitions=self.tools.get_definitions,
             max_completion_tokens=provider.generation.max_tokens,
@@ -423,10 +454,41 @@ class AgentLoop:
             logger.error("LLM returned error: {}", (result.final_content or "")[:200])
         return result.final_content, result.tools_used, result.messages, result.stop_reason, result.had_injections
 
+    async def _wiki_automation_loop(self) -> None:
+        """Poll raw/ and optionally run scheduled wiki-lint (gateway / long-running loops)."""
+        from nanobot.llm_wiki.automation import tick_wiki_automation
+
+        while self._running:
+            try:
+                await asyncio.sleep(60)
+            except asyncio.CancelledError:
+                break
+            if not self._running:
+                break
+            try:
+                await tick_wiki_automation(
+                    self,
+                    ingest_interval_minutes=self.auto_wiki_ingest_interval_minutes,
+                    lint_interval_minutes=self.auto_wiki_lint_interval_minutes,
+                )
+            except Exception:
+                logger.exception("Wiki automation tick failed")
+
     async def run(self) -> None:
         """Run the agent loop, dispatching messages as tasks to stay responsive to /stop."""
         self._running = True
         await self._connect_mcp()
+        if self.auto_wiki_ingest_interval_minutes is not None or self.auto_wiki_lint_interval_minutes is not None:
+            self._wiki_automation_task = asyncio.create_task(self._wiki_automation_loop())
+            self._background_tasks.append(self._wiki_automation_task)
+
+            def _drop_wiki_task(t: asyncio.Task) -> None:
+                try:
+                    self._background_tasks.remove(t)
+                except ValueError:
+                    pass
+
+            self._wiki_automation_task.add_done_callback(_drop_wiki_task)
         logger.info("Agent loop started")
 
         while self._running:
@@ -596,7 +658,63 @@ class AgentLoop:
     def stop(self) -> None:
         """Stop the agent loop."""
         self._running = False
+        if self._wiki_automation_task and not self._wiki_automation_task.done():
+            self._wiki_automation_task.cancel()
         logger.info("Agent loop stopping")
+
+    def _estimate_inbound_prompt_tokens(
+        self,
+        session: Session,
+        msg: InboundMessage,
+        pending_summary: str | None,
+    ) -> tuple[int, str]:
+        """Estimate prompt size for the upcoming turn (session history + this inbound message)."""
+        history = session.get_history(max_messages=0)
+        messages = self.context.build_messages(
+            history=history,
+            current_message=msg.content,
+            session_summary=pending_summary,
+            media=msg.media if msg.media else None,
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+        )
+        return estimate_prompt_tokens_chain(
+            self.provider,
+            self.model,
+            messages,
+            self.tools.get_definitions(),
+        )
+
+    async def _maybe_auto_wiki_archive(
+        self,
+        msg: InboundMessage,
+        session: Session,
+        pending_summary: str | None,
+    ) -> OutboundMessage | None:
+        """If configured, run wiki-archive when estimated tokens reach the context fraction threshold."""
+        frac = self.auto_wiki_archive_at_context_fraction
+        if frac is None or frac <= 0:
+            return None
+        if self.context_window_tokens <= 0:
+            return None
+        est, _src = self._estimate_inbound_prompt_tokens(session, msg, pending_summary)
+        threshold = max(1, int(self.context_window_tokens * frac))
+        if est < threshold:
+            return None
+        from datetime import datetime
+
+        from nanobot.command.wiki_archive import run_wiki_archive_for_session
+
+        tail = [{"role": "user", "content": msg.content, "timestamp": datetime.now().isoformat()}]
+        return await run_wiki_archive_for_session(
+            self,
+            session,
+            msg,
+            append_transcript_messages=tail,
+            brief_success=True,
+            estimated_tokens=est,
+            threshold_tokens=threshold,
+        )
 
     async def _process_message(
         self,
@@ -661,6 +779,12 @@ class AgentLoop:
         ctx = CommandContext(msg=msg, session=session, key=key, raw=raw, loop=self)
         if result := await self.commands.dispatch(ctx):
             return result
+
+        frac = self.auto_wiki_archive_at_context_fraction
+        if frac is not None and frac > 0:
+            auto_note = await self._maybe_auto_wiki_archive(msg, session, pending)
+            if auto_note is not None:
+                await self.bus.publish_outbound(auto_note)
 
         await self.consolidator.maybe_consolidate_by_tokens(session)
 

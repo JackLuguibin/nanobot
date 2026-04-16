@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
+from datetime import datetime
 
 from nanobot import __version__
+from nanobot.agent.memory import MemoryStore
 from nanobot.bus.events import OutboundMessage
 from nanobot.command.router import CommandContext, CommandRouter
 from nanobot.utils.helpers import build_status_content
@@ -87,6 +89,24 @@ async def cmd_status(ctx: CommandContext) -> OutboundMessage:
         ),
         metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
     )
+
+
+async def cmd_wiki_archive(ctx: CommandContext) -> OutboundMessage:
+    """Summarize the current session window into ``wiki/``, then replace history with the index."""
+    from nanobot.command.wiki_archive import run_wiki_archive_for_session
+
+    loop = ctx.loop
+    msg = ctx.msg
+    session = ctx.session or loop.sessions.get_or_create(ctx.key)
+    out = await run_wiki_archive_for_session(
+        loop,
+        session,
+        msg,
+        append_transcript_messages=None,
+        brief_success=False,
+    )
+    assert out is not None
+    return out
 
 
 async def cmd_new(ctx: CommandContext) -> OutboundMessage:
@@ -303,6 +323,135 @@ async def cmd_dream_restore(ctx: CommandContext) -> OutboundMessage:
     )
 
 
+async def cmd_wiki_ingest(ctx: CommandContext) -> OutboundMessage:
+    """Read text files from ``raw/`` and merge structured notes into ``wiki/``."""
+    from nanobot.command.wiki_ingest import run_wiki_ingest
+    from nanobot.llm_wiki.automation import maybe_lint_after_wiki_write
+    from nanobot.llm_wiki.raw import ensure_raw_directories, list_raw_source_files
+
+    loop = ctx.loop
+    msg = ctx.msg
+    store = loop.consolidator.store
+    ws = store.workspace
+    ensure_raw_directories(ws)
+    paths = list_raw_source_files(ws)
+    raw_arg = (ctx.args or "").strip()
+    parts = raw_arg.split(None, 1)
+    force = bool(parts and parts[0].lower() in ("force", "--force"))
+    arg = parts[1].strip() if force and len(parts) > 1 else ("" if force else raw_arg)
+    if arg:
+        paths = [p for p in paths if arg.lower() in p.lower()]
+    if not paths:
+        return OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content=(
+                "No ingestable text files (.md/.txt, etc.) under `raw/sources/`, `raw/articles/`, "
+                "`raw/papers/`, or `raw/transcripts/`. "
+                "Add sources there (immutable), or use `/wiki-ingest <keyword>` to filter by path."
+            ),
+            metadata=dict(msg.metadata or {}),
+        )
+
+    result = await run_wiki_ingest(loop, workspace=ws, path_filter=arg, force_refresh=force)
+    if not result.ok:
+        return OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content=result.message,
+            metadata=dict(msg.metadata or {}),
+        )
+    maybe_lint_after_wiki_write(
+        store,
+        enabled=getattr(loop, "auto_wiki_lint_after_wiki_write", False),
+        source="wiki-ingest",
+    )
+    return OutboundMessage(
+        channel=msg.channel,
+        chat_id=msg.chat_id,
+        content=result.message,
+        metadata=dict(msg.metadata or {}),
+    )
+
+
+async def cmd_wiki_lint(ctx: CommandContext) -> OutboundMessage:
+    """Scan wiki for broken wikilinks and orphan pages."""
+    from nanobot.llm_wiki.lint import format_wiki_lint_message, run_wiki_lint
+
+    store = ctx.loop.consolidator.store
+    report = run_wiki_lint(store.workspace)
+    text = format_wiki_lint_message(report)
+    summary = f"{len(report.dead_links)} dead link(s), {len(report.orphan_pages)} orphan(s)"
+    store.append_wiki_log_line("wiki-lint", summary)
+    return OutboundMessage(
+        channel=ctx.msg.channel,
+        chat_id=ctx.msg.chat_id,
+        content=text,
+        metadata={**dict(ctx.msg.metadata or {}), "render_as": "text"},
+    )
+
+
+async def cmd_wiki_save_answer(ctx: CommandContext) -> OutboundMessage:
+    """Save the last assistant message to ``wiki/queries/<slug>.md``."""
+    from nanobot.utils.helpers import strip_think
+
+    loop = ctx.loop
+    msg = ctx.msg
+    session = ctx.session or loop.sessions.get_or_create(ctx.key)
+    store = loop.consolidator.store
+
+    assistant_text = ""
+    for m in reversed(session.messages or []):
+        if m.get("role") != "assistant":
+            continue
+        raw = m.get("content")
+        if isinstance(raw, str) and raw.strip():
+            assistant_text = strip_think(raw).strip()
+            break
+    if not assistant_text:
+        return OutboundMessage(
+            channel=msg.channel,
+            chat_id=msg.chat_id,
+            content="No previous assistant reply to save.",
+            metadata=dict(msg.metadata or {}),
+        )
+
+    arg = (ctx.args or "").strip()
+    if arg:
+        safe = MemoryStore.normalize_wiki_category_slug(arg)
+    else:
+        safe = f"answer-{datetime.now().strftime('%Y%m%d-%H%M')}"
+
+    qdir = store.wiki_dir / "queries"
+    qdir.mkdir(parents=True, exist_ok=True)
+    path = qdir / f"{safe}.md"
+    when = datetime.now().strftime("%Y-%m-%d %H:%M")
+    new_section = f"## {when}\n\n{assistant_text}\n"
+    if path.is_file():
+        existing = path.read_text(encoding="utf-8", errors="replace").rstrip()
+        content = existing + "\n\n---\n\n" + new_section
+    else:
+        content = (
+            "# Saved answer\n\n"
+            "> Captured with `/wiki-save-answer`.\n\n"
+            + new_section
+        )
+    path.write_text(content, encoding="utf-8")
+
+    rel = f"queries/{safe}.md"
+    store.append_wiki_log_line("wiki-save-answer", rel, when=when)
+    git = store.git
+    if git.is_initialized():
+        git.auto_commit(f"wiki-save-answer: {safe}")
+
+    return OutboundMessage(
+        channel=msg.channel,
+        chat_id=msg.chat_id,
+        content=f"Saved to `wiki/{rel}`.",
+        metadata=dict(msg.metadata or {}),
+    )
+
+
 async def cmd_help(ctx: CommandContext) -> OutboundMessage:
     """Return available slash commands."""
     return OutboundMessage(
@@ -324,6 +473,10 @@ def build_help_text() -> str:
         "/dream — Manually trigger Dream consolidation",
         "/dream-log — Show what the last Dream changed",
         "/dream-restore — Revert memory to a previous state",
+        "/wiki-archive — Write the current session to wiki and replace session context with the index",
+        "/wiki-ingest — Import text from raw/sources/ into wiki (`<keyword>` path filter; `force` re-runs if raw unchanged)",
+        "/wiki-lint — Report broken [[wikilinks]] and orphan pages in wiki/",
+        "/wiki-save-answer — Save the last assistant reply under wiki/queries/ (optional `/wiki-save-answer <slug>`)",
         "/help — Show available commands",
     ]
     return "\n".join(lines)
@@ -341,4 +494,10 @@ def register_builtin_commands(router: CommandRouter) -> None:
     router.prefix("/dream-log ", cmd_dream_log)
     router.exact("/dream-restore", cmd_dream_restore)
     router.prefix("/dream-restore ", cmd_dream_restore)
+    router.exact("/wiki-archive", cmd_wiki_archive)
+    router.exact("/wiki-ingest", cmd_wiki_ingest)
+    router.prefix("/wiki-ingest ", cmd_wiki_ingest)
+    router.exact("/wiki-lint", cmd_wiki_lint)
+    router.exact("/wiki-save-answer", cmd_wiki_save_answer)
+    router.prefix("/wiki-save-answer ", cmd_wiki_save_answer)
     router.exact("/help", cmd_help)

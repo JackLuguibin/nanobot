@@ -119,7 +119,7 @@ def test_parse_inbound_invalid_json_falls_back_to_raw_string() -> None:
         ('{"content": ""}', None),           # empty string content
         ('{"content": 123}', None),          # non-string content
         ('{"content": "  "}', None),         # whitespace-only content
-        ('["hello"]', '["hello"]'),           # JSON array: not a dict, treated as plain text
+        ('["hello"]', None),                  # JSON array: ignored (not a content object)
         ('{"unknown_key": "val"}', None),    # unrecognized key
         ('{"content": null}', None),         # null content
     ],
@@ -168,6 +168,21 @@ def test_issue_route_secret_matches_bearer_and_header() -> None:
     assert _issue_route_secret_matches(x_headers, secret) is True
     wrong = Headers([("Authorization", "Bearer other")])
     assert _issue_route_secret_matches(wrong, secret) is False
+
+
+def test_optional_handshake_does_not_consume_issued_token() -> None:
+    """When the socket does not require a token, do not burn single-use issued tokens."""
+    bus = MagicMock()
+    channel = WebSocketChannel(
+        {"enabled": True, "allowFrom": ["*"], "websocketRequiresToken": False},
+        bus,
+    )
+    tok = "nbwt_keepme"
+    channel._issued_tokens[tok] = time.monotonic() + 300.0
+    conn = MagicMock()
+    query = {"token": [tok], "client_id": ["c"]}
+    assert channel._authorize_websocket_handshake(conn, query) is None
+    assert tok in channel._issued_tokens
 
 
 def test_issue_route_secret_matches_empty_secret() -> None:
@@ -258,7 +273,10 @@ async def test_send_removes_connection_on_connection_closed() -> None:
 @pytest.mark.asyncio
 async def test_send_delta_removes_connection_on_connection_closed() -> None:
     bus = MagicMock()
-    channel = WebSocketChannel({"enabled": True, "allowFrom": ["*"], "streaming": True}, bus)
+    channel = WebSocketChannel(
+        {"enabled": True, "allowFrom": ["*"], "streaming": True, "deltaChunkChars": 0},
+        bus,
+    )
     mock_ws = AsyncMock()
     mock_ws.send.side_effect = ConnectionClosed(Close(1006, ""), Close(1006, ""), True)
     channel._connections["chat-1"] = mock_ws
@@ -369,6 +387,32 @@ async def test_send_delta_chunk_flushes_remainder_on_stream_end() -> None:
     end = json.loads(mock_ws.send.call_args_list[1][0][0])
     assert d1 == {"event": "delta", "text": "ab", "stream_id": "x"}
     assert end == {"event": "stream_end", "stream_id": "x"}
+
+
+@pytest.mark.asyncio
+async def test_send_delta_max_buffer_flushes_when_over_cap() -> None:
+    bus = MagicMock()
+    channel = WebSocketChannel(
+        {
+            "enabled": True,
+            "allowFrom": ["*"],
+            "streaming": True,
+            "deltaChunkChars": 2,
+            "maxDeltaBufferChars": 4,
+        },
+        bus,
+    )
+    mock_ws = AsyncMock()
+    channel._connections["c1"] = mock_ws
+    await channel.send_delta("c1", "abcdef", {"_stream_delta": True, "_stream_id": "s"})
+    await channel.send_delta("c1", "", {"_stream_end": True, "_stream_id": "s"})
+    deltas = [
+        json.loads(c[0][0])
+        for c in mock_ws.send.call_args_list
+        if json.loads(c[0][0]).get("event") == "delta"
+    ]
+    assert "".join(d["text"] for d in deltas) == "abcdef"
+    assert json.loads(mock_ws.send.call_args_list[-1][0][0])["event"] == "stream_end"
 
 
 @pytest.mark.asyncio
@@ -528,7 +572,7 @@ async def test_http_route_issues_token_then_websocket_requires_it(bus: MagicMock
 @pytest.mark.asyncio
 async def test_end_to_end_server_pushes_streaming_deltas_to_client(bus: MagicMock) -> None:
     port = 29880
-    channel = _ch(bus, port=port, streaming=True)
+    channel = _ch(bus, port=port, streaming=True, deltaChunkChars=0)
 
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)
@@ -794,8 +838,8 @@ async def test_resume_chat_id_disabled_ignores_query(bus: MagicMock) -> None:
 
 @pytest.mark.asyncio
 async def test_second_connection_same_chat_id_replaces_first(bus: MagicMock) -> None:
-    port = 29913
-    channel = _ch(bus, port=port, streaming=True)
+    port = 29930
+    channel = _ch(bus, port=port, streaming=True, deltaChunkChars=0)
 
     server_task = asyncio.create_task(channel.start())
     await asyncio.sleep(0.3)

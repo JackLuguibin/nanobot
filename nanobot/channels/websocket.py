@@ -69,6 +69,8 @@ class WebSocketConfig(Base):
       streaming completes when applicable, or on ``event: "message"`` as field ``reasoning_content``,
       when global ``channels.sendReasoningContent`` / ``send_reasoning_content`` is true (default).
       The same global flag controls whether other channels receive reasoning on outbound messages.
+    - ``max_delta_buffer_chars``: When ``delta_chunk_chars`` > 0, caps buffered stream text per stream;
+      overflow is flushed as extra delta frames before ``stream_end``. ``0`` means no cap.
     """
 
     enabled: bool = False
@@ -84,7 +86,10 @@ class WebSocketConfig(Base):
     streaming: bool = True
     # When > 0, coalesce outgoing stream text into delta frames of at most this many Unicode scalars
     # per frame (remainder is flushed on stream_end). When 0, pass through provider chunks unchanged.
-    delta_chunk_chars: int = Field(default=20, ge=0, le=1_048_576)
+    delta_chunk_chars: int = Field(default=5, ge=0, le=1_048_576)
+    # When > 0 and delta_chunk_chars > 0, flush buffered stream text early if buffer exceeds this size
+    # (Unicode scalars) to cap memory before stream_end. When 0, no limit.
+    max_delta_buffer_chars: int = Field(default=2_097_152, ge=0, le=16_777_216)
     max_message_bytes: int = Field(default=1_048_576, ge=1024, le=16_777_216)
     ping_interval_s: float = Field(default=20.0, ge=5.0, le=300.0)
     ping_timeout_s: float = Field(default=20.0, ge=5.0, le=300.0)
@@ -172,7 +177,7 @@ def _parse_inbound_payload(raw: str) -> str | None:
     text = raw.strip()
     if not text:
         return None
-    if text.startswith("{"):
+    if text.startswith("{") or text.startswith("["):
         try:
             data = json.loads(text)
         except json.JSONDecodeError:
@@ -182,6 +187,11 @@ def _parse_inbound_payload(raw: str) -> str | None:
                 value = data.get(key)
                 if isinstance(value, str) and value.strip():
                     return value
+            return None
+        if isinstance(data, list):
+            logger.debug(
+                "websocket: ignoring JSON array inbound frame (expected object with content/text/message)"
+            )
             return None
         return None
     return text
@@ -303,11 +313,17 @@ class WebSocketChannel(BaseChannel):
                 return None
             return connection.respond(401, "Unauthorized")
 
-        if supplied:
-            self._take_issued_token_if_valid(supplied)
+        # Optional auth: do not consume issued tokens — clients may omit token or pass one without
+        # invalidating single-use tickets when the socket does not require them.
         return None
 
     async def start(self) -> None:
+        """Bind and run the WebSocket server until :meth:`stop` is called.
+
+        This coroutine **blocks** until shutdown (it awaits the server task). Start it with
+        ``asyncio.create_task(channel.start())`` (or equivalent) so it does not stall the
+        event loop, then await :meth:`stop` when tearing down.
+        """
         self._running = True
         self._stop_event = asyncio.Event()
 
@@ -472,7 +488,11 @@ class WebSocketChannel(BaseChannel):
                 self._delta_buffers.pop(key, None)
 
     async def _safe_send(self, chat_id: str, raw: str, *, label: str = "") -> None:
-        """Send a raw frame, cleaning up dead connections on ConnectionClosed."""
+        """Send a raw frame, cleaning up dead connections on ConnectionClosed.
+
+        ``ConnectionClosed`` is not re-raised: the socket is gone and ChannelManager retries
+        would not help; dropping the mapping matches fire-and-forget WS semantics.
+        """
         connection = self._connections.get(chat_id)
         if connection is None:
             return
@@ -575,6 +595,15 @@ class WebSocketChannel(BaseChannel):
 
         key = self._delta_buffer_key(chat_id, meta)
         buf = self._delta_buffers.get(key, "") + delta
+        cap = self.config.max_delta_buffer_chars
+        if cap > 0:
+            while len(buf) > cap:
+                if len(buf) >= chunk:
+                    await self._send_delta_frame(chat_id, buf[:chunk], meta)
+                    buf = buf[chunk:]
+                else:
+                    await self._send_delta_frame(chat_id, buf, meta)
+                    buf = ""
         while len(buf) >= chunk:
             await self._send_delta_frame(chat_id, buf[:chunk], meta)
             buf = buf[chunk:]

@@ -28,6 +28,8 @@ def _ch(bus: Any, port: int, **kw: Any) -> WebSocketChannel:
         "port": port,
         "path": "/",
         "websocketRequiresToken": False,
+        # Integration tests assert per-send_delta frames; disable coalescing (see WebSocketConfig.delta_chunk_chars).
+        "deltaChunkChars": 0,
     }
     cfg.update(kw)
     return WebSocketChannel(cfg, bus)

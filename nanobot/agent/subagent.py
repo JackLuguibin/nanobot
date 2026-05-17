@@ -19,6 +19,7 @@ from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.bus.events import InboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.config.schema import AgentDefaults, ToolsConfig
+from nanobot.contents.message_roles import ROLES
 from nanobot.providers.base import LLMProvider
 from nanobot.utils.prompt_templates import render_template
 
@@ -194,8 +195,8 @@ class SubagentManager:
             tools = self._build_tools()
             system_prompt = self._build_subagent_prompt()
             messages: list[dict[str, Any]] = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": task},
+                {"role": ROLES.SYSTEM, "content": system_prompt},
+                {"role": ROLES.USER, "content": task},
             ]
 
             sess_key = origin.get("session_key")

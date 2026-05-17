@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING
 
 from loguru import logger
 
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.prompt_templates import render_template
 
 if TYPE_CHECKING:
@@ -54,8 +55,8 @@ async def evaluate_response(
     try:
         llm_response = await provider.chat_with_retry(
             messages=[
-                {"role": "system", "content": render_template("agent/evaluator.md", part="system")},
-                {"role": "user", "content": render_template(
+                {"role": ROLES.SYSTEM, "content": render_template("agent/evaluator.md", part="system")},
+                {"role": ROLES.USER, "content": render_template(
                     "agent/evaluator.md",
                     part="user",
                     task_context=task_context,

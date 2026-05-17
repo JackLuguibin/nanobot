@@ -75,6 +75,7 @@ class SafeFileHistory(FileHistory):
 from nanobot.cli.stream import StreamRenderer, ThinkingSpinner
 from nanobot.config.paths import get_workspace_path, is_default_workspace
 from nanobot.config.schema import Config
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.helpers import sync_workspace_templates
 from nanobot.utils.restart import (
     consume_restart_notice_from_env,
@@ -749,7 +750,7 @@ def _run_gateway(
             extra: dict[str, Any] = {"_channel_delivery": True}
             if msg.media:
                 extra["media"] = list(msg.media)
-            session.add_message("assistant", msg.content, **extra)
+            session.add_message(ROLES.ASSISTANT, msg.content, **extra)
             session_manager.save(session)
         await bus.publish_outbound(msg)
 

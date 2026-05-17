@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from nanobot.contents.message_roles import ROLES
+
 
 def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
     """Convert Chat Completions messages to Responses API input items.
@@ -20,18 +22,18 @@ def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str
         role = msg.get("role")
         content = msg.get("content")
 
-        if role == "system":
+        if role == ROLES.SYSTEM:
             system_prompt = content if isinstance(content, str) else ""
             continue
 
-        if role == "user":
+        if role == ROLES.USER:
             input_items.append(convert_user_message(content))
             continue
 
-        if role == "assistant":
+        if role == ROLES.ASSISTANT:
             if isinstance(content, str) and content:
                 input_items.append({
-                    "type": "message", "role": "assistant",
+                    "type": "message", "role": ROLES.ASSISTANT,
                     "content": [{"type": "output_text", "text": content}],
                     "status": "completed", "id": f"msg_{idx}",
                 })
@@ -47,7 +49,7 @@ def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str
                 })
             continue
 
-        if role == "tool":
+        if role == ROLES.TOOL:
             call_id, _ = split_tool_call_id(msg.get("tool_call_id"))
             output_text = content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)
             input_items.append({"type": "function_call_output", "call_id": call_id, "output": output_text})
@@ -62,7 +64,7 @@ def convert_user_message(content: Any) -> dict[str, Any]:
     ``image_url`` blocks -> ``input_image``.
     """
     if isinstance(content, str):
-        return {"role": "user", "content": [{"type": "input_text", "text": content}]}
+        return {"role": ROLES.USER, "content": [{"type": "input_text", "text": content}]}
     if isinstance(content, list):
         converted: list[dict[str, Any]] = []
         for item in content:
@@ -75,8 +77,8 @@ def convert_user_message(content: Any) -> dict[str, Any]:
                 if url:
                     converted.append({"type": "input_image", "image_url": url, "detail": "auto"})
         if converted:
-            return {"role": "user", "content": converted}
-    return {"role": "user", "content": [{"type": "input_text", "text": ""}]}
+            return {"role": ROLES.USER, "content": converted}
+    return {"role": ROLES.USER, "content": [{"type": "input_text", "text": ""}]}
 
 
 def convert_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

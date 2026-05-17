@@ -14,6 +14,7 @@ from loguru import logger
 
 from nanobot.agent.hook import AgentHook, AgentHookContext
 from nanobot.agent.tools.registry import ToolRegistry
+from nanobot.contents.message_roles import ROLES
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.utils.helpers import (
     IncrementalThinkExtractor,
@@ -131,8 +132,8 @@ class AgentRunner:
         for injection in injections:
             if (
                 messages
-                and injection.get("role") == "user"
-                and messages[-1].get("role") == "user"
+                and injection.get("role") == ROLES.USER
+                and messages[-1].get("role") == ROLES.USER
             ):
                 merged = dict(messages[-1])
                 merged["content"] = cls._merge_message_content(
@@ -217,12 +218,12 @@ class AgentRunner:
             return []
         injected_messages: list[dict[str, Any]] = []
         for item in items:
-            if isinstance(item, dict) and item.get("role") == "user" and "content" in item:
+            if isinstance(item, dict) and item.get("role") == ROLES.USER and "content" in item:
                 injected_messages.append(item)
                 continue
             text = getattr(item, "content", str(item))
             if text.strip():
-                injected_messages.append({"role": "user", "content": text})
+                injected_messages.append({"role": ROLES.USER, "content": text})
         if len(injected_messages) > _MAX_INJECTIONS_PER_TURN:
             dropped = len(injected_messages) - _MAX_INJECTIONS_PER_TURN
             logger.warning(
@@ -333,7 +334,7 @@ class AgentRunner:
                 completed_tool_results: list[dict[str, Any]] = []
                 for tool_call, result in zip(response.tool_calls, results):
                     tool_message = {
-                        "role": "tool",
+                        "role": ROLES.TOOL,
                         "tool_call_id": tool_call.id,
                         "name": tool_call.name,
                         "content": self._normalize_tool_result(
@@ -975,7 +976,7 @@ class AgentRunner:
             return
         if (
             messages
-            and messages[-1].get("role") == "assistant"
+            and messages[-1].get("role") == ROLES.ASSISTANT
             and not messages[-1].get("tool_calls")
         ):
             if messages[-1].get("content") == content:
@@ -986,7 +987,7 @@ class AgentRunner:
 
     @staticmethod
     def _append_model_error_placeholder(messages: list[dict[str, Any]]) -> None:
-        if messages and messages[-1].get("role") == "assistant" and not messages[-1].get("tool_calls"):
+        if messages and messages[-1].get("role") == ROLES.ASSISTANT and not messages[-1].get("tool_calls"):
             return
         messages.append(build_assistant_message(_PERSISTED_MODEL_ERROR_PLACEHOLDER))
 
@@ -1026,11 +1027,11 @@ class AgentRunner:
         updated: list[dict[str, Any]] | None = None
         for idx, msg in enumerate(messages):
             role = msg.get("role")
-            if role == "assistant":
+            if role == ROLES.ASSISTANT:
                 for tc in msg.get("tool_calls") or []:
                     if isinstance(tc, dict) and tc.get("id"):
                         declared.add(str(tc["id"]))
-            if role == "tool":
+            if role == ROLES.TOOL:
                 tid = msg.get("tool_call_id")
                 if tid and str(tid) not in declared:
                     if updated is None:
@@ -1052,7 +1053,7 @@ class AgentRunner:
         fulfilled: set[str] = set()
         for idx, msg in enumerate(messages):
             role = msg.get("role")
-            if role == "assistant":
+            if role == ROLES.ASSISTANT:
                 for tc in msg.get("tool_calls") or []:
                     if isinstance(tc, dict) and tc.get("id"):
                         name = ""
@@ -1060,7 +1061,7 @@ class AgentRunner:
                         if isinstance(func, dict):
                             name = func.get("name", "")
                         declared.append((idx, str(tc["id"]), name))
-            elif role == "tool":
+            elif role == ROLES.TOOL:
                 tid = msg.get("tool_call_id")
                 if tid:
                     fulfilled.add(str(tid))
@@ -1073,10 +1074,10 @@ class AgentRunner:
         offset = 0
         for assistant_idx, call_id, name in missing:
             insert_at = assistant_idx + 1 + offset
-            while insert_at < len(updated) and updated[insert_at].get("role") == "tool":
+            while insert_at < len(updated) and updated[insert_at].get("role") == ROLES.TOOL:
                 insert_at += 1
             updated.insert(insert_at, {
-                "role": "tool",
+                "role": ROLES.TOOL,
                 "tool_call_id": call_id,
                 "name": name,
                 "content": _BACKFILL_CONTENT,
@@ -1089,7 +1090,7 @@ class AgentRunner:
         """Replace old compactable tool results with one-line summaries."""
         compactable_indices: list[int] = []
         for idx, msg in enumerate(messages):
-            if msg.get("role") == "tool" and msg.get("name") in _COMPACTABLE_TOOLS:
+            if msg.get("role") == ROLES.TOOL and msg.get("name") in _COMPACTABLE_TOOLS:
                 compactable_indices.append(idx)
 
         if len(compactable_indices) <= _MICROCOMPACT_KEEP_RECENT:
@@ -1117,7 +1118,7 @@ class AgentRunner:
     ) -> list[dict[str, Any]]:
         updated = messages
         for idx, message in enumerate(messages):
-            if message.get("role") != "tool":
+            if message.get("role") != ROLES.TOOL:
                 continue
             normalized = self._normalize_tool_result(
                 spec,
@@ -1158,8 +1159,8 @@ class AgentRunner:
         if estimate <= budget:
             return messages
 
-        system_messages = [dict(msg) for msg in messages if msg.get("role") == "system"]
-        non_system = [dict(msg) for msg in messages if msg.get("role") != "system"]
+        system_messages = [dict(msg) for msg in messages if msg.get("role") == ROLES.SYSTEM]
+        non_system = [dict(msg) for msg in messages if msg.get("role") != ROLES.SYSTEM]
         if not non_system:
             return messages
 
@@ -1177,7 +1178,7 @@ class AgentRunner:
 
         if kept:
             for i, message in enumerate(kept):
-                if message.get("role") == "user":
+                if message.get("role") == ROLES.USER:
                     kept = kept[i:]
                     break
             else:
@@ -1185,7 +1186,7 @@ class AgentRunner:
                 # GLM rejects system→assistant (error 1214).  Budget is
                 # intentionally exceeded — oversized beats invalid.
                 for idx in range(len(non_system) - 1, -1, -1):
-                    if non_system[idx].get("role") == "user":
+                    if non_system[idx].get("role") == ROLES.USER:
                         kept = non_system[idx:]
                         break
                 # If no user exists at all, _enforce_role_alternation

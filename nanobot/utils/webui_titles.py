@@ -7,6 +7,7 @@ from typing import Any
 
 from loguru import logger
 
+from nanobot.contents.message_roles import ROLES
 from nanobot.providers.base import LLMProvider
 from nanobot.session.manager import Session, SessionManager
 from nanobot.utils.helpers import truncate_text
@@ -46,9 +47,9 @@ def _title_inputs(session: Session) -> tuple[str, str]:
         content = message.get("content")
         if not isinstance(content, str) or not content.strip():
             continue
-        if role == "user" and not user_text:
+        if role == ROLES.USER and not user_text:
             user_text = content.strip()
-        elif role == "assistant" and not assistant_text:
+        elif role == ROLES.ASSISTANT and not assistant_text:
             assistant_text = content.strip()
         if user_text and assistant_text:
             break
@@ -93,13 +94,13 @@ async def maybe_generate_webui_title(
         response = await provider.chat_with_retry(
             [
                 {
-                    "role": "system",
+                    "role": ROLES.SYSTEM,
                     "content": (
                         "You write short, neutral chat titles. "
                         "Return only the title text."
                     ),
                 },
-                {"role": "user", "content": prompt},
+                {"role": ROLES.USER, "content": prompt},
             ],
             tools=None,
             model=model,

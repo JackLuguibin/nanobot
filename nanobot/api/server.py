@@ -17,6 +17,7 @@ from aiohttp import web
 from loguru import logger
 
 from nanobot.config.paths import get_media_dir
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.helpers import safe_filename
 from nanobot.utils.media_decode import (
     MAX_FILE_SIZE,
@@ -63,7 +64,7 @@ def _chat_completion_response(content: str, model: str) -> dict[str, Any]:
         "choices": [
             {
                 "index": 0,
-                "message": {"role": "assistant", "content": content},
+                "message": {"role": ROLES.ASSISTANT, "content": content},
                 "finish_reason": "stop",
             }
         ],
@@ -115,7 +116,7 @@ def _parse_json_content(body: dict) -> tuple[str, list[str]]:
     if not isinstance(messages, list) or len(messages) != 1:
         raise ValueError("Only a single user message is supported")
     message = messages[0]
-    if not isinstance(message, dict) or message.get("role") != "user":
+    if not isinstance(message, dict) or message.get("role") != ROLES.USER:
         raise ValueError("Only a single user message is supported")
 
     user_content = message.get("content", "")

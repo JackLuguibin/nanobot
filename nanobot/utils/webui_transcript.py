@@ -12,6 +12,7 @@ from typing import Any, Callable
 from loguru import logger
 
 from nanobot.config.paths import get_webui_dir
+from nanobot.contents.message_roles import ROLES
 from nanobot.session.manager import SessionManager
 
 WEBUI_TRANSCRIPT_SCHEMA_VERSION = 3
@@ -133,11 +134,11 @@ def replay_transcript_to_ui_messages(
     def attach_reasoning_chunk(prev: list[dict[str, Any]], chunk: str, idx: int) -> None:
         for i in range(len(prev) - 1, -1, -1):
             candidate = prev[i]
-            if candidate.get("role") == "user":
+            if candidate.get("role") == ROLES.USER:
                 break
             if candidate.get("kind") == "trace":
                 break
-            if candidate.get("role") != "assistant":
+            if candidate.get("role") != ROLES.ASSISTANT:
                 continue
             content = str(candidate.get("content") or "")
             has_answer = len(content) > 0
@@ -160,7 +161,7 @@ def replay_transcript_to_ui_messages(
         prev.append(
             {
                 "id": _new_id("as", idx),
-                "role": "assistant",
+                "role": ROLES.ASSISTANT,
                 "content": "",
                 "isStreaming": True,
                 "reasoning": chunk,
@@ -173,7 +174,7 @@ def replay_transcript_to_ui_messages(
         last = prev[-1] if prev else None
         if not last:
             return None
-        if last.get("role") != "assistant" or last.get("kind") == "trace":
+        if last.get("role") != ROLES.ASSISTANT or last.get("kind") == "trace":
             return None
         if str(last.get("content") or ""):
             return None
@@ -189,7 +190,7 @@ def replay_transcript_to_ui_messages(
 
     def is_reasoning_only_placeholder(m: dict[str, Any]) -> bool:
         return (
-            m.get("role") == "assistant"
+            m.get("role") == ROLES.ASSISTANT
             and m.get("kind") != "trace"
             and not str(m.get("content") or "").strip()
             and bool(m.get("reasoning"))
@@ -212,7 +213,7 @@ def replay_transcript_to_ui_messages(
 
     def stamp_latency(latency_ms: int) -> None:
         for i in range(len(messages) - 1, -1, -1):
-            if messages[i].get("role") == "assistant" and messages[i].get("kind") != "trace":
+            if messages[i].get("role") == ROLES.ASSISTANT and messages[i].get("kind") != "trace":
                 messages[i] = {
                     **messages[i],
                     "latencyMs": latency_ms,
@@ -233,7 +234,7 @@ def replay_transcript_to_ui_messages(
             messages.append(
                 {
                     "id": _new_id("as", idx),
-                    "role": "assistant",
+                    "role": ROLES.ASSISTANT,
                     "createdAt": _ts_base + idx,
                     **extra,
                 },
@@ -253,7 +254,7 @@ def replay_transcript_to_ui_messages(
                 media_att = augment_user_media(paths)
             row: dict[str, Any] = {
                 "id": _new_id("u", idx),
-                "role": "user",
+                "role": ROLES.USER,
                 "content": text_s,
                 "createdAt": _ts_base + idx,
             }
@@ -279,7 +280,7 @@ def replay_transcript_to_ui_messages(
                     messages.append(
                         {
                             "id": buffer_message_id,
-                            "role": "assistant",
+                            "role": ROLES.ASSISTANT,
                             "content": "",
                             "isStreaming": True,
                             "createdAt": _ts_base + idx,
@@ -351,7 +352,7 @@ def replay_transcript_to_ui_messages(
                     messages.append(
                         {
                             "id": _new_id("tr", idx),
-                            "role": "tool",
+                            "role": ROLES.TOOL,
                             "kind": "trace",
                             "content": trace_lines[-1],
                             "traces": trace_lines,

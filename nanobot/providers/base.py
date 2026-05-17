@@ -13,6 +13,7 @@ from typing import Any
 
 from loguru import logger
 
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.helpers import image_placeholder_text
 
 
@@ -178,7 +179,7 @@ class LLMProvider(ABC):
 
             if isinstance(content, str) and not content:
                 clean = dict(msg)
-                clean["content"] = None if (msg.get("role") == "assistant" and msg.get("tool_calls")) else "(empty)"
+                clean["content"] = None if (msg.get("role") == ROLES.ASSISTANT and msg.get("tool_calls")) else "(empty)"
                 result.append(clean)
                 continue
 
@@ -202,7 +203,7 @@ class LLMProvider(ABC):
                     clean = dict(msg)
                     if new_items:
                         clean["content"] = new_items
-                    elif msg.get("role") == "assistant" and msg.get("tool_calls"):
+                    elif msg.get("role") == ROLES.ASSISTANT and msg.get("tool_calls"):
                         clean["content"] = None
                     else:
                         clean["content"] = "(empty)"
@@ -259,7 +260,7 @@ class LLMProvider(ABC):
         sanitized = []
         for msg in messages:
             clean = {k: v for k, v in msg.items() if k in allowed_keys}
-            if clean.get("role") == "assistant" and "content" not in clean:
+            if clean.get("role") == ROLES.ASSISTANT and "content" not in clean:
                 clean["content"] = None
             sanitized.append(clean)
         return sanitized
@@ -386,13 +387,13 @@ class LLMProvider(ABC):
             role = msg.get("role")
             if (
                 merged
-                and role != "system"
-                and role not in ("tool",)
+                and role != ROLES.SYSTEM
+                and role not in (ROLES.TOOL,)
                 and merged[-1].get("role") == role
-                and role in ("user", "assistant")
+                and role in (ROLES.USER, ROLES.ASSISTANT)
             ):
                 prev = merged[-1]
-                if role == "assistant":
+                if role == ROLES.ASSISTANT:
                     prev_has_tools = bool(prev.get("tool_calls"))
                     curr_has_tools = bool(msg.get("tool_calls"))
                     if curr_has_tools:
@@ -410,7 +411,7 @@ class LLMProvider(ABC):
                 merged.append(dict(msg))
 
         last_popped = None
-        while merged and merged[-1].get("role") == "assistant":
+        while merged and merged[-1].get("role") == ROLES.ASSISTANT:
             last_popped = merged.pop()
 
         # If removing trailing assistant messages left only system messages,
@@ -420,10 +421,10 @@ class LLMProvider(ABC):
         if (
             merged
             and last_popped is not None
-            and not any(m.get("role") in ("user", "tool") for m in merged)
+            and not any(m.get("role") in (ROLES.USER, ROLES.TOOL) for m in merged)
         ):
             recovered = dict(last_popped)
-            recovered["role"] = "user"
+            recovered["role"] = ROLES.USER
             merged.append(recovered)
 
         # Safety net: ensure the first non-system message is not a bare
@@ -432,9 +433,9 @@ class LLMProvider(ABC):
         # _snip_history) drops the only user message.  Insert a synthetic
         # user message to keep the sequence valid.
         for i, msg in enumerate(merged):
-            if msg.get("role") != "system":
-                if msg.get("role") == "assistant" and not msg.get("tool_calls"):
-                    merged.insert(i, {"role": "user", "content": _SYNTHETIC_USER_CONTENT})
+            if msg.get("role") != ROLES.SYSTEM:
+                if msg.get("role") == ROLES.ASSISTANT and not msg.get("tool_calls"):
+                    merged.insert(i, {"role": ROLES.USER, "content": _SYNTHETIC_USER_CONTENT})
                 break
 
         return merged

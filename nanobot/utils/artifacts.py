@@ -12,6 +12,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from nanobot.config.paths import get_media_dir
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.helpers import detect_image_mime, ensure_dir
 
 _DATA_IMAGE_RE = re.compile(r"^data:(image/[A-Za-z0-9.+-]+);base64,(.*)$", re.DOTALL)
@@ -140,7 +141,7 @@ def generated_image_paths_from_messages(messages: list[dict[str, Any]]) -> list[
     paths: list[str] = []
     seen: set[str] = set()
     for message in messages:
-        if message.get("role") != "tool" or message.get("name") != _GENERATE_IMAGE_TOOL_NAME:
+        if message.get("role") != ROLES.TOOL or message.get("name") != _GENERATE_IMAGE_TOOL_NAME:
             continue
         payload = _extract_text_payload(message.get("content"))
         if not payload:

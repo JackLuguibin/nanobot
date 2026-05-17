@@ -13,6 +13,7 @@ from typing import Any
 from loguru import logger
 
 from nanobot.config.paths import get_legacy_sessions_dir
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.helpers import (
     ensure_dir,
     estimate_message_tokens,
@@ -100,7 +101,7 @@ class Session:
         if not timestamp or not isinstance(content, str):
             return content
         role = message.get("role")
-        if role != "user":
+        if role != ROLES.USER:
             return content
         return f"[Message Time: {timestamp}]\n{content}"
 
@@ -134,7 +135,7 @@ class Session:
         # Avoid starting mid-turn when possible, except for proactive
         # assistant deliveries that the user may be replying to.
         for i, message in enumerate(sliced):
-            if message.get("role") == "user":
+            if message.get("role") == ROLES.USER:
                 start = i
                 if i > 0 and sliced[i - 1].get("_channel_delivery"):
                     start = i - 1
@@ -152,7 +153,7 @@ class Session:
                 continue
             content = message.get("content", "")
             role = message.get("role")
-            if role == "assistant" and isinstance(content, str):
+            if role == ROLES.ASSISTANT and isinstance(content, str):
                 content = _sanitize_assistant_replay_text(content)
             # Synthesize an ``[image: path]`` breadcrumb from the persisted
             # ``media`` kwarg so LLM replay still sees *something* where the
@@ -160,14 +161,14 @@ class Session:
             # replays as an empty user message — the assistant's reply then
             # looks like it's responding to nothing.
             media = message.get("media")
-            if role == "user" and isinstance(media, list) and media and isinstance(content, str):
+            if role == ROLES.USER and isinstance(media, list) and media and isinstance(content, str):
                 breadcrumbs = "\n".join(
                     image_placeholder_text(p) for p in media if isinstance(p, str) and p
                 )
                 content = f"{content}\n{breadcrumbs}" if content else breadcrumbs
             if include_timestamps:
                 content = self._annotate_message_time(message, content)
-            if role == "assistant" and isinstance(content, str) and not content.strip():
+            if role == ROLES.ASSISTANT and isinstance(content, str) and not content.strip():
                 if not any(key in message for key in ("tool_calls", "reasoning_content", "thinking_blocks")):
                     continue
             entry: dict[str, Any] = {"role": message["role"], "content": content}
@@ -188,7 +189,7 @@ class Session:
             kept.reverse()
 
             # Keep history aligned to the first visible user turn.
-            first_user = next((i for i, m in enumerate(kept) if m.get("role") == "user"), None)
+            first_user = next((i for i, m in enumerate(kept) if m.get("role") == ROLES.USER), None)
             if first_user is not None:
                 kept = kept[first_user:]
             else:
@@ -196,7 +197,7 @@ class Session:
                 # If a user turn exists in the unsliced output, recover the
                 # nearest one even if it slightly exceeds the token budget.
                 recovered_user = next(
-                    (i for i in range(len(out) - 1, -1, -1) if out[i].get("role") == "user"),
+                    (i for i in range(len(out) - 1, -1, -1) if out[i].get("role") == ROLES.USER),
                     None,
                 )
                 if recovered_user is not None:
@@ -227,7 +228,7 @@ class Session:
         retained = list(self.messages[-max_messages:])
 
         # Prefer starting at a user turn when one exists within the tail.
-        first_user = next((i for i, m in enumerate(retained) if m.get("role") == "user"), None)
+        first_user = next((i for i, m in enumerate(retained) if m.get("role") == ROLES.USER), None)
         if first_user is not None:
             retained = retained[first_user:]
         else:
@@ -235,7 +236,7 @@ class Session:
             # the full session and take a capped forward window from there.
             latest_user = next(
                 (i for i in range(len(self.messages) - 1, -1, -1)
-                 if self.messages[i].get("role") == "user"),
+                 if self.messages[i].get("role") == ROLES.USER),
                 None,
             )
             if latest_user is not None:
@@ -613,10 +614,10 @@ class SessionManager:
                                 text = _message_preview_text(item)
                                 if not text:
                                     continue
-                                if item.get("role") == "user":
+                                if item.get("role") == ROLES.USER:
                                     preview = text
                                     break
-                                if not fallback_preview and item.get("role") == "assistant":
+                                if not fallback_preview and item.get("role") == ROLES.ASSISTANT:
                                     fallback_preview = text
                             preview = preview or fallback_preview
                             sessions.append({

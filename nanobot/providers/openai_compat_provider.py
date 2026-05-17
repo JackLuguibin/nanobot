@@ -30,6 +30,7 @@ else:
         )
     from openai import AsyncOpenAI
 
+from nanobot.contents.message_roles import ROLES
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 from nanobot.providers.openai_responses import (
     consume_sdk_stream,
@@ -375,7 +376,7 @@ class OpenAICompatProvider(LLMProvider):
                 return {**msg, "content": nc}
             return msg
 
-        if new_messages and new_messages[0].get("role") == "system":
+        if new_messages and new_messages[0].get("role") == ROLES.SYSTEM:
             new_messages[0] = _mark(new_messages[0])
         if len(new_messages) >= 3:
             new_messages[-2] = _mark(new_messages[-2])
@@ -460,7 +461,7 @@ class OpenAICompatProvider(LLMProvider):
                         tc_clean["function"] = function_clean
                     normalized.append(tc_clean)
                 clean["tool_calls"] = normalized
-                if clean.get("role") == "assistant":
+                if clean.get("role") == ROLES.ASSISTANT:
                     # Some OpenAI-compatible gateways reject assistant messages
                     # that mix non-empty content with tool_calls.
                     clean["content"] = None
@@ -468,7 +469,7 @@ class OpenAICompatProvider(LLMProvider):
                 clean["tool_call_id"] = map_id(clean["tool_call_id"])
             if (
                 force_string_content
-                and not (clean.get("role") == "assistant" and clean.get("tool_calls"))
+                and not (clean.get("role") == ROLES.ASSISTANT and clean.get("tool_calls"))
             ):
                 clean["content"] = self._coerce_content_to_string(clean.get("content"))
         return self._enforce_role_alternation(sanitized)
@@ -611,7 +612,7 @@ class OpenAICompatProvider(LLMProvider):
         )
         if explicit_thinking or implicit_deepseek_thinking:
             for msg in kwargs["messages"]:
-                if msg.get("role") == "assistant" and "reasoning_content" not in msg:
+                if msg.get("role") == ROLES.ASSISTANT and "reasoning_content" not in msg:
                     msg["reasoning_content"] = ""
 
         # Merge user-configured extra_body last so it can override or

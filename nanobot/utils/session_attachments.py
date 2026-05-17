@@ -15,6 +15,7 @@ from typing import Any
 from loguru import logger
 
 from nanobot.config.paths import get_media_dir
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.helpers import safe_filename
 
 
@@ -67,7 +68,7 @@ def merge_turn_media_into_last_assistant(
         )
     )
     last = all_messages[-1] if all_messages else None
-    if not merged or not last or last.get("role") != "assistant":
+    if not merged or not last or last.get("role") != ROLES.ASSISTANT:
         return
     existing = last.get("media")
     base = existing if isinstance(existing, list) else []

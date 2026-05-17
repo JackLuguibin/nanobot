@@ -9,6 +9,7 @@ from typing import Any
 
 import httpx
 
+from nanobot.contents.message_roles import ROLES
 from nanobot.providers.registry import find_by_name
 from nanobot.utils.helpers import detect_image_mime
 
@@ -158,7 +159,7 @@ class OpenRouterImageGenerationClient:
 
         body: dict[str, Any] = {
             "model": model,
-            "messages": [{"role": "user", "content": content}],
+            "messages": [{"role": ROLES.USER, "content": content}],
             "modalities": ["image", "text"],
             "stream": False,
         }

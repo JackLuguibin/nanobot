@@ -30,9 +30,11 @@ from nanobot.bus.events import InboundMessage, OutboundMessage
 from nanobot.bus.queue import MessageBus
 from nanobot.command import CommandContext, CommandRouter, register_builtin_commands
 from nanobot.config.schema import AgentDefaults, ModelPresetConfig
+from nanobot.contents.message_roles import ROLES
 from nanobot.providers.base import LLMProvider
 from nanobot.providers.factory import ProviderSnapshot
 from nanobot.session.goal_state import (
+    goal_state_runtime_lines,
     goal_state_ws_blob,
     runner_wall_llm_timeout_s,
 )
@@ -588,7 +590,7 @@ class AgentLoop:
             extra: dict[str, Any] = {"media": list(media_paths)} if media_paths else {}
             extra.update(kwargs)
             text = msg.content if isinstance(msg.content, str) else ""
-            session.add_message("user", text, **extra)
+            session.add_message(ROLES.USER, text, **extra)
             self._mark_pending_user_turn(session)
             self.sessions.save(session)
             return True
@@ -727,7 +729,19 @@ class AgentLoop:
                     content, media = extract_documents(content, media)
                     media = media or None
                 user_content = self.context._build_user_content(content, media)
-                return {"role": "user", "content": user_content}
+                extra = goal_state_runtime_lines(session.metadata) if session is not None else []
+                runtime_ctx = self.context._build_runtime_context(
+                    pending_msg.channel,
+                    self._runtime_chat_id(pending_msg),
+                    self.context.timezone,
+                    sender_id=pending_msg.sender_id,
+                    supplemental_lines=extra or None,
+                )
+                if isinstance(user_content, str):
+                    merged: str | list[dict[str, Any]] = f"{user_content}\n\n{runtime_ctx}"
+                else:
+                    merged = user_content + [{"type": "text", "text": runtime_ctx}]
+                return {"role": ROLES.USER, "content": merged}
 
             items: list[dict[str, Any]] = []
             while len(items) < limit:
@@ -1090,7 +1104,7 @@ class AgentLoop:
             "include_timestamps": True,
         }
         history = session.get_history(**_hist_kwargs)
-        current_role = "assistant" if is_subagent else "user"
+        current_role = ROLES.ASSISTANT if is_subagent else ROLES.USER
 
         messages = self.context.build_messages(
             history=history,
@@ -1309,7 +1323,7 @@ class AgentLoop:
                     ctx.msg, ctx.session, _command=True
                 )
                 ctx.session.add_message(
-                    "assistant", result.content, _command=True
+                    ROLES.ASSISTANT, result.content, _command=True
                 )
                 self.sessions.save(ctx.session)
                 self._clear_pending_user_turn(ctx.session)
@@ -1475,9 +1489,9 @@ class AgentLoop:
         for m in messages[skip:]:
             entry = dict(m)
             role, content = entry.get("role"), entry.get("content")
-            if role == "assistant" and not content and not entry.get("tool_calls"):
+            if role == ROLES.ASSISTANT and not content and not entry.get("tool_calls"):
                 continue  # skip empty assistant messages — they poison session context
-            if role == "tool":
+            if role == ROLES.TOOL:
                 if isinstance(content, str) and len(content) > self.max_tool_result_chars:
                     entry["content"] = truncate_text_fn(content, self.max_tool_result_chars)
                 elif isinstance(content, list):
@@ -1485,7 +1499,7 @@ class AgentLoop:
                     if not filtered:
                         continue
                     entry["content"] = filtered
-            elif role == "user":
+            elif role == ROLES.USER:
                 if isinstance(content, str) and ContextBuilder._RUNTIME_CONTEXT_TAG in content:
                     # Strip the runtime-context block appended at the end.
                     tag_pos = content.find(ContextBuilder._RUNTIME_CONTEXT_TAG)
@@ -1501,7 +1515,7 @@ class AgentLoop:
                     entry["content"] = filtered
             entry.setdefault("timestamp", datetime.now().isoformat())
             session.messages.append(entry)
-            if role == "assistant":
+            if role == ROLES.ASSISTANT:
                 last_assistant_idx = len(session.messages) - 1
         if turn_latency_ms is not None and last_assistant_idx is not None:
             session.messages[last_assistant_idx]["latency_ms"] = int(turn_latency_ms)
@@ -1523,7 +1537,7 @@ class AgentLoop:
         ):
             return False
         session.add_message(
-            "assistant",
+            ROLES.ASSISTANT,
             msg.content,
             sender_id=msg.sender_id,
             injected_event="subagent_result",
@@ -1587,7 +1601,7 @@ class AgentLoop:
             name = ((tool_call.get("function") or {}).get("name")) or "tool"
             restored_messages.append(
                 {
-                    "role": "tool",
+                    "role": ROLES.TOOL,
                     "tool_call_id": tool_id,
                     "name": name,
                     "content": "Error: Task interrupted before this tool finished.",
@@ -1619,10 +1633,10 @@ class AgentLoop:
         if not session.metadata.get(self._PENDING_USER_TURN_KEY):
             return False
 
-        if session.messages and session.messages[-1].get("role") == "user":
+        if session.messages and session.messages[-1].get("role") == ROLES.USER:
             session.messages.append(
                 {
-                    "role": "assistant",
+                    "role": ROLES.ASSISTANT,
                     "content": "Error: Task interrupted before a response was generated.",
                     "timestamp": datetime.now().isoformat(),
                 }
@@ -1646,7 +1660,7 @@ class AgentLoop:
         """Process a message directly and return the outbound payload."""
         await self._connect_mcp()
         msg = InboundMessage(
-            channel=channel, sender_id="user", chat_id=chat_id,
+            channel=channel, sender_id=ROLES.USER, chat_id=chat_id,
             content=content, media=media or [],
         )
         return await self._process_message(

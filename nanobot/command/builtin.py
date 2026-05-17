@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from nanobot import __version__
 from nanobot.bus.events import OutboundMessage
 from nanobot.command.router import CommandContext, CommandRouter
+from nanobot.contents.message_roles import ROLES
 from nanobot.utils.helpers import build_status_content
 from nanobot.utils.restart import set_restart_notice_to_env
 
@@ -502,7 +503,7 @@ _HISTORY_MAX_CONTENT_CHARS = 200
 def _format_history_message(msg: dict) -> str | None:
     """Format a single history message for display. Returns None to skip."""
     role = msg.get("role")
-    if role not in ("user", "assistant"):
+    if role not in (ROLES.USER, ROLES.ASSISTANT):
         return None
     content = msg.get("content") or ""
     if isinstance(content, list):
@@ -513,7 +514,7 @@ def _format_history_message(msg: dict) -> str | None:
         return None
     if len(content) > _HISTORY_MAX_CONTENT_CHARS:
         content = content[:_HISTORY_MAX_CONTENT_CHARS] + "…"
-    label = "👤 You" if role == "user" else "🤖 Bot"
+    label = "👤 You" if role == ROLES.USER else "🤖 Bot"
     return f"{label}: {content}"
 
 

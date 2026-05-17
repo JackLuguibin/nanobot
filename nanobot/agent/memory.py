@@ -17,6 +17,7 @@ from loguru import logger
 
 from nanobot.agent.runner import AgentRunner, AgentRunSpec
 from nanobot.agent.tools.registry import ToolRegistry
+from nanobot.contents.message_roles import ROLES
 from nanobot.session.manager import Session
 from nanobot.utils.gitstore import GitStore
 from nanobot.utils.helpers import (
@@ -502,7 +503,7 @@ class Consolidator:
         last_boundary: tuple[int, int] | None = None
         for idx in range(start, len(session.messages)):
             message = session.messages[idx]
-            if idx > start and message.get("role") == "user":
+            if idx > start and message.get("role") == ROLES.USER:
                 last_boundary = (idx, removed_tokens)
                 if removed_tokens >= tokens_to_remove:
                     return last_boundary
@@ -538,7 +539,7 @@ class Consolidator:
 
         sliced = tail[-replay_max_messages:]
         for i, (_idx, message) in enumerate(sliced):
-            if message.get("role") == "user":
+            if message.get("role") == ROLES.USER:
                 start = i
                 if i > 0 and sliced[i - 1][1].get("_channel_delivery"):
                     start = i - 1
@@ -646,13 +647,13 @@ class Consolidator:
                 model=self.model,
                 messages=[
                     {
-                        "role": "system",
+                        "role": ROLES.SYSTEM,
                         "content": render_template(
                             "agent/consolidator_archive.md",
                             strip=True,
                         ),
                     },
-                    {"role": "user", "content": formatted},
+                    {"role": ROLES.USER, "content": formatted},
                 ],
                 tools=None,
                 tool_choice=None,
@@ -990,14 +991,14 @@ class Dream:
                 model=self.model,
                 messages=[
                     {
-                        "role": "system",
+                        "role": ROLES.SYSTEM,
                         "content": render_template(
                             "agent/dream_phase1.md",
                             strip=True,
                             stale_threshold_days=_STALE_THRESHOLD_DAYS,
                         ),
                     },
-                    {"role": "user", "content": phase1_prompt},
+                    {"role": ROLES.USER, "content": phase1_prompt},
                 ],
                 tools=None,
                 tool_choice=None,
@@ -1022,14 +1023,14 @@ class Dream:
         skill_creator_path = BUILTIN_SKILLS_DIR / "skill-creator" / "SKILL.md"
         messages: list[dict[str, Any]] = [
             {
-                "role": "system",
+                "role": ROLES.SYSTEM,
                 "content": render_template(
                     "agent/dream_phase2.md",
                     strip=True,
                     skill_creator_path=str(skill_creator_path),
                 ),
             },
-            {"role": "user", "content": phase2_prompt},
+            {"role": ROLES.USER, "content": phase2_prompt},
         ]
 
         try:

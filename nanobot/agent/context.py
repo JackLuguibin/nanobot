@@ -10,6 +10,7 @@ from typing import Any, Mapping, Sequence
 
 from nanobot.agent.memory import MemoryStore
 from nanobot.agent.skills import SkillsLoader
+from nanobot.contents.message_roles import ROLES
 from nanobot.session.goal_state import goal_state_runtime_lines
 from nanobot.utils.helpers import (
     current_time_str,
@@ -150,7 +151,7 @@ class ContextBuilder:
         media: list[str] | None = None,
         channel: str | None = None,
         chat_id: str | None = None,
-        current_role: str = "user",
+        current_role: str = ROLES.USER,
         sender_id: str | None = None,
         session_summary: str | None = None,
         session_metadata: Mapping[str, Any] | None = None,
@@ -175,7 +176,7 @@ class ContextBuilder:
         else:
             merged = user_content + [{"type": "text", "text": runtime_ctx}]
         messages = [
-            {"role": "system", "content": self.build_system_prompt(skill_names, channel=channel, session_summary=session_summary)},
+            {"role": ROLES.SYSTEM, "content": self.build_system_prompt(skill_names, channel=channel, session_summary=session_summary)},
             *history,
         ]
         if messages[-1].get("role") == current_role:

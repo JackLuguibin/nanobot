@@ -12,6 +12,7 @@ from typing import Any
 
 import json_repair
 
+from nanobot.contents.message_roles import ROLES
 from nanobot.providers.base import LLMProvider, LLMResponse, ToolCallRequest
 
 _ALNUM = string.ascii_letters + string.digits
@@ -129,13 +130,13 @@ class AnthropicProvider(LLMProvider):
             role = msg.get("role", "")
             content = msg.get("content")
 
-            if role == "system":
+            if role == ROLES.SYSTEM:
                 system = content if isinstance(content, (str, list)) else str(content or "")
                 continue
 
-            if role == "tool":
+            if role == ROLES.TOOL:
                 block = self._tool_result_block(msg)
-                if raw and raw[-1]["role"] == "user":
+                if raw and raw[-1]["role"] == ROLES.USER:
                     prev_c = raw[-1]["content"]
                     if isinstance(prev_c, list):
                         prev_c.append(block)
@@ -144,16 +145,16 @@ class AnthropicProvider(LLMProvider):
                             {"type": "text", "text": prev_c or ""}, block,
                         ]
                 else:
-                    raw.append({"role": "user", "content": [block]})
+                    raw.append({"role": ROLES.USER, "content": [block]})
                 continue
 
-            if role == "assistant":
-                raw.append({"role": "assistant", "content": self._assistant_blocks(msg)})
+            if role == ROLES.ASSISTANT:
+                raw.append({"role": ROLES.ASSISTANT, "content": self._assistant_blocks(msg)})
                 continue
 
-            if role == "user":
+            if role == ROLES.USER:
                 raw.append({
-                    "role": "user",
+                    "role": ROLES.USER,
                     "content": self._convert_user_content(content),
                 })
                 continue
@@ -300,7 +301,7 @@ class AnthropicProvider(LLMProvider):
 
         # Rule 2: strip trailing assistant turns — Anthropic rejects prefill.
         last_popped: dict[str, Any] | None = None
-        while merged and merged[-1].get("role") == "assistant":
+        while merged and merged[-1].get("role") == ROLES.ASSISTANT:
             last_popped = merged.pop()
 
         # Recovery for rule 2: if stripping removed every turn, reroute the
@@ -312,7 +313,7 @@ class AnthropicProvider(LLMProvider):
             and last_popped is not None
             and not AnthropicProvider._has_tool_use(last_popped)
         ):
-            merged.append({"role": "user", "content": last_popped.get("content")})
+            merged.append({"role": ROLES.USER, "content": last_popped.get("content")})
 
         # Rule 3: prepend a synthetic opener if the first surviving turn is an
         # assistant (e.g. upstream history truncation dropped the original
@@ -322,10 +323,10 @@ class AnthropicProvider(LLMProvider):
         # turning a recoverable 400 into a harder-to-diagnose one.
         if (
             merged
-            and merged[0].get("role") == "assistant"
+            and merged[0].get("role") == ROLES.ASSISTANT
             and not AnthropicProvider._has_tool_use(merged[0])
         ):
-            merged.insert(0, {"role": "user", "content": "(conversation continued)"})
+            merged.insert(0, {"role": ROLES.USER, "content": "(conversation continued)"})
 
         return merged
 
